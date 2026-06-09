@@ -1,0 +1,20 @@
+All done.
+  req  600MHz -> act 600MHz |   32.4W |   8.9 TFLOP/s
+All done.
+  req  900MHz -> act 900MHz |   38.5W |  13.4 TFLOP/s
+All done.
+  req 1200MHz -> act 1199MHz |   46.0W |  17.8 TFLOP/s
+All done.
+  req 1500MHz -> act 1492MHz |   54.0W |  22.3 TFLOP/s
+All done.
+  req 1800MHz -> act 1792MHz |   68.5W |  26.8 TFLOP/s
+All done.
+  req 2100MHz -> act 2092MHz |   87.2W |  31.2 TFLOP/s
+All done.
+  req 2400MHz -> act 2392MHz |  109.8W |  35.8 TFLOP/s
+All done.
+  req 2700MHz -> act 2595MHz |  138.3W |  38.8 TFLOP/s
+All done.
+  req 3000MHz -> act 2601MHz |  138.4W |  38.7 TFLOP/s
+All done.
+wrote results_clock.csv

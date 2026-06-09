@@ -1,0 +1,33 @@
+Loading weights:   0%|          | 0/338 [00:00<?, ?it/s]Loading weights:  40%|███▉      | 135/338 [00:00<00:00, 1344.33it/s]Loading weights:  86%|████████▋ | 292/338 [00:00<00:00, 1471.28it/s]Loading weights: 100%|██████████| 338/338 [00:00<00:00, 1489.17it/s]
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+  f= 600 prefill_s2048  act=  597MHz     2786.4 tok/s    30.3 W
+  f= 600 decode_b1      act=  600MHz       31.2 tok/s    38.3 W
+  f= 600 decode_b128    act=  598MHz     1342.6 tok/s    35.1 W
+  f= 825 prefill_s2048  act=  825MHz     3788.9 tok/s    36.5 W
+  f= 825 decode_b1      act=  823MHz       39.6 tok/s    41.9 W
+  f= 825 decode_b128    act=  825MHz     1803.3 tok/s    40.4 W
+  f=1050 prefill_s2048  act= 1048MHz     4754.1 tok/s    40.8 W
+  f=1050 decode_b1      act= 1050MHz       44.1 tok/s    44.8 W
+  f=1050 decode_b128    act= 1049MHz     2249.1 tok/s    45.6 W
+  f=1275 prefill_s2048  act= 1271MHz     5712.6 tok/s    46.2 W
+  f=1275 decode_b1      act= 1271MHz       48.0 tok/s    46.8 W
+  f=1275 decode_b128    act= 1273MHz     2685.6 tok/s    50.9 W
+  f=1500 prefill_s2048  act= 1492MHz     6670.2 tok/s    51.3 W
+  f=1500 decode_b1      act= 1492MHz       53.0 tok/s    49.7 W
+  f=1500 decode_b128    act= 1492MHz     3075.6 tok/s    55.8 W
+  f=1725 prefill_s2048  act= 1717MHz     7629.4 tok/s    60.0 W
+  f=1725 decode_b1      act= 1710MHz       60.8 tok/s    56.4 W
+  f=1725 decode_b128    act= 1710MHz     3467.3 tok/s    65.0 W
+  f=1950 prefill_s2048  act= 1942MHz     8628.8 tok/s    76.6 W
+  f=1950 decode_b1      act= 1939MHz       68.9 tok/s    67.0 W
+  f=1950 decode_b128    act= 1938MHz     3831.9 tok/s    79.4 W
+  f=2175 prefill_s2048  act= 2167MHz     9520.5 tok/s    84.9 W
+  f=2175 decode_b1      act= 2145MHz       71.8 tok/s    71.4 W
+  f=2175 decode_b128    act= 2145MHz     4064.4 tok/s    86.7 W
+  f=2400 prefill_s2048  act= 2392MHz    10447.7 tok/s   104.3 W
+  f=2400 decode_b1      act= 2385MHz       76.4 tok/s    81.2 W
+  f=2400 decode_b128    act= 2377MHz     4402.4 tok/s   102.4 W
+  f=2600 prefill_s2048  act= 2595MHz    11244.3 tok/s   129.3 W
+  f=2600 decode_b1      act= 2587MHz       79.9 tok/s    95.9 W
+  f=2600 decode_b128    act= 2572MHz     4686.4 tok/s   124.5 W
+wrote results_freq_llm.csv

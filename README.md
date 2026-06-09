@@ -78,3 +78,40 @@ elevated to ~114 W by max clock-boost on the latency-bound single stream.)
 - `curves_vs_load.png` — throughput & power vs offered load (clearest view)
 
 Reproduce: `HF_HUB_DISABLE_XET=1 python bench.py && python plot.py`
+
+## Follow-up: capturing the prefill ~cubic law, and the decode law
+
+**Prefill is compute-bound; decode is memory-bandwidth-bound.** To see the
+throughput↔power law you must sweep the *frequency* knob, not the load
+(`freq_sweep_llm.py`, `curves_freq_llm.png`): lock the SM clock across a range
+and measure real token throughput + power on each real workload.
+
+**1. The cubic law lives in CLOCK FREQUENCY** (`clock_sweep.py`,
+`curves_clock_dvfs.png`). Fixed full-occupancy matmul, clock locked: power =
+32 W @600 MHz → 46 @1200 → 68 @1800 → 110 @2400 → 138 @~2600, while compute
+scales *linearly* (8.9→39 TFLOP/s). Fit `P ≈ 28 + k·f^2.1` (steepening to ~f^2.4
+at the top) — the V²·f DVFS law. The card can't sustain >~2600 MHz under load
+(3000 requested → 2601 actual). In the original load sweeps the clock was pinned
+at this ~2.6 GHz ceiling, which is why the cubic was invisible there.
+
+**2. PREFILL: throughput↔power is ~cubic.** Compute-bound, so throughput ∝ clock
+while power ∝ ~f^(2–3); combined: `P = 25 + k·tput^2.05`, **high-end exponent
+≈ 2.5** (1×2048: 2786 tok/s @30 W → 11244 tok/s @129 W). A convex, accelerating
+curve — the approximate cubic.
+
+**3. DECODE: memory-bandwidth-bound.** Each step re-reads all weights to emit a
+few tokens, so throughput is limited by memory bandwidth, not core clock. At
+b=1, raising the SM clock 4.3× lifts throughput only 2.6× (31→80 tok/s,
+sub-linear) while power climbs 38→96 W — i.e. spending clock/power buys little
+throughput. Decode's lever is memory bandwidth (and batching toward the BW
+limit), not the compute clock. *(Note: a high-batch + short-context micro-bench
+can nominally cross the roofline ridge and look compute-bound, but that is an
+artifact of an unrealistically short KV cache and is not representative of
+decode — excluded.)*
+
+**4. Why prefill power looked flat in the load sweep:** the sequence dimension
+gives massive parallelism, so even tiny prefills saturate this 30-SM card's
+occupancy AND it's already at max clock → ~140 W across the range, against the
+145 W ceiling. Nothing can "keep rising" — 145 W is a hard wall. What grows ∝S²
+is FLOPs/**energy** (J), not power (J/s).
+
