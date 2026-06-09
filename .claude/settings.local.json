@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(nvidia-smi)",
+      "Bash(nvidia-smi --query-gpu=name,memory.total,power.limit,power.default_limit,driver_version --format=csv)",
+      "Bash(pip3 list *)",
+      "Bash(nvcc --version)",
+      "Bash(python3 -c ' *)",
+      "Read(//home/mark/.cache/huggingface/**)",
+      "Bash(python3 -c \"import pynvml; print\\('pynvml ok'\\)\")",
+      "Bash(python3 -c \"import nvidia_ml_py; print\\('nvidia_ml_py ok'\\)\")",
+      "Bash(timeout 10 curl -sI https://huggingface.co)",
+      "Bash(timeout 10 curl -sI https://pypi.org/simple/)",
+      "Bash(pip3 install *)"
+    ]
+  }
+}
