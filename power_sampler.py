@@ -77,6 +77,8 @@ class PowerSampler:
             "util_gpu_avg": avg("util_gpu"),
             "util_mem_avg": avg("util_mem"),
             "sm_clk_avg": avg("sm_clk"),
+            "sm_clk_min": min(s["sm_clk"] for s in win),
+            "sm_clk_max": mx("sm_clk"),
             "temp_avg": avg("temp"),
             "window_s": t1 - t0,
         }

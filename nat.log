@@ -1,0 +1,22 @@
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/338 [00:00<?, ?it/s]Loading weights:  37%|███▋      | 125/338 [00:00<00:00, 1241.81it/s]Loading weights:  86%|████████▌ | 291/338 [00:00<00:00, 1443.18it/s]Loading weights: 100%|██████████| 338/338 [00:00<00:00, 1502.12it/s]
+=== PREFILL (batch=8 fixed, sweep prompt length) ===
+  b=8 S=   16 |      7860 tok/s |  126.7 W | clk 2751 [2745-2790] MHz | util 91%
+  b=8 S=   32 |      9548 tok/s |  137.6 W | clk 2734 [2715-2760] MHz | util 94%
+  b=8 S=   64 |     10981 tok/s |  138.7 W | clk 2691 [2655-2760] MHz | util 75%
+  b=8 S=  128 |     11748 tok/s |  138.0 W | clk 2681 [2647-2805] MHz | util 98%
+  b=8 S=  256 |     11698 tok/s |  137.1 W | clk 2695 [2655-2820] MHz | util 76%
+  b=8 S=  512 |     11264 tok/s |  138.3 W | clk 2712 [2670-2820] MHz | util 100%
+  b=8 S= 1024 |     11057 tok/s |  139.0 W | clk 2655 [2640-2707] MHz | util 100%
+  b=8 S= 2048 |     10706 tok/s |  137.6 W | clk 2684 [2655-2820] MHz | util 79%
+  b=8 S= 4096 |     10225 tok/s |  140.1 W | clk 2665 [2647-2730] MHz | util 95%
+=== DECODE (ctx=512 fixed, sweep batch) ===
+  b=  4 ctx=512 |      284 tok/s |   86.9 W | clk 2808 [2745-2820] MHz | util 83%
+  b=  8 ctx=512 |      540 tok/s |   93.8 W | clk 2808 [2730-2812] MHz | util 70%
+  b= 16 ctx=512 |      921 tok/s |  103.3 W | clk 2792 [2715-2820] MHz | util 90%
+  b= 24 ctx=512 |     1468 tok/s |  110.2 W | clk 2794 [2790-2820] MHz | util 92%
+  b= 32 ctx=512 |     1768 tok/s |  113.1 W | clk 2792 [2782-2812] MHz | util 93%
+  b= 48 ctx=512 |     2266 tok/s |  121.1 W | clk 2786 [2782-2812] MHz | util 72%
+  b= 64 ctx=512 |     2733 tok/s |  128.7 W | clk 2791 [2782-2805] MHz | util 94%
+wrote results_nat_prefill.csv
+wrote results_nat_decode.csv
