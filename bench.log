@@ -1,0 +1,43 @@
+loading model...
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/338 [00:00<?, ?it/s]Loading weights:  37%|███▋      | 125/338 [00:00<00:00, 1203.44it/s]Loading weights:  86%|████████▌ | 291/338 [00:00<00:00, 1461.79it/s]Loading weights: 100%|██████████| 338/338 [00:00<00:00, 1483.51it/s]
+model loaded. vocab=151936 VRAM=3.09GB
+
+=== PREFILL SWEEP ===
+  prefill b=  1 s=    64 |       5079 tok/s |  113.0 W | util   87% | sm 2807MHz | iters 318
+  prefill b=  1 s=   128 |       8482 tok/s |  136.1 W | util   93% | sm 2742MHz | iters 266
+  prefill b=  1 s=   256 |      10105 tok/s |  136.7 W | util   74% | sm 2693MHz | iters 159
+  prefill b=  1 s=   512 |      11208 tok/s |  136.5 W | util   97% | sm 2683MHz | iters 89
+  prefill b=  1 s=  1024 |      11603 tok/s |  137.2 W | util   77% | sm 2671MHz | iters 47
+  prefill b=  1 s=  2048 |      11406 tok/s |  138.5 W | util  100% | sm 2688MHz | iters 24
+  prefill b=  1 s=  4096 |      10549 tok/s |  138.1 W | util   81% | sm 2705MHz | iters 12
+  prefill b=  1 s=  8192 |       9449 tok/s |  139.2 W | util  100% | sm 2695MHz | iters 6
+  prefill b=  2 s=  8192 |       9479 tok/s |  140.5 W | util  100% | sm 2699MHz | iters 4
+  prefill b=  4 s=  8192 |       9440 tok/s |  142.2 W | util   91% | sm 2678MHz | iters 3
+  prefill b=  4 s=  4096 |      10330 tok/s |  139.8 W | util   85% | sm 2669MHz | iters 4
+  prefill b=  8 s=  4096 |      10262 tok/s |  141.6 W | util   91% | sm 2649MHz | iters 3
+  prefill b=  2 s= 16384 |       8073 tok/s |  140.9 W | util   92% | sm 2716MHz | iters 2
+  prefill b=4 s=16384 -> OOM, skipped
+  prefill b=8 s=8192 -> OOM, skipped
+  prefill b=16 s=4096 -> OOM, skipped
+  prefill b=8 s=16384 -> OOM, skipped
+  prefill b=16 s=8192 -> OOM, skipped
+
+=== DECODE SWEEP ===
+  decode  b=  1 ctx=256 |         83 tok/s |  113.6 W | util   94% | sm 2797MHz | steps 335
+  decode  b=  2 ctx=256 |        173 tok/s |   90.4 W | util   92% | sm 2801MHz | steps 347
+  decode  b=  4 ctx=256 |        336 tok/s |   92.8 W | util   83% | sm 2805MHz | steps 337
+  decode  b=  8 ctx=256 |        642 tok/s |   99.1 W | util   92% | sm 2791MHz | steps 322
+  decode  b= 16 ctx=256 |       1147 tok/s |  108.0 W | util   94% | sm 2784MHz | steps 288
+  decode  b= 24 ctx=256 |       1482 tok/s |  118.6 W | util   89% | sm 2773MHz | steps 256
+  decode  b= 32 ctx=256 |       1780 tok/s |  122.9 W | util   95% | sm 2774MHz | steps 256
+  decode  b= 48 ctx=256 |       2861 tok/s |  131.5 W | util   95% | sm 2772MHz | steps 240
+  decode  b= 64 ctx=256 |       3520 tok/s |  138.6 W | util   95% | sm 2765MHz | steps 221
+  decode  b= 96 ctx=256 |       4122 tok/s |  144.8 W | util   96% | sm 2714MHz | steps 173
+  decode  b=128 ctx=256 |       4800 tok/s |  144.9 W | util   98% | sm 2688MHz | steps 151
+  decode  b=160 ctx=256 |       4716 tok/s |  145.1 W | util   97% | sm 2674MHz | steps 119
+  decode  b=192 ctx=256 |       5116 tok/s |  145.1 W | util   98% | sm 2672MHz | steps 108
+  decode  b=256 ctx=256 |       5265 tok/s |  145.1 W | util   98% | sm 2668MHz | steps 84
+wrote results_prefill.csv (13 rows)
+wrote results_decode.csv (14 rows)
+[W609 15:50:02.631771839 AllocatorConfig.cpp:28] Warning: PYTORCH_CUDA_ALLOC_CONF is deprecated, use PYTORCH_ALLOC_CONF instead (function operator())
