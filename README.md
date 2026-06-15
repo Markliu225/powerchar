@@ -38,55 +38,45 @@ python code/analyze.py --step all    # Steps 1-4: all figures + model fits
 Decode (arithmetic intensity ≈ batch) lives left of the ridge → **memory-bound**;
 prefill (intensity ≈ seq_len) lives far right → **compute-bound**.
 
-### Step 1 — Prefill: compute-bound, power pinned at the cap
-![prefill vs load](figures/step1_prefill_vs_load.png)
+The relationship is read off **power (W) vs token throughput (tok/s)** — and it
+is qualitatively different in the two phases.
 
-| load (1×S) | tok/s | power W | util | tok/J |
-|---|---|---|---|---|
-| 1×64   | 1 877 |  69 | 35 % | 27.0 |
-| 1×256  | 7 115 | 139 | 72 % | 51.2 |
-| **1×512**  | **8 722** | 145 | 89 % | **60.3** |
-| 1×1024 | 7 542 | 145 | 84 % | 51.9 |
-| 1×2048 | 5 535 | 142 | 88 % | 39.1 |
-| 1×4096 | 3 665 | 140 | 98 % | 26.2 |
+### Step 1 — Prefill: power DECOUPLED from throughput (compute-bound)
+![prefill power vs throughput](figures/step1_prefill_power_vs_throughput.png)
 
-Throughput is an **inverted-U**: it rises as the sequence fills the 30 SMs
-(occupancy-limited, power climbs 69→145 W), peaks at S≈512, then falls as
-attention's O(S²) cost grows — all while **power stays pinned at ~140 W**. The
-throughput↔power locus is therefore nearly **vertical**: power is fixed by the
-clock ceiling, throughput is set by the workload.
+Once the sequence fills the GPU (S ≳ 256), **power locks to ~142 W (±1.5 %) while
+throughput sweeps 3.7 → 8.7 k tok/s** — a 2.4× throughput range at constant
+power. The matmul units run pinned at the compute roof, so power can't move;
+throughput is set entirely by the per-token attention cost (O(S²)). You change
+throughput by changing the sequence, **not** by spending more power.
 
-### Step 2 — Decode: memory-bandwidth-bound, power & throughput rise with batch
-![decode vs batch](figures/step2_decode_vs_batch.png)
+### Step 2 — Decode: power COUPLED to throughput (memory-bandwidth-bound)
+![decode power vs throughput](figures/step2_decode_power_vs_throughput.png)
 
-| batch | tok/s | power W | util | tok/J |
-|---|---|---|---|---|
-| 1   |  29 |  70 | 44 % | 0.4 |
-| 8   | 266 |  92 | 65 % | 2.9 |
-| 16  | 469 | 117 | 86 % | 4.0 |
-| 32  | 653 | 130 | 91 % | 5.0 |
-| **48**  | **749** | 135 | 94 % | **5.6** |
+Power and throughput **rise together** with batch, 70 W/29 tok/s → 135 W/749
+tok/s: each step re-reads all 3.09 GB of weights to emit only `batch` tokens, so
+raising throughput means raising bandwidth utilisation, which costs power. Beyond
+b≈48 the KV cache exhausts the 8 GB VRAM (shared ~1.7 GB with the desktop) and
+WDDM spills to host, collapsing throughput — a hard wall, documented and excluded.
 
-Each decode step re-reads all 3.09 GB of weights to emit only `batch` tokens —
-the textbook memory bottleneck. Throughput and power both **rise with batch**
-toward the ceiling (a rising diagonal locus). Beyond b≈48 the KV cache exhausts
-the 8 GB VRAM (shared ~1.7 GB with the desktop) and WDDM spills to host memory,
-collapsing throughput — a hard memory wall, documented and excluded.
-
-### Steps 3–4 — analytic model & synthesis
+### Steps 3–4 — analytic model `P(T)` & synthesis
 | | |
 |---|---|
-| ![prefill model](figures/step3_prefill_model.png) | ![decode model](figures/step3_decode_model.png) |
-| ![power model](figures/step3_power_model.png) | ![combined](figures/step4_combined_throughput_vs_power.png) |
+| ![decode model](figures/step3_decode_model.png) | ![prefill model](figures/step3_prefill_model.png) |
 
-| model | form | fit | key result |
+Both follow from one principle — `P = P_static + (P_cap−P_static)·u` and
+`T = R/c` (utilisation-driven power, throughput = bottleneck-rate ÷ per-token
+cost):
+
+| phase | `P(T)` model | fit | key result |
 |---|---|---|---|
-| prefill | `tput = 1/(a+b·S)` | **R²=0.996**, MAPE 1.2 % | MFU 78 %; attention doubles cost at S≈1948 |
-| decode | `t_step = t_fixed + β·B` | **R²=0.981**, MAPE 9.2 % | t_fixed 28 ms (~20 ms launch overhead), asymptote 1.5 k tok/s |
-| power | `P = P_idle + A(1−e^{−B/B₀})` | **R²=0.982** | P_idle 54 W → asymptote 139 W |
+| decode | `P(T)` = compose `T=B/(t_fixed+β·B)` with `P=P_idle+A(1−e^{−B/B₀})` | **R²=0.982**, MAPE 3.5 % | coupled; 54→139 W, asymptote 1.5 k tok/s |
+| prefill | `P ≈ P_cap` (R pinned at roof); `1/T = a+b·S` sets T | power **CV 1.5 %**; T-law R²=0.996 | decoupled; 142 W ⊥ throughput, MFU 78 % |
 
-**Energy:** prefill is **26–60 tok/J** vs decode **0.4–5.6 tok/J** — ~11× more
-efficient per token at best (see `figures/step4_efficiency_comparison.png`).
+![combined](figures/step4_combined_power_vs_throughput.png)
+
+**Energy:** prefill **26–60 tok/J** vs decode **0.4–5.6 tok/J** — ~11× more
+efficient per token at best (`figures/step4_combined_efficiency_vs_throughput.png`).
 
 Full derivations and the measured-vs-theory discussion: [ANALYTIC_MODEL.md](ANALYTIC_MODEL.md).
 

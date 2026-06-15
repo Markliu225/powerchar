@@ -1,35 +1,26 @@
 {
-  "prefill": {
-    "model": "tput(S) = 1 / (a + b*S);  a=dense/(peak*mfu), b=attn/(peak*mfu)",
-    "fit_regime": "S >= 512 (compute-bound, post-peak)",
-    "a": 8.824503370533352e-05,
-    "b": 4.529614026889675e-08,
-    "implied_mfu": 0.7800216403389145,
-    "attn_term_ratio": 15.638888264391758,
-    "attn_doubles_at_S": 1948.1799813731204,
-    "mape_pct": 1.1999586181544957,
-    "r2": 0.995961645725398
-  },
   "decode": {
-    "model": "t_step = t_fixed + beta*B ;  tput = B/(t_fixed+beta*B)",
+    "principle": "memory-bound: raising batch raises bandwidth use -> raises BOTH T and P",
     "t_fixed_ms": 28.327686021054426,
     "beta_ms_per_seq": 0.6524462784282007,
-    "t_weight_ideal_ms": 8.295200506285738,
-    "launch_overhead_ms": 20.032485514768688,
-    "fixed_cost_bw_efficiency": 0.29283014857339096,
     "tput_asymptote_tok_s": 1532.6932393715022,
-    "halfmax_batch": 43.41765285150873,
-    "ridge_batch": 102.29331075575861,
-    "mape_pct": 9.152659810944835,
-    "r2": 0.9813811895410623
+    "P_idle_w": 53.89175842704518,
+    "P_asymptote_w": 138.65021515235617,
+    "B0": 12.939418875966657,
+    "weight_stream_ideal_ms": 8.295200506285738,
+    "P_vs_T_mape_pct": 3.4856922518527282,
+    "P_vs_T_r2": 0.9817343073551198
   },
-  "power": {
-    "model": "P(B) = P_idle + A*(1 - exp(-B/B0))",
-    "P_idle": 53.84331285749499,
-    "A": 84.74381842481283,
-    "B0": 12.902271196342634,
-    "P_asymptote": 138.58713128230784,
-    "mape_pct": 3.4797227203344487,
-    "r2": 0.9817326416328904
+  "prefill": {
+    "principle": "compute-bound: R pinned at the matmul roof -> P fixed; T varies via per-token cost",
+    "implied_mfu": 0.7800216403389145,
+    "compute_bound_power_w": 141.50658715596342,
+    "power_cv_pct_S>=256": 1.5332727570108973,
+    "throughput_span_kTps": [
+      3.664806359890891,
+      8.721861424204329
+    ],
+    "attn_doubles_at_S": 1948.1799813731204,
+    "cost_model": "1/T = (C + k_attn*S)/(peak*mfu)"
   }
 }

@@ -42,33 +42,34 @@ the rest of the code is a pure function of it.
 
 ### Step 1 — Prefill characterisation (compute-bound)
 `code/measure.py --phase prefill` → `results/prefill.csv`, then `analyze.py --step 1`
-- Sweep total prefill tokens (64 → ~130 k) at `use_cache=False`.
-- Figures: **throughput vs power**, throughput & power vs offered load, tok/J vs load.
-- Expected: power pinned near the cap (compute-bound, clock at ceiling);
-  throughput rises with parallelism then falls as attention O(S²) grows.
+- Sweep prefill tokens (64 → 4096 at batch 1) at `use_cache=False`.
+- Figures (x-axis = **token throughput, tok/s**): **power vs throughput**,
+  efficiency (tok/J) vs throughput.
+- Expected: once the GPU saturates, power pins at ~cap while throughput varies
+  with attention O(S²) → **power decoupled from throughput**.
 
 ### Step 2 — Decode characterisation (memory-bandwidth-bound)
 `code/measure.py --phase decode` → `results/decode.csv`, then `analyze.py --step 2`
 - Sweep batch size (1 → 256) at fixed 256-token context, steady-state single-token steps.
-- Figures: **throughput vs power**, throughput & power vs batch, tok/J vs batch.
-- Expected: power climbs from idle-ish to the cap as batch grows; throughput
-  rises ~linearly (bandwidth-bound) then bends toward the roofline ridge.
+- Figures (x-axis = **token throughput, tok/s**): **power vs throughput**,
+  efficiency (tok/J) vs throughput.
+- Expected: power and throughput **rise together** with batch (coupled), toward
+  the bandwidth/power ceiling.
 
-### Step 3 — Analytic model & validation
+### Step 3 — Analytic model `P(T)` & validation
 [ANALYTIC_MODEL.md](ANALYTIC_MODEL.md) + `analyze.py --step 3` → `results/fit_summary.json`
 and `figures/step3_*.png`
-- Derive, from first principles: prefill compute roofline with the O(S²)
-  attention term; decode memory-bandwidth roofline; the DVFS power law
-  P ≈ P_static + k·f·V² (≈ cubic in clock); and a power-vs-utilisation
-  saturation law.
-- Fit the measured data to each model (numpy least-squares), overlay
-  predicted vs measured, and report MAPE / R² and the implied efficiencies
-  (MFU, bandwidth utilisation).
+- Derive **power as a function of throughput** from one principle:
+  `P = P_static + (P_cap−P_static)·u` and `T = R/c`. Decode: R ramps with batch →
+  coupled `P(T)`. Prefill: R pinned at the compute roof → flat `P(T)`, T set by
+  the per-token cost `c(S) = C + k_attn·S`. Plus the DVFS context law.
+- Overlay each `P(T)` model on the measured points; report MAPE / R², MFU,
+  power CV, and the throughput asymptote.
 
 ### Step 4 — Synthesis
 `analyze.py --step 4` → `figures/step4_*.png` + README results table
-- One axis comparing prefill and decode throughput-vs-power.
-- Energy-efficiency comparison (tok/J) quantifying why prefill is far cheaper
+- Both phases on **one power-vs-throughput axis** (the coupled vs decoupled laws).
+- Energy efficiency (tok/J) vs throughput, quantifying why prefill is far cheaper
   per token than decode.
 
 ---
