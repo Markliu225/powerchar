@@ -1,11 +1,0 @@
-Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
-Loading weights:   0%|          | 0/338 [00:00<?, ?it/s]Loading weights:  37%|███▋      | 126/338 [00:00<00:00, 1224.81it/s]Loading weights:  86%|████████▌ | 291/338 [00:00<00:00, 1458.91it/s]Loading weights: 100%|██████████| 338/338 [00:00<00:00, 1479.37it/s]
-  cap 123W |    10330 tok/s | power  123.1 W | clk 2565 MHz
-  cap 126W |    10501 tok/s | power  126.1 W | clk 2564 MHz
-  cap 129W |    10553 tok/s | power  129.0 W | clk 2577 MHz
-  cap 132W |    10619 tok/s | power  132.1 W | clk 2597 MHz
-  cap 135W |    10689 tok/s | power  135.0 W | clk 2615 MHz
-  cap 138W |    10746 tok/s | power  138.1 W | clk 2633 MHz
-  cap 141W |    10805 tok/s | power  141.0 W | clk 2646 MHz
-  cap 145W |    10908 tok/s | power  145.0 W | clk 2668 MHz
-wrote results_powercap.csv

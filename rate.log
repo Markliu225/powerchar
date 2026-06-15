@@ -1,14 +1,0 @@
-Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
-Loading weights:   0%|          | 0/338 [00:00<?, ?it/s]Loading weights:  40%|███▉      | 135/338 [00:00<00:00, 1274.54it/s]Loading weights:  90%|████████▉ | 303/338 [00:00<00:00, 1486.93it/s]Loading weights: 100%|██████████| 338/338 [00:00<00:00, 1495.89it/s]
-peak (saturated) throughput ≈ 9879 tok/s
-  target   5% | delivered      494 tok/s |   32.8 W | clk 2549 MHz | util  10%
-  target   8% | delivered      790 tok/s |   36.0 W | clk 2550 MHz | util  15%
-  target  12% | delivered     1185 tok/s |   41.6 W | clk 2564 MHz | util  14%
-  target  18% | delivered     1778 tok/s |   48.7 W | clk 2589 MHz | util  12%
-  target  27% | delivered     2667 tok/s |   59.6 W | clk 2609 MHz | util  28%
-  target  38% | delivered     3754 tok/s |   74.9 W | clk 2748 MHz | util  36%
-  target  52% | delivered     5137 tok/s |   92.3 W | clk 2791 MHz | util  47%
-  target  68% | delivered     6718 tok/s |  112.3 W | clk 2775 MHz | util  62%
-  target  85% | delivered     8397 tok/s |  134.1 W | clk 2752 MHz | util  81%
-  target 100% | delivered     9876 tok/s |  145.0 W | clk 2682 MHz | util  94%
-wrote results_rate.csv

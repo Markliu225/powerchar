@@ -1,117 +1,112 @@
-# LLM Inference Power Curves: Prefill vs Decode
+# LLM Inference Power Characterisation — Prefill vs Decode
 
-Real measurements on real hardware of token-throughput and GPU power for the two
-phases of LLM inference, swept from light load to full GPU saturation.
+Real measurements on real hardware of **token throughput vs GPU power** for the
+two phases of LLM inference, plus an **analytic model** validated against the
+data. Everything is reproducible from a single config file.
+
+- **What is measured** — for a *given* model + parameter config, the
+  throughput↔power relationship in **prefill** (prompt ingestion, compute-bound)
+  and **decode** (token generation, memory-bandwidth-bound), swept separately.
+- **The model** — roofline + DVFS derivations in
+  [ANALYTIC_MODEL.md](ANALYTIC_MODEL.md), fitted to the data with R² and MAPE.
+- **The plan** — the step-by-step requirements in [WORKPLAN.md](WORKPLAN.md).
 
 ## Setup (measured, not assumed)
 
 | | |
 |---|---|
-| GPU | NVIDIA GeForce RTX 5060 (Blackwell, sm_120), 8 GB, **145 W** power cap |
-| Driver / CUDA | 580.95.05 / CUDA 13 runtime, torch 2.9.1+cu128 |
-| Model | **Qwen/Qwen2.5-1.5B-Instruct**, fp16 (~3.09 GB weights), SDPA attention |
-| Stack | transformers 5.10.2, Python 3.10 (`ebpf-cupti` conda env) |
-| Telemetry | NVML (`pynvml`) sampled at 50 Hz in a background thread |
+| Model | `Qwen/Qwen2.5-1.5B-Instruct` — 1.544 B params, 28 layers, d=1536, GQA 12q:2kv×128, fp16, SDPA |
+| GPU | NVIDIA GeForce RTX 5060, 8 GB, **149 W** cap (Blackwell sm_120) |
+| Measured peak | **38.1 TFLOP/s** fp16, **372 GB/s** bandwidth → roofline ridge **102 FLOP/byte** |
+| Host | Windows 11, driver 591.86 / CUDA 13.1, PyTorch 2.11+cu128, transformers 5.x |
+| Telemetry | NVML (`pynvml`) sampled at 50 Hz, averaged over the exact timed window |
 
-## Method
+## How to run
 
-- **Prefill** (`bench.run_prefill_point`): repeated full forwards over a
-  `(batch × seq_len)` block with `use_cache=False`, swept by total tokens per
-  forward (64 → 32 768). `logits_to_keep=1` so only the last position is
-  projected to vocab — this matches real prefill (only the first output token's
-  logits are needed) and avoids a `(B, S, 151936)` fp16 logits tensor that OOMs
-  an 8 GB card past ~12 k tokens.
-- **Decode** (`bench.run_decode_point`): manual single-token autoregressive
-  steps reusing a `DynamicCache`, swept by batch size (1 → 256) at a fixed
-  256-token context. The KV cache is seeded in small chunks so setup activations
-  don't spike (lets batch reach 256); only the steady-state single-token steps
-  are timed — `generate()` is deliberately avoided to keep prefill cost out.
-- Each point runs a **sustained ~4 s window** after a 1 s warmup + 0.3 s settle,
-  so power reaches steady state and 200–500 NVML samples are collected.
-  Throughput is computed over the **exact synchronized `[t0, t1]` wall-clock
-  window** that power is averaged over; CUDA events cross-check the timing.
-- OOM points are caught and skipped (they mark the memory ceiling).
-
-The methodology was adversarially reviewed by a 5-agent workflow before running;
-the one material fix it surfaced (the logits-tensor OOM, root-caused over the
-attention-matrix red herring) is applied above.
+```bash
+pip install -r requirements.txt
+python code/model_info.py            # Step 0: model+GPU constants, roofline
+python code/measure.py --phase both  # Steps 1-2: prefill + decode sweeps -> CSVs
+python code/analyze.py --step all    # Steps 1-4: all figures + model fits
+```
 
 ## Results
 
-### Prefill — compute-bound: power saturates immediately, ~45–85 tok/J
-| load (B×S) | throughput (tok/s) | power (W) | util | tok/J |
+### Step 0 — the chip
+![roofline](figures/step0_roofline.png)
+
+Decode (arithmetic intensity ≈ batch) lives left of the ridge → **memory-bound**;
+prefill (intensity ≈ seq_len) lives far right → **compute-bound**.
+
+### Step 1 — Prefill: compute-bound, power pinned at the cap
+![prefill vs load](figures/step1_prefill_vs_load.png)
+
+| load (1×S) | tok/s | power W | util | tok/J |
 |---|---|---|---|---|
-| 1×64    |  5 079 | 113.0 | 87% | 44.9 |
-| 1×512   | 11 208 | 136.5 | 97% | 82.1 |
-| 1×1024  | **11 603** | 137.2 | 77% | **84.6** |
-| 1×8192  |  9 449 | 139.2 | 100% | 67.9 |
-| 4×8192  |  9 440 | **142.2** | 91% | 66.4 |
-| 2×16384 |  8 073 | 140.9 | 92% | 57.3 |
+| 1×64   | 1 877 |  69 | 35 % | 27.0 |
+| 1×256  | 7 115 | 139 | 72 % | 51.2 |
+| **1×512**  | **8 722** | 145 | 89 % | **60.3** |
+| 1×1024 | 7 542 | 145 | 84 % | 51.9 |
+| 1×2048 | 5 535 | 142 | 88 % | 39.1 |
+| 1×4096 | 3 665 | 140 | 98 % | 26.2 |
 
-Power hits ~136 W at just 128 tokens and stays 136–142 W everywhere — prefill is
-compute-bound, so it draws near-cap power regardless of throughput. Throughput
-peaks ~11.6 k tok/s near 1 k tokens, then falls as attention's O(S²) cost grows.
+Throughput is an **inverted-U**: it rises as the sequence fills the 30 SMs
+(occupancy-limited, power climbs 69→145 W), peaks at S≈512, then falls as
+attention's O(S²) cost grows — all while **power stays pinned at ~140 W**. The
+throughput↔power locus is therefore nearly **vertical**: power is fixed by the
+clock ceiling, throughput is set by the workload.
 
-### Decode — memory-bandwidth-bound: power & throughput scale with batch
-| batch | throughput (tok/s) | power (W) | util | tok/J |
+### Step 2 — Decode: memory-bandwidth-bound, power & throughput rise with batch
+![decode vs batch](figures/step2_decode_vs_batch.png)
+
+| batch | tok/s | power W | util | tok/J |
 |---|---|---|---|---|
-| 1   |    83 | 113.6 | 94% | 0.7 |
-| 8   |   642 |  99.1 | 92% | 6.5 |
-| 32  | 1 780 | 122.9 | 95% | 14.5 |
-| 64  | 3 520 | 138.6 | 95% | 25.4 |
-| 96  | 4 122 | **144.8** | 96% | 28.5 |
-| 256 | **5 265** | 145.1 | 98% | **36.3** |
+| 1   |  29 |  70 | 44 % | 0.4 |
+| 8   | 266 |  92 | 65 % | 2.9 |
+| 16  | 469 | 117 | 86 % | 4.0 |
+| 32  | 653 | 130 | 91 % | 5.0 |
+| **48**  | **749** | 135 | 94 % | **5.6** |
 
-Decode power climbs from ~90 W to the 145 W cap by batch ≈ 96; throughput rises
-monotonically to ~5.3 k tok/s. Per-token energy efficiency is **2–60× worse than
-prefill** at comparable points because each step re-reads all weights to emit
-only `batch` tokens — the textbook memory-bandwidth bottleneck. (batch=1 power is
-elevated to ~114 W by max clock-boost on the latency-bound single stream.)
+Each decode step re-reads all 3.09 GB of weights to emit only `batch` tokens —
+the textbook memory bottleneck. Throughput and power both **rise with batch**
+toward the ceiling (a rising diagonal locus). Beyond b≈48 the KV cache exhausts
+the 8 GB VRAM (shared ~1.7 GB with the desktop) and WDDM spills to host memory,
+collapsing throughput — a hard memory wall, documented and excluded.
+
+### Steps 3–4 — analytic model & synthesis
+| | |
+|---|---|
+| ![prefill model](figures/step3_prefill_model.png) | ![decode model](figures/step3_decode_model.png) |
+| ![power model](figures/step3_power_model.png) | ![combined](figures/step4_combined_throughput_vs_power.png) |
+
+| model | form | fit | key result |
+|---|---|---|---|
+| prefill | `tput = 1/(a+b·S)` | **R²=0.996**, MAPE 1.2 % | MFU 78 %; attention doubles cost at S≈1948 |
+| decode | `t_step = t_fixed + β·B` | **R²=0.981**, MAPE 9.2 % | t_fixed 28 ms (~20 ms launch overhead), asymptote 1.5 k tok/s |
+| power | `P = P_idle + A(1−e^{−B/B₀})` | **R²=0.982** | P_idle 54 W → asymptote 139 W |
+
+**Energy:** prefill is **26–60 tok/J** vs decode **0.4–5.6 tok/J** — ~11× more
+efficient per token at best (see `figures/step4_efficiency_comparison.png`).
+
+Full derivations and the measured-vs-theory discussion: [ANALYTIC_MODEL.md](ANALYTIC_MODEL.md).
+
+## Caveats / next experiment
+
+GPU clock-lock and power-limit control need admin on this Windows host (denied),
+so the **DVFS "≈cubic" power law** `P ∝ tput^γ` could not be measured directly —
+it is derived analytically (ANALYTIC_MODEL §5). At the fixed clock ceiling the
+two phases instead trace the vertical (prefill) and diagonal (decode) loci above.
+Measuring the cubic law directly is the natural follow-up on a clock-controllable
+host. Also, no flash/mem-efficient SDPA kernel exists for this sm_120 build, so
+prefill attention is O(S²) in memory and hits the 8 GB wall at S≈5 k.
 
 ## Files
-- `power_sampler.py` — 50 Hz NVML sampler, windowed aggregation
-- `bench.py` — the benchmark (run: `python bench.py --out results`)
-- `plot.py` — generates the three PNGs from the CSVs
-- `results_prefill.csv`, `results_decode.csv` — raw per-point data
-- `curves_throughput_vs_power.png` — the two requested curves
-- `curves_efficiency.png` — log-x comparison + tokens/joule
-- `curves_vs_load.png` — throughput & power vs offered load (clearest view)
-
-Reproduce: `HF_HUB_DISABLE_XET=1 python bench.py && python plot.py`
-
-## Follow-up: capturing the prefill ~cubic law, and the decode law
-
-**Prefill is compute-bound; decode is memory-bandwidth-bound.** To see the
-throughput↔power law you must sweep the *frequency* knob, not the load
-(`freq_sweep_llm.py`, `curves_freq_llm.png`): lock the SM clock across a range
-and measure real token throughput + power on each real workload.
-
-**1. The cubic law lives in CLOCK FREQUENCY** (`clock_sweep.py`,
-`curves_clock_dvfs.png`). Fixed full-occupancy matmul, clock locked: power =
-32 W @600 MHz → 46 @1200 → 68 @1800 → 110 @2400 → 138 @~2600, while compute
-scales *linearly* (8.9→39 TFLOP/s). Fit `P ≈ 28 + k·f^2.1` (steepening to ~f^2.4
-at the top) — the V²·f DVFS law. The card can't sustain >~2600 MHz under load
-(3000 requested → 2601 actual). In the original load sweeps the clock was pinned
-at this ~2.6 GHz ceiling, which is why the cubic was invisible there.
-
-**2. PREFILL: throughput↔power is ~cubic.** Compute-bound, so throughput ∝ clock
-while power ∝ ~f^(2–3); combined: `P = 25 + k·tput^2.05`, **high-end exponent
-≈ 2.5** (1×2048: 2786 tok/s @30 W → 11244 tok/s @129 W). A convex, accelerating
-curve — the approximate cubic.
-
-**3. DECODE: memory-bandwidth-bound.** Each step re-reads all weights to emit a
-few tokens, so throughput is limited by memory bandwidth, not core clock. At
-b=1, raising the SM clock 4.3× lifts throughput only 2.6× (31→80 tok/s,
-sub-linear) while power climbs 38→96 W — i.e. spending clock/power buys little
-throughput. Decode's lever is memory bandwidth (and batching toward the BW
-limit), not the compute clock. *(Note: a high-batch + short-context micro-bench
-can nominally cross the roofline ridge and look compute-bound, but that is an
-artifact of an unrealistically short KV cache and is not representative of
-decode — excluded.)*
-
-**4. Why prefill power looked flat in the load sweep:** the sequence dimension
-gives massive parallelism, so even tiny prefills saturate this 30-SM card's
-occupancy AND it's already at max clock → ~140 W across the range, against the
-145 W ceiling. Nothing can "keep rising" — 145 W is a hard wall. What grows ∝S²
-is FLOPs/**energy** (J), not power (J/s).
-
+```
+code/config.py        all experiment parameters (model, sweeps, timing)
+code/model_info.py    Step 0: arch extraction + peak-FLOP/BW microbench + roofline
+code/measure.py       Steps 1-2: prefill & decode sweeps -> results/*.csv
+code/analyze.py       Steps 1-4: fits + every figure
+code/power_sampler.py 50 Hz NVML sampler with windowed aggregation
+results/              *.csv, model_info.json, fit_summary.json
+figures/              step0..step4 PNGs
+```
