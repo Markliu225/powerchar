@@ -1,178 +1,137 @@
-# Analytic Model: GPU power as a function of token throughput
+# Analytic Model: GPU power as a (single-valued) function of token throughput
 
-The question is **how GPU power `P` relates to token throughput `T`** in each
-phase of inference. This document derives `P(T)` from one principle and validates
-it against the measurements. All machine constants are **measured on this card**
-(Step 0, `results/model_info.json`); fitted parameters and the overlay figures
-come from `code/analyze.py --step 3` (`results/fit_summary.json`,
-`figures/step3_*.png`).
+We want `P(T)` — GPU power as a function of token throughput — for prefill and
+decode. For that to even be a *function*, each throughput must map to **one**
+power. That forces a **controlled experiment**, and dictates the whole model.
 
-## 1. One governing principle
+Machine constants are measured on this card (Step 0, `results/model_info.json`);
+fitted parameters and overlays come from `analyze.py --step 3`
+(`results/fit_summary.json`, `figures/step3_*.png`).
 
-Two equations explain every curve:
+## 1. Why the experiment must be controlled (the fix)
 
-```
-(1)  P = P_static + (P_cap − P_static) · u        power tracks utilisation u ∈ [0,1]
-(2)  T = R / c                                     throughput = bottleneck rate / per-token cost
-```
+Throughput `T` and power `P` are **both outputs** of an operating point. To get a
+single-valued `P(T)` you must sweep **one** control variable `θ` such that `T(θ)`
+is **monotone** — then eliminating `θ` gives a function.
 
-- `u` is how busy the **bottleneck resource** is. Dynamic GPU power is
-  `∝ activity`, so power rises from a static floor toward the cap as `u → 1`.
-- `R` is the **rate of the bottleneck resource**: FLOP/s when compute-bound,
-  byte/s when memory-bandwidth-bound. `u = R / R_peak`.
-- `c` is the **work per token**: FLOPs/token (prefill) or bytes/token (decode).
+A natural-looking choice fails: sweeping **sequence length** `S` for prefill makes
+throughput **non-monotone** — it rises while the GPU fills, then *falls* as
+attention's O(S²) cost grows. The same throughput then occurs at two different
+`S` (a short prompt at low power, a long prompt at the power cap), so `P(T)`
+**folds** — one `T`, two `P`. That is not a relationship; it is a measurement
+error.
 
-The whole result follows from *which variable moves* when you change the knob:
+**The controlled knob is batch (concurrency) at a fixed sequence/context length.**
+With the per-token cost held constant, throughput is monotone in batch, so `P(T)`
+is single-valued. Both phases use it:
 
-| phase | bottleneck | what the knob (seq_len / batch) changes | consequence |
+| phase | fixed | swept (θ) | why monotone |
 |---|---|---|---|
-| **prefill** | compute | `c` grows (attention O(S²)); `R` stays pinned at the roof | `P` fixed, `T` falls → **decoupled** |
-| **decode** | memory BW | `R` grows (more bandwidth used); `c` falls (weights amortised) | `P` and `T` rise together → **coupled** |
+| prefill | prompt length `S = 128` | batch `B = 1…16` | per-token cost fixed; more sequences ⇒ more tok/s until the compute roof |
+| decode | context `ctx = 256` | batch `B = 1…48` | per-token cost fixed; more sequences ⇒ more tok/s until the memory ceiling |
 
-So **prefill** gives a near-horizontal `P(T)` (power independent of throughput),
-**decode** a rising-saturating `P(T)` (you buy throughput with power). The rest of
-the document derives both quantitatively.
+(`S=128` is small enough that one sequence does not saturate the GPU, leaving room
+for the sweep to climb from light load to the ceiling.)
 
-## 2. Notation and measured constants
+## 2. The model
 
-| symbol | meaning | value |
-|---|---|---|
-| `P_tot` / `P_ne` | total / non-embedding params | 1.544 B / 1.310 B |
-| `L, d, h_q, h_kv, d_h` | layers, hidden, q/kv heads, head dim | 28, 1536, 12, 2, 128 |
-| `Φ` (`R_peak`, compute) | peak fp16 matmul rate (measured) | 38.1 TFLOP/s |
-| `β` (`R_peak`, memory) | peak bandwidth (measured) | 372 GB/s |
-| `P_cap` | enforced power cap | 149 W |
-| `C = 2·P_ne` | dense FLOPs/token | 2.62 GFLOP |
-| `W = 2·P_tot` | weight bytes streamed per decode step | 3.09 GB |
-| `k_attn = 2·L·h_q·d_h` | attention FLOP slope (per token, per S) | 86 016 |
+Two laws in the **batch domain**, then composed to eliminate `B`.
 
-`C` excludes the `lm_head`: prefill runs with `logits_to_keep=1`, so it fires only
-on the last position, not per token.
-
-## 3. Decode — coupled `P(T)` (memory-bandwidth-bound)
-
-**Throughput.** Each step streams all weights `W` once (reused across the batch)
-plus per-sequence KV, and on WDDM carries a fixed kernel-launch overhead with no
-CUDA-graph amortisation. The step time is **affine in batch**:
+**(a) Forward/step time is affine in batch** — a fixed per-call cost (kernel
+launch + weight/setup) plus a marginal per-unit cost:
 
 ```
-t_step(B) = t_fixed + β_m · B           t_fixed = W/(β·e) + launch overhead
-T(B) = B / t_step(B)                     → saturates at 1/β_m as B → ∞
+t(B) = t_fixed + β·B
+T(B) = n·B / t(B)        n = tokens added per unit batch  (S for prefill, 1 for decode)
+     →  ceiling  T_max = n/β   as  B → ∞
 ```
 
-**Power.** Raising `B` fills more of each step with active streaming, so the
-bandwidth utilisation `u = R/β` rises and saturates; by eq. (1):
+**(b) Power saturates as concurrency fills the chip.** Dynamic power tracks the
+fraction `u` of the GPU that is busy (`P = P_static + (P_cap−P_static)·u`), and
+`u` rises and saturates with batch:
 
 ```
-P(B) = P_idle + A · (1 − e^{−B/B₀})       A = P_cap-region swing
+P(B) = P_idle + A·(1 − e^{−B/B₀})      → asymptote P_idle + A ≲ P_cap
 ```
 
-**Eliminating `B`** (the knob) between the two laws gives the **power–throughput
-characteristic** `P(T)` directly — a curve that rises from `P_idle` and saturates
-at `P_idle + A` as `T → 1/β_m`. Because both component laws are measured, `P(T)`
-is their composition; no extra fit is needed. This is the decode "buy throughput
-with power" curve.
+**Compose** (a)+(b) over the batch grid → a single-valued, saturating **`P(T)`**:
+power climbs from the light-load draw to ~the cap as throughput climbs to `T_max`.
 
-## 4. Prefill — decoupled `P(T)` (compute-bound)
+## 3. What sets the ceiling `T_max` (the whole difference between the phases)
 
-**Throughput.** A length-`S` prefill costs `S·C` dense FLOPs plus
-`2·L·h_q·d_h·S²` causal-attention FLOPs. Dividing by the achievable compute rate
-`Φ·u` (u = MFU) and by `S`:
+`T_max = n/β` is fixed by the **bottleneck resource**:
 
-```
-            Φ · MFU
-T(S) = ───────────────────        equivalently   1/T = a + b·S
-        C + k_attn · S            a = C/(Φ·MFU),  b = k_attn/(Φ·MFU)
-```
+- **Prefill — compute roof.** Each token does `c = C + k_attn·S` FLOPs
+  (`C = 2·P_ne` dense + attention). The roof is `T_max ≈ Φ·MFU / c`. With
+  `Φ = 38.1 TFLOP/s`, `S = 128` (`c ≈ 2.63 GFLOP`), the ideal (MFU=1) roof is
+  **14.5 k tok/s**; the sweep reaches **11.8 k** (MFU ≈ 74 %).
+- **Decode — memory/overhead limit.** Each step streams all weights `W = 3.09 GB`
+  once and carries a fixed launch overhead, so `t_fixed` dominates and
+  `T_max = 1/β = ` **1.5 k tok/s** — an order of magnitude below prefill, and far
+  below the bandwidth roofline (overhead-limited, no CUDA graphs on WDDM).
 
-Throughput **falls** as `S` grows (the per-token cost `c = C + k_attn·S` grows).
+So both phases give the *same shape* of `P(T)` (rise → saturate at ~cap), but the
+**throughput ceiling differs ~8–14×**. At the same near-cap power, **prefill
+delivers ~14× the tokens/s of decode**, because a prefill token does useful
+compute on weights shared across the whole sequence, whereas a decode step
+reloads every weight to emit only `B` tokens.
 
-**Power.** Here is the crux: the bottleneck **rate** is `R = T · c = Φ · MFU`,
-which is **independent of `S`** — prefill always runs the matmul units at the
-compute roof. By eq. (1), `u ≈ MFU` is fixed, so
+## 4. Energy per token
 
-```
-P ≈ P_static + (P_cap − P_static)·MFU ≈ P_cap      (constant, ⊥ throughput)
-```
+`E = P/T` (J/token). Both phases get *more efficient* as throughput rises
+(concurrency amortises the fixed per-call cost): prefill **43 → 74 tok/J**,
+decode **0.4 → 5.6 tok/J**. Prefill is ~13× more efficient at best — same reason
+as the throughput gap.
 
-Power is **pinned** while throughput sweeps a wide range purely through `c(S)`.
-(At very small `S` the sequence cannot fill the SMs, so `R < Φ·MFU`, `u < 1`, and
-power dips — the *occupancy ramp*. Once `S ≳ 256` the chip is full and power
-locks to the cap.)
+## 5. The deeper "why `P ∝ u`": the DVFS law, and the alternative controlled knob
 
-## 5. Energy per token
-
-`E = P / T` (joules/token) follows immediately:
-
-- **decode** `E(B) = P(B)·t_step(B)/B` — falls as batching amortises the fixed
-  per-step weight read over more tokens (efficiency *improves* with throughput).
-- **prefill** `E(S) ≈ P_cap·(C + k_attn·S)/(Φ·MFU)` — rises with `S` because each
-  token costs more attention FLOPs at fixed power.
-
-Prefill's `E` is far lower than decode's because prefill does useful work on
-*every* token of a long sequence per weight-load, whereas decode reloads all
-weights to emit only `B` tokens.
-
-## 6. Why `P ∝ u`: the DVFS power law (context)
-
-Eq. (1) is linear in `u` only at fixed clock. The deeper law is dynamic CMOS
-power `P = P_static + α·C_load·V²·f`. Over the usable range `V` rises ~linearly
-with clock `f`, so `P ≈ P_static + k·f^γ`, `γ ≈ 2–3`. For a compute-bound load
-`T ∝ f`, giving the convex `P ≈ P_static + k′·T^γ` ("≈cubic") law. **Observing it
-needs clock-locking**, which requires admin rights unavailable on this Windows
-host (clock and power-limit control both return *Insufficient Permissions*). At
-the fixed clock ceiling we instead measure the operating-point loci of §3–4. The
-cubic law is the natural follow-up on a clock-controllable host.
+Eq. (b) is linear in `u` at fixed clock. The underlying law is dynamic CMOS power
+`P = P_static + α·C·V²·f`; with `V ∝ f` over the usable range,
+`P ≈ P_static + k·f^γ` (`γ ≈ 2–3`). For a compute-bound load `T ∝ f`, giving the
+convex `P ≈ P_static + k′·T^γ` ("≈cubic") trade-off. That is the *other* clean
+controlled experiment for `P(T)`: **fix the workload and sweep the clock `f`** —
+both `T` and `P` are monotone in `f`, so it is single-valued by construction.
+It needs clock-locking, which requires admin rights unavailable on this Windows
+host (`nvidia-smi -lgc/-pl` → *Insufficient Permissions*), so we use the batch
+knob instead. The frequency sweep is the natural follow-up on a host where clocks
+can be locked.
 
 ---
 
-## 7. Validation — measured vs model
+## 6. Validation — measured vs model
 
-Numbers from `results/fit_summary.json`; figures `figures/step3_*.png`.
+From `results/fit_summary.json`; overlays `figures/step3_*.png`.
 
-### 7.1 Decode `P(T)` — `figures/step3_decode_model.png`
+### 6.1 Prefill `P(T)` — `figures/step3_prefill_model.png`
+Single-valued; the composed model tracks the points with **MAPE 1.0 %,
+R² = 0.991**.
 
-The composed `P(T)` curve tracks the measured points with **MAPE 3.5 %,
-R² = 0.982**:
+| quantity | value |
+|---|---|
+| power range (measured) | 86 → 146 W (asymptote 145 W ≈ cap) |
+| throughput ceiling `S/β` | 11.8 k tok/s |
+| ideal compute roof `Φ/c` | 14.5 k tok/s (MFU ≈ 74 %) |
+| affine time | `t_fixed = 13.6 ms`, `β = 10.8 ms/batch` |
 
-| quantity | value | meaning |
-|---|---|---|
-| `t_fixed` | 28.3 ms | fixed per-step cost (≈8.3 ms ideal weight-stream + ~20 ms launch overhead) |
-| `β_m` | 0.65 ms/seq | marginal per-sequence cost |
-| throughput asymptote `1/β_m` | 1.53 k tok/s | hard ceiling on this card |
-| `P_idle → P_asymptote` | 54 → 139 W | power floor to near-cap |
-| `B₀` | ~13 | batch scale on which power fills |
+### 6.2 Decode `P(T)` — `figures/step3_decode_model.png`
+Single-valued; **MAPE 3.5 %, R² = 0.982**.
 
-Power rises monotonically with throughput and saturates just under the cap —
-exactly the coupled behaviour eqs. (1)+(2) predict for a memory-bound phase.
+| quantity | value |
+|---|---|
+| power | `P_idle 54 → 139 W` asymptote (≈ cap) |
+| throughput ceiling `1/β` | 1.5 k tok/s |
+| affine step time | `t_fixed = 28.3 ms`, `β = 0.65 ms/seq` |
 
-### 7.2 Prefill `P(T)` — `figures/step3_prefill_model.png`
-
-In the compute-bound regime (`S ≥ 256`) power is **constant at 142 W with only
-1.5 % coefficient of variation**, while throughput spans **3.7 → 8.7 k tok/s (a
-2.4× range)** — power is **decoupled** from throughput, as eq. (1) with fixed
-`u ≈ MFU` predicts. Supporting fits:
-
-| quantity | value | meaning |
-|---|---|---|
-| implied MFU | 78 % | dense matmuls reach 78 % of the 38.1 TFLOP/s peak |
-| compute-bound power | 142 W (±1.5 %) | pinned regardless of throughput |
-| attention doubles cost at | S ≈ 1948 | where `k_attn·S = C` |
-
-The throughput law `1/T = a + b·S` itself fits the post-peak branch at
-**R² = 0.996, MAPE 1.2 %** (it is what sets `T` at fixed power); the sub-256
-occupancy ramp is correctly outside it.
-
-### 7.3 Summary — the power↔throughput relationship
+### 6.3 Summary
 
 | | prefill | decode |
 |---|---|---|
-| bottleneck | compute (rate pinned at roof) | memory bandwidth (rate ramps with batch) |
-| `P(T)` shape | **flat at ~142 W** (decoupled) | **rising→saturating** 54→139 W (coupled) |
-| how to get more tok/s | shorten sequence (less attention) — power unchanged | raise batch — costs more power |
-| best energy efficiency | 26–60 tok/J | 0.4–5.6 tok/J (~11× worse) |
+| controlled sweep | fixed S=128, batch 1–16 | fixed ctx=256, batch 1–48 |
+| `P(T)` shape | rise → saturate at ~145 W | rise → saturate at ~139 W |
+| bottleneck / ceiling | compute roof, **11.8 k tok/s** | memory+overhead, **1.5 k tok/s** |
+| best energy efficiency | 74 tok/J | 5.6 tok/J |
 
-`figures/step4_combined_power_vs_throughput.png` overlays both on one throughput
-axis: decode is the rising curve at low throughput, prefill the flat high-power
-band at high throughput — two qualitatively different power↔throughput laws from
-the same chip, exactly as the model predicts.
+`figures/step4_combined_power_vs_throughput.png` overlays both: two
+single-valued, rising `P(T)` curves on one throughput axis — identical in shape,
+separated by the ~14× throughput ceiling that compute-bound vs memory-bound work
+implies.

@@ -14,7 +14,7 @@ measurements against it.
 | GPU | NVIDIA GeForce RTX 5060, 8 GB, ~149 W enforced cap (Blackwell) |
 | Host | Windows 11, driver 591.86 / CUDA 13.1, PyTorch 2.11+cu128, transformers 5.x |
 | Telemetry | NVML (`pynvml`) sampled at 50 Hz in a background thread |
-| Knob | **offered load** (prefill: total tokens/forward; decode: batch size). GPU clock/power-limit control needs admin on this Windows box and is **not** available, so DVFS is treated analytically, not measured. |
+| Knob | **batch (concurrency)** at a fixed sequence/context length — the controlled variable that makes throughput monotone, so `P(T)` is single-valued. GPU clock/power-limit control needs admin on this Windows box and is **not** available, so the DVFS knob is treated analytically, not measured. |
 
 Everything that defines the experiment lives in [code/config.py](code/config.py);
 the rest of the code is a pure function of it.
@@ -40,35 +40,42 @@ the rest of the code is a pure function of it.
 - Deliverable figure: the **roofline** with prefill (high arithmetic intensity)
   and decode (low arithmetic intensity ≈ batch) regimes placed on it.
 
+Both phases use the SAME **controlled experiment**: fix the sequence/context
+length, sweep **batch (concurrency)**. Holding the per-token cost constant makes
+throughput a *monotone* function of the one swept variable, so `P(T)` is
+single-valued (one throughput → one power). Sweeping sequence length instead
+folds prefill's `P(T)` (throughput is non-monotone in S) — the failure mode this
+design fixes.
+
 ### Step 1 — Prefill characterisation (compute-bound)
 `code/measure.py --phase prefill` → `results/prefill.csv`, then `analyze.py --step 1`
-- Sweep prefill tokens (64 → 4096 at batch 1) at `use_cache=False`.
+- Fixed prompt length **S=128**, sweep batch **1 → 16**, `use_cache=False`.
 - Figures (x-axis = **token throughput, tok/s**): **power vs throughput**,
   efficiency (tok/J) vs throughput.
-- Expected: once the GPU saturates, power pins at ~cap while throughput varies
-  with attention O(S²) → **power decoupled from throughput**.
+- Expected: power rises with throughput toward the **compute roof** (~12 k tok/s).
 
 ### Step 2 — Decode characterisation (memory-bandwidth-bound)
 `code/measure.py --phase decode` → `results/decode.csv`, then `analyze.py --step 2`
-- Sweep batch size (1 → 256) at fixed 256-token context, steady-state single-token steps.
+- Fixed context **ctx=256**, sweep batch **1 → 48** (steady-state single-token steps).
 - Figures (x-axis = **token throughput, tok/s**): **power vs throughput**,
   efficiency (tok/J) vs throughput.
-- Expected: power and throughput **rise together** with batch (coupled), toward
-  the bandwidth/power ceiling.
+- Expected: power rises with throughput toward the **memory/overhead ceiling**
+  (~1.5 k tok/s) — ~14× lower than prefill.
 
 ### Step 3 — Analytic model `P(T)` & validation
 [ANALYTIC_MODEL.md](ANALYTIC_MODEL.md) + `analyze.py --step 3` → `results/fit_summary.json`
 and `figures/step3_*.png`
-- Derive **power as a function of throughput** from one principle:
-  `P = P_static + (P_cap−P_static)·u` and `T = R/c`. Decode: R ramps with batch →
-  coupled `P(T)`. Prefill: R pinned at the compute roof → flat `P(T)`, T set by
-  the per-token cost `c(S) = C + k_attn·S`. Plus the DVFS context law.
-- Overlay each `P(T)` model on the measured points; report MAPE / R², MFU,
-  power CV, and the throughput asymptote.
+- Compose two measured batch-domain laws into a single-valued `P(T)`: affine step
+  time `t(B)=t_fixed+β·B` (→ throughput ceiling `n/β`) and saturating power
+  `P(B)=P_idle+A(1−e^{−B/B₀})`. The ceiling is set by the bottleneck — compute
+  roof `Φ·MFU/c` (prefill) vs memory/overhead `1/β` (decode).
+- Overlay each `P(T)` model on the measured points; report MAPE / R², MFU, and
+  the throughput ceiling.
 
 ### Step 4 — Synthesis
 `analyze.py --step 4` → `figures/step4_*.png` + README results table
-- Both phases on **one power-vs-throughput axis** (the coupled vs decoupled laws).
+- Both phases on **one power-vs-throughput axis** (same rising shape, ~14×
+  different throughput ceiling).
 - Energy efficiency (tok/J) vs throughput, quantifying why prefill is far cheaper
   per token than decode.
 

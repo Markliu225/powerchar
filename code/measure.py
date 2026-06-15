@@ -177,8 +177,9 @@ def main():
 
     if args.phase in ("prefill", "both"):
         rows = []
-        print("\n=== PREFILL SWEEP (compute-bound; swept by total tokens) ===", flush=True)
-        for (b, s) in C.PREFILL_GRID:
+        s = C.PREFILL_SEQ_LEN
+        print(f"\n=== PREFILL SWEEP (controlled: fixed S={s}, swept batch) ===", flush=True)
+        for b in C.PREFILL_BATCHES:
             free()
             try:
                 r = run_prefill_point(model, sampler, b, s, vocab)

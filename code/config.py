@@ -26,22 +26,24 @@ MEASURE_S = 4.0                # sustained timed window (power averaged over it)
 SAMPLE_INTERVAL_S = 0.02       # NVML telemetry period -> 50 Hz
 
 # ---------------------------------------------------------------------------
-# PREFILL sweep: one full forward over (batch x seq_len) tokens, no KV cache.
-# Compute-bound. We sweep the *offered load* (sequence length at batch=1) so the
-# x-axis is a clean monotone "offered tokens". logits_to_keep=1 keeps only the
-# last position's logits (real prefill only needs the first output token).
+# PREFILL sweep -- CONTROLLED EXPERIMENT.
+# We hold the prompt length S FIXED and sweep only the batch (concurrency). With
+# the per-token cost fixed, throughput is a MONOTONE function of the single swept
+# variable (batch), so the power-vs-throughput relation is single-valued -- no
+# fold. (Sweeping S instead makes throughput non-monotone: it rises, then falls
+# as attention's O(S^2) cost grows, so the same throughput maps to two different
+# power points. That is why we fix S.) One full forward over (batch x S) tokens,
+# use_cache=False, logits_to_keep=1.
 #
-# Ceiling note: this Blackwell sm_120 + torch build has NO flash / mem-efficient
-# SDPA kernel ("No available kernel"), so attention runs the math path with
-# O(S^2) activation memory. Peak memory hits the 8 GB wall at S ~= 5k (S=4096 ->
-# 5.1 GB fits; S=8192 -> 11 GB spills to host over WDDM and collapses). We keep
-# the sweep inside the regime that fits in VRAM; the wall itself is documented.
+# S=128 is chosen so a single sequence does NOT yet saturate the GPU (batch=1 is
+# ~46% util), leaving room for the batch sweep to climb from light load to the
+# compute/power ceiling. Longer prompts saturate at batch=1 and leave no range.
 # ---------------------------------------------------------------------------
-PREFILL_GRID = [
-    (1, 64), (1, 96), (1, 128), (1, 192), (1, 256), (1, 384), (1, 512),
-    (1, 640), (1, 768), (1, 1024), (1, 1280), (1, 1536), (1, 2048),
-    (1, 2560), (1, 3072), (1, 3584), (1, 4096),
-]
+PREFILL_SEQ_LEN = 128
+# Up to the compute-roof saturation (batch 16); throughput is strictly monotone
+# over this range so P(T) is single-valued. Past ~16 throughput plateaus at the
+# roof (~10.7k tok/s) and adds no range, so we stop there.
+PREFILL_BATCHES = [1, 2, 3, 4, 5, 6, 8, 10, 12, 14, 16]
 
 # ---------------------------------------------------------------------------
 # DECODE sweep: single-token autoregressive steps reusing a KV cache, swept by

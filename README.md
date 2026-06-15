@@ -38,57 +38,60 @@ python code/analyze.py --step all    # Steps 1-4: all figures + model fits
 Decode (arithmetic intensity ≈ batch) lives left of the ridge → **memory-bound**;
 prefill (intensity ≈ seq_len) lives far right → **compute-bound**.
 
-The relationship is read off **power (W) vs token throughput (tok/s)** — and it
-is qualitatively different in the two phases.
+**Controlled experiment.** `P(T)` is only single-valued if throughput is a
+*monotone* function of the one swept variable. So we **fix the sequence/context
+length and sweep batch (concurrency)** — holding the per-token cost constant
+makes throughput rise monotonically toward a ceiling. (Sweeping sequence length
+instead makes prefill throughput non-monotone — it rises then falls with
+attention O(S²) — folding `P(T)` into one-x-two-y; that is the mistake this
+design avoids.)
 
-### Step 1 — Prefill: power DECOUPLED from throughput (compute-bound)
+### Step 1 — Prefill (fixed S=128, sweep batch)
 ![prefill power vs throughput](figures/step1_prefill_power_vs_throughput.png)
 
-Once the sequence fills the GPU (S ≳ 256), **power locks to ~142 W (±1.5 %) while
-throughput sweeps 3.7 → 8.7 k tok/s** — a 2.4× throughput range at constant
-power. The matmul units run pinned at the compute roof, so power can't move;
-throughput is set entirely by the per-token attention cost (O(S²)). You change
-throughput by changing the sequence, **not** by spending more power.
+Power rises with throughput **86 → 146 W as throughput climbs 3.7 → 10.7 k tok/s**
+and saturates at the **compute roof** (~11.8 k tok/s). Single-valued.
 
-### Step 2 — Decode: power COUPLED to throughput (memory-bandwidth-bound)
+### Step 2 — Decode (fixed ctx=256, sweep batch)
 ![decode power vs throughput](figures/step2_decode_power_vs_throughput.png)
 
-Power and throughput **rise together** with batch, 70 W/29 tok/s → 135 W/749
-tok/s: each step re-reads all 3.09 GB of weights to emit only `batch` tokens, so
-raising throughput means raising bandwidth utilisation, which costs power. Beyond
-b≈48 the KV cache exhausts the 8 GB VRAM (shared ~1.7 GB with the desktop) and
-WDDM spills to host, collapsing throughput — a hard wall, documented and excluded.
+Power rises with throughput **63 → 135 W as throughput climbs 29 → 749 tok/s**,
+saturating at the **memory/overhead ceiling** (~1.5 k tok/s) — ~14× lower than
+prefill, because each step re-reads all 3.09 GB of weights to emit only `batch`
+tokens. Beyond b≈48 the KV cache exhausts the 8 GB VRAM (shared ~1.7 GB with the
+desktop) and WDDM spills to host — a hard wall, documented and excluded.
 
 ### Steps 3–4 — analytic model `P(T)` & synthesis
 | | |
 |---|---|
-| ![decode model](figures/step3_decode_model.png) | ![prefill model](figures/step3_prefill_model.png) |
+| ![prefill model](figures/step3_prefill_model.png) | ![decode model](figures/step3_decode_model.png) |
 
-Both follow from one principle — `P = P_static + (P_cap−P_static)·u` and
-`T = R/c` (utilisation-driven power, throughput = bottleneck-rate ÷ per-token
-cost):
+Both `P(T)` come from composing two measured batch-domain laws — affine step time
+`t(B)=t_fixed+β·B` (→ throughput `T(B)=n·B/t(B)`, ceiling `n/β`) and saturating
+power `P(B)=P_idle+A(1−e^{−B/B₀})`:
 
-| phase | `P(T)` model | fit | key result |
+| phase | bottleneck / ceiling | fit | power range |
 |---|---|---|---|
-| decode | `P(T)` = compose `T=B/(t_fixed+β·B)` with `P=P_idle+A(1−e^{−B/B₀})` | **R²=0.982**, MAPE 3.5 % | coupled; 54→139 W, asymptote 1.5 k tok/s |
-| prefill | `P ≈ P_cap` (R pinned at roof); `1/T = a+b·S` sets T | power **CV 1.5 %**; T-law R²=0.996 | decoupled; 142 W ⊥ throughput, MFU 78 % |
+| prefill | compute roof, **11.8 k tok/s** (MFU 74 %) | **R²=0.991**, MAPE 1.0 % | 86→146 W |
+| decode | memory+overhead, **1.5 k tok/s** | **R²=0.982**, MAPE 3.5 % | 54→139 W |
 
 ![combined](figures/step4_combined_power_vs_throughput.png)
 
-**Energy:** prefill **26–60 tok/J** vs decode **0.4–5.6 tok/J** — ~11× more
-efficient per token at best (`figures/step4_combined_efficiency_vs_throughput.png`).
+Same shape, ceilings ~14× apart: **at the same near-cap power, prefill delivers
+~14× the tokens/s of decode.** Energy: prefill **43–74 tok/J** vs decode
+**0.4–5.6 tok/J** (~13× at best, `figures/step4_combined_efficiency_vs_throughput.png`).
 
-Full derivations and the measured-vs-theory discussion: [ANALYTIC_MODEL.md](ANALYTIC_MODEL.md).
+Full derivations: [ANALYTIC_MODEL.md](ANALYTIC_MODEL.md).
 
 ## Caveats / next experiment
 
-GPU clock-lock and power-limit control need admin on this Windows host (denied),
-so the **DVFS "≈cubic" power law** `P ∝ tput^γ` could not be measured directly —
-it is derived analytically (ANALYTIC_MODEL §5). At the fixed clock ceiling the
-two phases instead trace the vertical (prefill) and diagonal (decode) loci above.
-Measuring the cubic law directly is the natural follow-up on a clock-controllable
-host. Also, no flash/mem-efficient SDPA kernel exists for this sm_120 build, so
-prefill attention is O(S²) in memory and hits the 8 GB wall at S≈5 k.
+The other clean way to trace `P(T)` is **fix the workload and sweep the clock**
+(DVFS) — but clock-lock and power-limit control need admin on this Windows host
+(`nvidia-smi -lgc/-pl` → *Insufficient Permissions*), so we use the batch knob.
+The DVFS "≈cubic" `P ∝ T^γ` law is derived analytically (ANALYTIC_MODEL §5) and
+is the natural follow-up on a clock-controllable host. Also, no flash/mem-efficient
+SDPA kernel exists for this sm_120 build, so prefill attention is O(S²) in memory
+and hits the 8 GB wall at S≈5 k (hence the small fixed S=128 for the batch sweep).
 
 ## Files
 ```
