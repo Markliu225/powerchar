@@ -312,11 +312,61 @@ def step4():
           f"similar power. best tok/J prefill {pj:.0f} vs decode {dj:.1f} ({pj/dj:.0f}×)")
 
 
+def fit_power_law(T, P):
+    """P = P0 + k*T^γ ; grid P0, linear-LS on log(P-P0) vs log T -> (P0, k, γ)."""
+    best = None
+    for P0 in np.linspace(0, P.min() * 0.98, 200):
+        y = np.log(P - P0); x = np.log(T)
+        (a, g), *_ = np.linalg.lstsq(np.c_[np.ones_like(x), x], y, rcond=None)
+        pred = P0 + np.exp(a) * T ** g
+        resid = np.sum((pred - P) ** 2)
+        if best is None or resid < best[0]:
+            best = (resid, P0, float(np.exp(a)), float(g), r2(P, pred))
+    _, P0, k, g, rr = best
+    return P0, k, g, rr
+
+
+def step_dvfs():
+    """The ≈cubic DVFS law: fixed workload, swept CLOCK. P ≈ P0 + k*T^γ."""
+    path = os.path.join(C.RESULTS_DIR, "dvfs.csv")
+    if not os.path.exists(path):
+        print("[dvfs] results/dvfs.csv not found. Run (elevated): python code/measure_dvfs.py")
+        return
+    rows = load_csv("dvfs.csv")
+    info = load_info(); cap = info["power_cap_w"]
+    fig, ax = plt.subplots(figsize=(9, 6))
+    fits = {}
+    for wl, color in (("prefill", "C1"), ("decode", "C0")):
+        r = sorted([x for x in rows if x["workload"] == wl], key=lambda x: x["throughput_tok_s"])
+        if not r:
+            continue
+        T = col(r, "throughput_tok_s"); P = col(r, "power_avg_w")
+        P0, k, g, rr = fit_power_law(T, P)
+        fits[wl] = {"P0_w": P0, "k": k, "gamma": g, "r2": rr,
+                    "clk_mhz": [int(min(col(r, "act_clk_mhz"))), int(max(col(r, "act_clk_mhz")))]}
+        Tg = np.linspace(T.min(), T.max(), 200)
+        ax.scatter(T / 1e3, P, color=color, s=80, zorder=5, label=f"{wl} (measured)")
+        ax.plot(Tg / 1e3, P0 + k * Tg ** g, "-", color=color,
+                label=f"{wl}: P≈{P0:.0f}+k·T^{g:.2f}  (R²={rr:.3f})")
+    ax.axhline(cap, color="r", ls="--", alpha=.5, label=f"cap {cap:.0f} W")
+    ax.set_xlabel("token throughput (k tok/s)"); ax.set_ylabel("GPU power (W)")
+    ax.set_title("DVFS sweep (fixed workload, swept CLOCK): the ≈cubic P(T) law\n"
+                 "prefill compute-bound → convex/super-linear; decode memory-bound → flat-ish")
+    ax.legend(loc="upper left", fontsize=9); ax.grid(alpha=.3); fig.tight_layout()
+    fig.savefig(f"{FIG}/step5_dvfs_cubic.png", dpi=130)
+    print(f"wrote {FIG}/step5_dvfs_cubic.png")
+    with open(os.path.join(C.RESULTS_DIR, "dvfs_fit.json"), "w") as f:
+        json.dump(fits, f, indent=2)
+    for wl, fdat in fits.items():
+        print(f"[dvfs] {wl}: P ≈ {fdat['P0_w']:.0f} + k·T^{fdat['gamma']:.2f}  "
+              f"(clock {fdat['clk_mhz'][0]}–{fdat['clk_mhz'][1]} MHz, R²={fdat['r2']:.3f})")
+
+
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--step", default="all")
     args = ap.parse_args()
     steps = {"1": [step1], "2": [step2], "3": [step3], "4": [step4],
-             "all": [step1, step2, step3, step4]}[args.step]
+             "dvfs": [step_dvfs], "all": [step1, step2, step3, step4]}[args.step]
     for fn in steps:
         fn()
 

@@ -83,23 +83,34 @@ Same shape, ceilings ~14× apart: **at the same near-cap power, prefill delivers
 
 Full derivations: [ANALYTIC_MODEL.md](ANALYTIC_MODEL.md).
 
-## Caveats / next experiment
+## The ≈cubic DVFS law (different knob) — `code/measure_dvfs.py`
 
-The other clean way to trace `P(T)` is **fix the workload and sweep the clock**
-(DVFS) — but clock-lock and power-limit control need admin on this Windows host
-(`nvidia-smi -lgc/-pl` → *Insufficient Permissions*), so we use the batch knob.
-The DVFS "≈cubic" `P ∝ T^γ` law is derived analytically (ANALYTIC_MODEL §5) and
-is the natural follow-up on a clock-controllable host. Also, no flash/mem-efficient
-SDPA kernel exists for this sm_120 build, so prefill attention is O(S²) in memory
-and hits the 8 GB wall at S≈5 k (hence the small fixed S=128 for the batch sweep).
+A common expectation is prefill power growing ~**cubically** with throughput.
+That holds for the **frequency** knob, not the **concurrency** knob we sweep
+here. Raising throughput via clock gives `T ∝ f` and `P ≈ P_static + k·f^γ`
+(γ≈2–3, voltage rises with clock) ⇒ `P ∝ T^γ`. Raising it via batch at a *fixed*
+clock (our sweep — the SM clock stayed ~2700–2840 MHz and even dropped slightly)
+just activates more units, so power rises ~linearly then caps. See
+[ANALYTIC_MODEL.md](ANALYTIC_MODEL.md) §5.
+
+To measure the cubic directly, `code/measure_dvfs.py` pins one workload and
+sweeps the SM clock 600→2700 MHz; `analyze.py --step dvfs` fits `P ≈ P₀+k·T^γ`
+and plots it. It needs clock-lock permission — run it in an **Administrator**
+PowerShell (Windows) or with sudo (Linux); without it NVML returns *Insufficient
+Permissions* and the script exits cleanly.
+
+Other note: no flash/mem-efficient SDPA kernel exists for this sm_120 build, so
+prefill attention is O(S²) in memory and hits the 8 GB wall at S≈5 k (hence the
+small fixed S=128 for the batch sweep).
 
 ## Files
 ```
 code/config.py        all experiment parameters (model, sweeps, timing)
 code/model_info.py    Step 0: arch extraction + peak-FLOP/BW microbench + roofline
-code/measure.py       Steps 1-2: prefill & decode sweeps -> results/*.csv
-code/analyze.py       Steps 1-4: fits + every figure
+code/measure.py       Steps 1-2: prefill & decode batch sweeps -> results/*.csv
+code/measure_dvfs.py  DVFS clock sweep for the ≈cubic law (needs admin)
+code/analyze.py       Steps 1-4 + --step dvfs: fits + every figure
 code/power_sampler.py 50 Hz NVML sampler with windowed aggregation
 results/              *.csv, model_info.json, fit_summary.json
-figures/              step0..step4 PNGs
+figures/              step0..step4 PNGs (+ step5_dvfs_cubic if DVFS run)
 ```

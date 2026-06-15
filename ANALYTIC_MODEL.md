@@ -83,18 +83,34 @@ reloads every weight to emit only `B` tokens.
 decode **0.4 → 5.6 tok/J**. Prefill is ~13× more efficient at best — same reason
 as the throughput gap.
 
-## 5. The deeper "why `P ∝ u`": the DVFS law, and the alternative controlled knob
+## 5. Two different knobs — and only one gives the ≈cubic law
 
-Eq. (b) is linear in `u` at fixed clock. The underlying law is dynamic CMOS power
-`P = P_static + α·C·V²·f`; with `V ∝ f` over the usable range,
-`P ≈ P_static + k·f^γ` (`γ ≈ 2–3`). For a compute-bound load `T ∝ f`, giving the
-convex `P ≈ P_static + k′·T^γ` ("≈cubic") trade-off. That is the *other* clean
-controlled experiment for `P(T)`: **fix the workload and sweep the clock `f`** —
-both `T` and `P` are monotone in `f`, so it is single-valued by construction.
-It needs clock-locking, which requires admin rights unavailable on this Windows
-host (`nvidia-smi -lgc/-pl` → *Insufficient Permissions*), so we use the batch
-knob instead. The frequency sweep is the natural follow-up on a host where clocks
-can be locked.
+A natural expectation is that prefill should show **`P ∝ T³`** (power growing
+~cubically with throughput). That is true — but only for the *frequency* knob,
+not the *concurrency* knob. The two experiments raise throughput by different
+physical means:
+
+| knob (how T rises) | mechanism | clock | `P(T)` |
+|---|---|---|---|
+| **frequency `f`** (DVFS, §below) | each core runs faster, `P_dyn = C·V²·f`, `V ∝ f` | rises | **`P ≈ P_static + k·T^γ`, γ ≈ 2–3** (≈cubic) |
+| **concurrency `B`** (this study) | more cores active, clock pinned at the boost ceiling | ~constant | **`P` ≈ linear in T, then saturates at the cap** |
+
+The cubic law lives in `f`: `T ∝ f` (compute-bound) and `P ≈ P_static + k·f^γ`
+(`γ ≈ 2–3` because core voltage must rise with clock) ⇒ `P ∝ T^γ`. Our batch
+sweep instead holds the clock fixed and fills idle units, so adding throughput
+adds a *proportional* number of switching units → power rises ~linearly, then
+hits the cap. The measured clock confirms this: across the prefill sweep the SM
+clock sat at ~2700–2840 MHz and even *dropped* slightly as batch rose (2840 →
+2699 MHz while throughput went 3.7 → 10.7 k tok/s), so the throughput gain was
+pure occupancy, not frequency — the cubic law cannot appear.
+
+**To measure the cubic law directly**, run the DVFS sweep
+(`code/measure_dvfs.py`): it pins one workload and sweeps the SM clock
+600 → 2700 MHz, so `T ∝ f` and `P` should trace the convex `P ≈ P_static + k·T^γ`
+curve (fit + figure via `analyze.py --step dvfs` → `figures/step5_dvfs_cubic.png`).
+It needs clock-lock permission — an **Administrator** shell on Windows
+(`nvmlDeviceSetGpuLockedClocks` → *Insufficient Permissions* otherwise), or sudo
+on Linux. That is the natural follow-up experiment to see the cubic directly.
 
 ---
 
