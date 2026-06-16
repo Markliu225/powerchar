@@ -175,36 +175,45 @@ def main():
     sampler.start()
     print(f"GPU {sampler.name}  enforced cap {sampler.power_limit_w:.0f} W", flush=True)
 
+    per_pt = C.WARMUP_S + C.SETTLE_S + C.MEASURE_S
     if args.phase in ("prefill", "both"):
         rows = []
         s = C.PREFILL_SEQ_LEN
+        n = len(C.PREFILL_BATCHES)
         print(f"\n=== PREFILL SWEEP (controlled: fixed S={s}, swept batch) ===", flush=True)
-        for b in C.PREFILL_BATCHES:
+        t_phase = time.perf_counter()
+        for i, b in enumerate(C.PREFILL_BATCHES, 1):
             free()
+            print(f"  [{i:>2}/{n}] > prefill b={b} s={s}  "
+                  f"(~{per_pt:.0f}s/pt, elapsed {time.perf_counter()-t_phase:>3.0f}s)", flush=True)
             try:
                 r = run_prefill_point(model, sampler, b, s, vocab)
                 rows.append(r)
-                print(f"  b={b:>3} s={s:>6} | {r['throughput_tok_s']:>10.0f} tok/s | "
+                print(f"  [{i:>2}/{n}] = b={b:>3} s={s:>6} | {r['throughput_tok_s']:>10.0f} tok/s | "
                       f"{r.get('power_avg_w',0):>6.1f} W | util {r.get('util_gpu_avg',0):>4.0f}% | "
                       f"sm {r.get('sm_clk_avg',0):>4.0f}MHz | {r['tok_per_joule']:>6.1f} tok/J", flush=True)
             except torch.cuda.OutOfMemoryError:
-                print(f"  b={b} s={s} -> OOM (memory ceiling), skipped", flush=True)
+                print(f"  [{i:>2}/{n}] b={b} s={s} -> OOM (memory ceiling), skipped", flush=True)
                 free()
         write_csv(rows, os.path.join(C.RESULTS_DIR, "prefill.csv"))
 
     if args.phase in ("decode", "both"):
         rows = []
+        n = len(C.DECODE_BATCHES)
         print("\n=== DECODE SWEEP (memory-bandwidth-bound; swept by batch) ===", flush=True)
-        for b in C.DECODE_BATCHES:
+        t_phase = time.perf_counter()
+        for i, b in enumerate(C.DECODE_BATCHES, 1):
             free()
+            print(f"  [{i:>2}/{n}] > decode b={b} ctx={C.DECODE_CTX}  "
+                  f"(~{per_pt:.0f}s/pt, elapsed {time.perf_counter()-t_phase:>3.0f}s)", flush=True)
             try:
                 r = run_decode_point(model, sampler, b, C.DECODE_CTX, vocab)
                 rows.append(r)
-                print(f"  b={b:>3} ctx={C.DECODE_CTX} | {r['throughput_tok_s']:>10.0f} tok/s | "
+                print(f"  [{i:>2}/{n}] = b={b:>3} ctx={C.DECODE_CTX} | {r['throughput_tok_s']:>10.0f} tok/s | "
                       f"{r.get('power_avg_w',0):>6.1f} W | util {r.get('util_gpu_avg',0):>4.0f}% | "
                       f"sm {r.get('sm_clk_avg',0):>4.0f}MHz | {r['tok_per_joule']:>6.1f} tok/J", flush=True)
             except torch.cuda.OutOfMemoryError:
-                print(f"  b={b} -> OOM (memory ceiling), skipped", flush=True)
+                print(f"  [{i:>2}/{n}] b={b} -> OOM (memory ceiling), skipped", flush=True)
                 free()
         write_csv(rows, os.path.join(C.RESULTS_DIR, "decode.csv"))
 

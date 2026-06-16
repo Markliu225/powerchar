@@ -12,7 +12,7 @@ import torch
 # ---------------------------------------------------------------------------
 # Model under test (the "given LLM inference model + parameter configuration")
 # ---------------------------------------------------------------------------
-MODEL_ID = "Qwen/Qwen2.5-1.5B-Instruct"
+MODEL_ID = "microsoft/Phi-3-mini-4k-instruct"   # re-test on a NEW model (3.8B, Phi-3 family, MHA)
 DTYPE = torch.float16          # weights + activations
 DEVICE = "cuda"
 ATTN_IMPL = "sdpa"             # scaled-dot-product attention (PyTorch fused)
@@ -43,7 +43,9 @@ PREFILL_SEQ_LEN = 128
 # Up to the compute-roof saturation (batch 16); throughput is strictly monotone
 # over this range so P(T) is single-valued. Past ~16 throughput plateaus at the
 # roof (~10.7k tok/s) and adds no range, so we stop there.
-PREFILL_BATCHES = [1, 2, 3, 4, 5, 6, 8, 10, 12, 14, 16]
+# V100 32 GB + 3.8B model: extend the batch range so the sweep climbs from light
+# load all the way to the compute roof (saturation comes higher than on the 5060).
+PREFILL_BATCHES = [1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64]
 
 # ---------------------------------------------------------------------------
 # DECODE sweep: single-token autoregressive steps reusing a KV cache, swept by
@@ -56,8 +58,11 @@ PREFILL_BATCHES = [1, 2, 3, 4, 5, 6, 8, 10, 12, 14, 16]
 # usable) weights + KV exhaust VRAM near b~80, beyond which WDDM spills to host
 # over PCIe and throughput collapses. Those points are kept to document the wall
 # but excluded from the bandwidth fit (analyze.py marks them automatically).
-DECODE_BATCHES = [1, 2, 3, 4, 6, 8, 12, 16, 20, 24, 32, 40, 48, 56, 64,
-                  96, 160, 256]
+# Phi-3-mini uses full MHA (32 KV heads) -> a large KV cache, so even on this
+# 32 GB V100 weights + KV exhaust VRAM in the b~50-70 range; OOM points are
+# caught/skipped and mark the memory wall. Dense coverage of the clean
+# memory-bound regime below that.
+DECODE_BATCHES = [1, 2, 3, 4, 6, 8, 12, 16, 20, 24, 32, 40, 48, 56, 64, 80]
 DECODE_CTX = 256               # fixed KV context length per sequence
 DECODE_SEED_CHUNK = 32         # seed the KV cache in chunks so high batch fits
 
