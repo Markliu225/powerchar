@@ -104,13 +104,26 @@ clock sat at ~2700–2840 MHz and even *dropped* slightly as batch rose (2840 �
 2699 MHz while throughput went 3.7 → 10.7 k tok/s), so the throughput gain was
 pure occupancy, not frequency — the cubic law cannot appear.
 
-**To measure the cubic law directly**, run the DVFS sweep
-(`code/measure_dvfs.py`): it pins one workload and sweeps the SM clock
-600 → 2700 MHz, so `T ∝ f` and `P` should trace the convex `P ≈ P_static + k·T^γ`
-curve (fit + figure via `analyze.py --step dvfs` → `figures/step5_dvfs_cubic.png`).
-It needs clock-lock permission — an **Administrator** shell on Windows
-(`nvmlDeviceSetGpuLockedClocks` → *Insufficient Permissions* otherwise), or sudo
-on Linux. That is the natural follow-up experiment to see the cubic directly.
+**Measured (DVFS sweep, `code/measure_dvfs.py` run elevated, clock 600→2687 MHz,
+`figures/step5_dvfs_cubic.png`):**
+
+| workload | T vs clock | P vs throughput | range |
+|---|---|---|---|
+| **prefill** (S=512, B=4) | `T ∝ f^0.91` (≈linear, compute-bound) | **`P ≈ 31 + k·T^2.94`, R²=0.989** | 2.2→8.6 k tok/s, 32→125 W |
+| **decode** (B=16) | `T ∝ f^0.50` (sub-linear, memory-bound) | T compressed → steep `T^4.5` | 0.24→0.48 k tok/s, 36→88 W |
+
+So the **prefill power–throughput law is `P ∝ T^2.94` — the ≈cubic law, confirmed
+directly** (γ ≈ 3, R² = 0.989). The mechanism is in the left panel: prefill
+throughput scales with clock (`T ∝ f`), so the `V²·f` dynamic-power law in `f`
+becomes a cubic in `T`. Decode throughput barely responds to clock (`T ∝ f^0.5`),
+so raising the clock spends power for almost no throughput — the wrong knob for a
+memory-bound phase (its large fitted exponent is an artefact of `T` being nearly
+constant, not extra "cubicness").
+
+This is the same prefill GPU as the batch sweep (§3), measured two ways: vary the
+**clock** → power is ≈cubic in throughput; vary the **batch** at fixed clock →
+power is ≈linear-then-saturating in throughput. Both are correct — they are
+different knobs.
 
 ---
 

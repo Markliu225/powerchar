@@ -326,40 +326,61 @@ def fit_power_law(T, P):
     return P0, k, g, rr
 
 
+def _powfit(x, y):
+    """y = c * x^a (pure power law); returns (c, a, r2) via log-log LS."""
+    (b, a), *_ = np.linalg.lstsq(np.c_[np.ones_like(x), np.log(x)], np.log(y), rcond=None)
+    pred = np.exp(b) * x ** a
+    return float(np.exp(b)), float(a), r2(y, pred)
+
+
 def step_dvfs():
-    """The ≈cubic DVFS law: fixed workload, swept CLOCK. P ≈ P0 + k*T^γ."""
+    """The ≈cubic DVFS law: fixed workload, swept CLOCK frequency.
+    Mechanism: T ∝ f^α (α≈1 compute-bound, α<1 memory-bound); P ≈ P0 + k·f^~2.5.
+    Eliminating f -> P ≈ P0 + k'·T^γ : prefill γ≈3 (cubic), decode T barely moves."""
     path = os.path.join(C.RESULTS_DIR, "dvfs.csv")
     if not os.path.exists(path):
         print("[dvfs] results/dvfs.csv not found. Run (elevated): python code/measure_dvfs.py")
         return
     rows = load_csv("dvfs.csv")
     info = load_info(); cap = info["power_cap_w"]
-    fig, ax = plt.subplots(figsize=(9, 6))
     fits = {}
+    fig, (axL, axR) = plt.subplots(1, 2, figsize=(14, 6))
     for wl, color in (("prefill", "C1"), ("decode", "C0")):
-        r = sorted([x for x in rows if x["workload"] == wl], key=lambda x: x["throughput_tok_s"])
+        r = sorted([x for x in rows if x["workload"] == wl], key=lambda x: x["act_clk_mhz"])
         if not r:
             continue
-        T = col(r, "throughput_tok_s"); P = col(r, "power_avg_w")
-        P0, k, g, rr = fit_power_law(T, P)
-        fits[wl] = {"P0_w": P0, "k": k, "gamma": g, "r2": rr,
-                    "clk_mhz": [int(min(col(r, "act_clk_mhz"))), int(max(col(r, "act_clk_mhz")))]}
+        f = col(r, "act_clk_mhz"); T = col(r, "throughput_tok_s"); P = col(r, "power_avg_w")
+        _, alpha, ra = _powfit(f, T)                 # T ∝ f^alpha
+        P0, k, g, rr = fit_power_law(T, P)           # P = P0 + k T^gamma
+        fits[wl] = {"clk_mhz": [int(f.min()), int(f.max())],
+                    "T_vs_f_exponent": alpha, "T_vs_f_r2": ra,
+                    "P0_w": P0, "gamma_P_vs_T": g, "P_vs_T_r2": rr,
+                    "T_range_tok_s": [float(T.min()), float(T.max())],
+                    "P_range_w": [float(P.min()), float(P.max())]}
+        # left: throughput vs clock (the mechanism)
+        axL.plot(f, T / 1e3, "o-", color=color, label=f"{wl}:  T ∝ f^{alpha:.2f}")
+        # right: P vs T (the cubic law)
         Tg = np.linspace(T.min(), T.max(), 200)
-        ax.scatter(T / 1e3, P, color=color, s=80, zorder=5, label=f"{wl} (measured)")
-        ax.plot(Tg / 1e3, P0 + k * Tg ** g, "-", color=color,
-                label=f"{wl}: P≈{P0:.0f}+k·T^{g:.2f}  (R²={rr:.3f})")
-    ax.axhline(cap, color="r", ls="--", alpha=.5, label=f"cap {cap:.0f} W")
-    ax.set_xlabel("token throughput (k tok/s)"); ax.set_ylabel("GPU power (W)")
-    ax.set_title("DVFS sweep (fixed workload, swept CLOCK): the ≈cubic P(T) law\n"
-                 "prefill compute-bound → convex/super-linear; decode memory-bound → flat-ish")
-    ax.legend(loc="upper left", fontsize=9); ax.grid(alpha=.3); fig.tight_layout()
+        axR.scatter(T / 1e3, P, color=color, s=70, zorder=5)
+        axR.plot(Tg / 1e3, P0 + k * Tg ** g, "-", color=color,
+                 label=f"{wl}:  P ≈ {P0:.0f}+k·T^{g:.2f}  (R²={rr:.3f})")
+    axL.set_xlabel("SM clock (MHz)"); axL.set_ylabel("token throughput (k tok/s)")
+    axL.set_title("Mechanism: throughput vs clock\nprefill ∝ f (compute-bound); decode ~flat (memory-bound)")
+    axL.legend(); axL.grid(alpha=.3)
+    axR.axhline(cap, color="r", ls="--", alpha=.5, label=f"cap {cap:.0f} W")
+    axR.set_xlabel("token throughput (k tok/s)"); axR.set_ylabel("GPU power (W)")
+    axR.set_title("The ≈cubic law: power vs throughput\nprefill P∝T^~3 (DVFS V²f); decode T won't move")
+    axR.legend(loc="upper left", fontsize=9); axR.grid(alpha=.3)
+    fig.suptitle("DVFS sweep — fixed workload, swept SM clock 600→2700 MHz", fontsize=13)
+    fig.tight_layout()
     fig.savefig(f"{FIG}/step5_dvfs_cubic.png", dpi=130)
     print(f"wrote {FIG}/step5_dvfs_cubic.png")
-    with open(os.path.join(C.RESULTS_DIR, "dvfs_fit.json"), "w") as f:
-        json.dump(fits, f, indent=2)
-    for wl, fdat in fits.items():
-        print(f"[dvfs] {wl}: P ≈ {fdat['P0_w']:.0f} + k·T^{fdat['gamma']:.2f}  "
-              f"(clock {fdat['clk_mhz'][0]}–{fdat['clk_mhz'][1]} MHz, R²={fdat['r2']:.3f})")
+    with open(os.path.join(C.RESULTS_DIR, "dvfs_fit.json"), "w") as fp:
+        json.dump(fits, fp, indent=2)
+    for wl, d in fits.items():
+        print(f"[dvfs] {wl}: T ∝ f^{d['T_vs_f_exponent']:.2f}; "
+              f"P ≈ {d['P0_w']:.0f}+k·T^{d['gamma_P_vs_T']:.2f} (R²={d['P_vs_T_r2']:.3f}); "
+              f"clock {d['clk_mhz'][0]}–{d['clk_mhz'][1]} MHz")
 
 
 def main():

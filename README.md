@@ -83,21 +83,24 @@ Same shape, ceilings ~14× apart: **at the same near-cap power, prefill delivers
 
 Full derivations: [ANALYTIC_MODEL.md](ANALYTIC_MODEL.md).
 
-## The ≈cubic DVFS law (different knob) — `code/measure_dvfs.py`
+## The ≈cubic DVFS law — `code/measure_dvfs.py` (measured)
+![dvfs cubic](figures/step5_dvfs_cubic.png)
 
-A common expectation is prefill power growing ~**cubically** with throughput.
-That holds for the **frequency** knob, not the **concurrency** knob we sweep
-here. Raising throughput via clock gives `T ∝ f` and `P ≈ P_static + k·f^γ`
-(γ≈2–3, voltage rises with clock) ⇒ `P ∝ T^γ`. Raising it via batch at a *fixed*
-clock (our sweep — the SM clock stayed ~2700–2840 MHz and even dropped slightly)
-just activates more units, so power rises ~linearly then caps. See
-[ANALYTIC_MODEL.md](ANALYTIC_MODEL.md) §5.
+Prefill power **does** grow ~cubically with throughput — but only for the
+**frequency** knob, not the concurrency knob of Steps 1–4. Pinning the workload
+and sweeping the **SM clock 600→2687 MHz** gives (measured, clock-locked):
 
-To measure the cubic directly, `code/measure_dvfs.py` pins one workload and
-sweeps the SM clock 600→2700 MHz; `analyze.py --step dvfs` fits `P ≈ P₀+k·T^γ`
-and plots it. It needs clock-lock permission — run it in an **Administrator**
-PowerShell (Windows) or with sudo (Linux); without it NVML returns *Insufficient
-Permissions* and the script exits cleanly.
+| workload | throughput vs clock | power vs throughput |
+|---|---|---|
+| **prefill** | `T ∝ f^0.91` (compute-bound) | **`P ≈ 31 + k·T^2.94`, R²=0.989** — the cubic law |
+| **decode** | `T ∝ f^0.50` (memory-bound — clock barely helps) | T compressed (0.24→0.48 k); raising clock just wastes power |
+
+Raising throughput via **clock** → each core runs faster (`P_dyn = C·V²·f`,
+`V∝f`) → `P ∝ T^~3`. Raising it via **batch** at fixed clock (Steps 1–4) → more
+cores active → `P ∝ T` then caps. Same GPU, two knobs, both correct. Run it
+yourself (needs admin for clock-lock):
+`python code/measure_dvfs.py && python code/analyze.py --step dvfs`.
+See [ANALYTIC_MODEL.md](ANALYTIC_MODEL.md) §5.
 
 Other note: no flash/mem-efficient SDPA kernel exists for this sm_120 build, so
 prefill attention is O(S²) in memory and hits the 8 GB wall at S≈5 k (hence the

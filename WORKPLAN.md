@@ -79,6 +79,15 @@ and `figures/step3_*.png`
 - Energy efficiency (tok/J) vs throughput, quantifying why prefill is far cheaper
   per token than decode.
 
+### Step 5 — DVFS / the ≈cubic law (the *other* knob)
+`code/measure_dvfs.py` (needs admin clock-lock) → `analyze.py --step dvfs` →
+`figures/step5_dvfs_cubic.png`
+- Pin one workload, sweep the SM clock 600→2700 MHz. For compute-bound prefill
+  `T ∝ f` and `P ∝ f^~2.5`, so `P ∝ T^~3` — the **measured cubic law**
+  (`P ≈ 31 + k·T^2.94`, R²=0.989). Decode `T ∝ f^0.5` (clock barely helps).
+- Shows that the concurrency sweep (linear P–T) and the frequency sweep (cubic
+  P–T) are two different knobs on the same GPU.
+
 ---
 
 ## Repository layout (after refactor)
@@ -88,8 +97,8 @@ config.py / power_sampler.py / measure.py / model_info.py / analyze.py   (code/)
 WORKPLAN.md          this file
 ANALYTIC_MODEL.md    derivations + measured-vs-theory comparison
 README.md            overview, how-to-run, results summary
-results/             *.csv, model_info.json, fit_summary.json
-figures/             step0..step4 PNGs
+results/             *.csv, model_info.json, fit_summary.json, dvfs.csv
+figures/             step0..step5 PNGs
 ```
 
 ## Reproduce
