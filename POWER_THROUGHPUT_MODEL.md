@@ -86,3 +86,28 @@ This is why energy-aware serving slows down (down-clocks) the compute-bound pref
 | energy/token | `∝ T²` (rises fast) | `≈ const` |
 
 The cubic and the linear law are two faces of one fact: **compute pays `V²` to go faster, memory pays nothing extra per bit.**
+
+---
+
+## 8. Measured DVFS test (V100, clock locked 510→1530 MHz) — honest result
+
+We finally ran the frequency knob directly (`code/dvfs_sweep.py`, `figures/dvfs_cubic.png`): a fixed light prefill workload (B=4, S=256) and a fixed decode workload (B=16) measured at each locked SM clock.
+
+**The mechanism is confirmed (§3):**
+- prefill **`T ∝ f^0.90`** (R²=0.99) — compute-bound, throughput tracks the clock ✓
+- decode **`T ∝ f^0.26`** (R²=0.67) — memory-bound, clock ×3 buys only ×1.37 throughput ✓
+
+**The cubic exponent is NOT cleanly confirmed.** Fitting `P = P₀ + k·Tᵞ` on the un-capped prefill points (510–1260 MHz) is **degenerate in the static baseline P₀**:
+
+| assumed P₀ | γ (P∝Tᵞ) | R² |
+|---|---|---|
+| 44 W (deep idle) | **1.45** | 0.946 |
+| 60 W | 1.73 | 0.956 |
+| 80 W | 2.37 | 0.974 |
+| 90 W (active floor) | **2.99** | 0.988 |
+
+So **`P ∝ T³` is recovered only if ~90 W is treated as a fixed active floor** (memory controllers / uncore / HBM idle, plausible at these clocks); with the true deep-idle 44 W the exponent is only ~1.5. The reason the clean cubic does **not** appear: on this V100 the **core voltage barely scales with frequency below ~1300 MHz** (the V–f curve is flat in the mid range; `V∝f` only holds near peak voltage). With `V≈const`, `P_dyn = C V² f ∝ f` (linear), not `f³`. The idealized cubic of §4 is the `V∝f` limit, which this card does not reach in the measured band. Above ~1260 MHz the 250 W cap throttles the clock (req 1410/1530 → act 1342/1321), clipping the top of the curve.
+
+**Verdict on the two hypotheses:**
+- **Decode `P ∝ T` (linear): confirmed** — but via the *concurrency* knob (batch sweep, `P = 111 + 0.190·T`, R²=0.996). On the *frequency* knob decode is throughput-flat (raising the clock just wastes power), consistent with memory-bound.
+- **Prefill `P ∝ T³` (cubic): only partially.** The compute-bound mechanism `T∝f` is confirmed and power is genuinely super-linear, but the measured exponent on this V100 is **~1.5 (realistic baseline) to ~3 (high-baseline assumption)** — not a clean cubic, because this GPU's voltage does not scale steeply with clock in the tested range. A clean `T³` needs hardware operating where `V∝f`.
