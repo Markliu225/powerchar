@@ -85,7 +85,7 @@ def arch_from_model(model, cfg) -> dict:
         "num_attention_heads": cfg.num_attention_heads,
         "num_kv_heads": getattr(cfg, "num_key_value_heads", cfg.num_attention_heads),
         "head_dim": head_dim,
-        "intermediate_size": cfg.intermediate_size,
+        "intermediate_size": getattr(cfg, "intermediate_size", getattr(cfg, "ffn_dim", 0)),
         "vocab_size": cfg.vocab_size,
         "tie_word_embeddings": bool(tied),
         "total_params": int(total),

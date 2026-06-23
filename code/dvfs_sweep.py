@@ -1,29 +1,23 @@
-"""DVFS / frequency-knob sweep — measure the prefill cubic and decode-flat laws.
+"""DVFS / frequency-knob sweep with REPEATS + averaging.
 
-Locks the SM clock across a range (via `sudo nvidia-smi -lgc`, password from the
-SUDO_PASS env var) and, at each clock, measures a FIXED compute-bound prefill
-workload and a FIXED memory-bound decode workload. With the workload fixed and
-only the clock varying:
-  - prefill (compute-bound):  T ∝ f  and  P ∝ f^~3  =>  P ∝ T^3  (the cubic)
-  - decode  (memory-bound) :  T barely responds to f; P rises modestly
-
-The prefill load is kept light (B=4, S=256) so that even at the top clock the
-power stays UNDER the 250 W cap — otherwise the cap clips the cubic. Each point
-is cooled to a common baseline first, then measured short, so the LOCKED clock
-actually holds (no thermal override). Writes results/dvfs.csv.
+Locks the SM clock (via `sudo nvidia-smi -lgc`, password from SUDO_PASS) and, at each
+clock, measures a fixed compute-bound prefill workload and a fixed memory-bound decode
+workload N_REPEAT times, then records the MEAN and STD across repeats (to average out
+run-to-run noise). Light prefill load so the top clocks stay under the 250 W cap.
 
   SUDO_PASS=... CUDA_VISIBLE_DEVICES=0 PYTHONPATH=code python3 code/dvfs_sweep.py
 """
 from __future__ import annotations
-import csv, os, subprocess, time
+import csv, os, statistics, subprocess, time
 import torch
 import config as C
 from power_sampler import PowerSampler
 from measure import load_model, run_prefill_point, run_decode_point, free
 
 FREQS = [510, 660, 810, 960, 1110, 1260, 1410, 1530]   # MHz, requested SM clocks
-PREFILL_WL = dict(batch=4, seq_len=256)                # compute-bound, light enough to stay < cap
-DECODE_WL  = dict(batch=16, ctx_len=256)               # memory-bound contrast
+PREFILL_WL = dict(batch=4, seq_len=256)
+DECODE_WL  = dict(batch=16, ctx_len=256)
+N_REPEAT = 3                                            # repeats per clock, averaged
 COOL_TARGET_C, COOL_MAX_S = 60.0, 30.0
 PW = os.environ.get("SUDO_PASS", "")
 
@@ -31,10 +25,8 @@ PW = os.environ.get("SUDO_PASS", "")
 def _sudo(args):
     return subprocess.run(["sudo", "-S", "-p", "", *args], input=PW + "\n",
                           text=True, capture_output=True)
-
-
-def lock(f):    return _sudo(["nvidia-smi", "-i", "0", "-lgc", str(f)])
-def reset():    return _sudo(["nvidia-smi", "-i", "0", "-rgc"])
+def lock(f):  return _sudo(["nvidia-smi", "-i", "0", "-lgc", str(f)])
+def reset():  return _sudo(["nvidia-smi", "-i", "0", "-rgc"])
 
 
 def cooldown(sampler):
@@ -46,15 +38,19 @@ def cooldown(sampler):
         time.sleep(0.5)
 
 
+def agg(vals):
+    return round(statistics.mean(vals), 2), round(statistics.pstdev(vals) if len(vals) > 1 else 0.0, 2)
+
+
 def main():
     if not PW:
         print("ERROR: set SUDO_PASS env var"); return
     torch.backends.cuda.matmul.allow_tf32 = True
-    print("loading model...", flush=True)
+    print(f"loading model... (N_REPEAT={N_REPEAT} per clock)", flush=True)
     tok, model = load_model()
     vocab = model.config.vocab_size
     sampler = PowerSampler(interval_s=C.SAMPLE_INTERVAL_S); sampler.start(); time.sleep(0.3)
-    print(f"GPU {sampler.name} cap {sampler.power_limit_w:.0f} W | sweeping clocks {FREQS}", flush=True)
+    print(f"GPU {sampler.name} cap {sampler.power_limit_w:.0f} W | clocks {FREQS}", flush=True)
 
     rows = []
     try:
@@ -62,33 +58,37 @@ def main():
             r = lock(f)
             if r.returncode != 0:
                 print(f"  lock {f} FAILED: {r.stderr.strip()[:80]}"); continue
-            cooldown(sampler); free()
-            rp = run_prefill_point(model, sampler, PREFILL_WL["batch"], PREFILL_WL["seq_len"], vocab)
-            free()
-            rd = run_decode_point(model, sampler, DECODE_WL["batch"], DECODE_WL["ctx_len"], vocab)
-            for wl, rr in (("prefill", rp), ("decode", rd)):
-                rows.append({"workload": wl, "req_clk_mhz": f,
-                             "act_clk_mhz": round(rr.get("sm_clk_avg", 0)),
-                             "throughput_tok_s": round(rr["throughput_tok_s"], 1),
-                             "power_avg_w": round(rr.get("power_avg_w", 0), 2),
-                             "power_std_w": round(rr.get("power_std_w", 0), 2),
-                             "temp_avg": round(rr.get("temp_avg", 0), 1),
-                             "n_samples": rr.get("n_samples", 0)})
-            print(f"  [{i}/{len(FREQS)}] req {f:>4} | "
-                  f"prefill {rp['throughput_tok_s']:>7.0f} tok/s {rp.get('power_avg_w',0):>6.1f} W "
-                  f"(act {rp.get('sm_clk_avg',0):>4.0f} MHz, {rp.get('temp_avg',0):.0f}C) | "
-                  f"decode {rd['throughput_tok_s']:>6.0f} tok/s {rd.get('power_avg_w',0):>6.1f} W "
-                  f"(act {rd.get('sm_clk_avg',0):>4.0f})", flush=True)
+            acc = {"prefill": {"T": [], "P": [], "clk": [], "tmp": []},
+                   "decode":  {"T": [], "P": [], "clk": [], "tmp": []}}
+            for _ in range(N_REPEAT):
+                cooldown(sampler); free()
+                rp = run_prefill_point(model, sampler, PREFILL_WL["batch"], PREFILL_WL["seq_len"], vocab)
+                free()
+                rd = run_decode_point(model, sampler, DECODE_WL["batch"], DECODE_WL["ctx_len"], vocab)
+                for wl, rr in (("prefill", rp), ("decode", rd)):
+                    acc[wl]["T"].append(rr["throughput_tok_s"]); acc[wl]["P"].append(rr.get("power_avg_w", 0))
+                    acc[wl]["clk"].append(rr.get("sm_clk_avg", 0)); acc[wl]["tmp"].append(rr.get("temp_avg", 0))
+            for wl in ("prefill", "decode"):
+                a = acc[wl]
+                Tm, Ts = agg(a["T"]); Pm, Ps = agg(a["P"]); cm, _ = agg(a["clk"]); tm, _ = agg(a["tmp"])
+                rows.append({"workload": wl, "req_clk_mhz": f, "act_clk_mhz": round(cm),
+                             "throughput_tok_s": round(Tm, 1), "throughput_std": round(Ts, 1),
+                             "power_avg_w": round(Pm, 2), "power_std_w": round(Ps, 2),
+                             "temp_avg": round(tm, 1), "n_rep": N_REPEAT})
+            rp_, rd_ = rows[-2], rows[-1]
+            print(f"  [{i}/{len(FREQS)}] req {f:>4} | prefill {rp_['throughput_tok_s']:>7.0f}±{rp_['throughput_std']:>4.0f} tok/s "
+                  f"{rp_['power_avg_w']:>6.1f}±{rp_['power_std_w']:>4.1f} W (act {rp_['act_clk_mhz']:>4}) | "
+                  f"decode {rd_['throughput_tok_s']:>6.0f}±{rd_['throughput_std']:>4.0f} {rd_['power_avg_w']:>6.1f}±{rd_['power_std_w']:>4.1f} W", flush=True)
     finally:
         rr = reset()
         print(f"[reset] {'ok' if rr.returncode == 0 else rr.stderr.strip()[:80]}", flush=True)
         sampler.stop(); sampler.shutdown()
 
-    keys = ["workload", "req_clk_mhz", "act_clk_mhz", "throughput_tok_s",
-            "power_avg_w", "power_std_w", "temp_avg", "n_samples"]
+    keys = ["workload", "req_clk_mhz", "act_clk_mhz", "throughput_tok_s", "throughput_std",
+            "power_avg_w", "power_std_w", "temp_avg", "n_rep"]
     with open(os.path.join(C.RESULTS_DIR, "dvfs.csv"), "w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=keys); w.writeheader(); [w.writerow(r) for r in rows]
-    print(f"wrote {C.RESULTS_DIR}/dvfs.csv ({len(rows)} rows)", flush=True)
+    print(f"wrote {C.RESULTS_DIR}/dvfs.csv ({len(rows)} rows, {N_REPEAT}x averaged)", flush=True)
 
 
 if __name__ == "__main__":

@@ -12,7 +12,7 @@ import torch
 # ---------------------------------------------------------------------------
 # Model under test (the "given LLM inference model + parameter configuration")
 # ---------------------------------------------------------------------------
-MODEL_ID = "microsoft/Phi-3-mini-4k-instruct"   # re-test on a NEW model (3.8B, Phi-3 family, MHA)
+MODEL_ID = os.environ.get("POWERCHAR_MODEL", "microsoft/Phi-3-mini-4k-instruct")  # override via env for multi-model sweeps
 DTYPE = torch.float16          # weights + activations
 DEVICE = "cuda"
 ATTN_IMPL = "sdpa"             # scaled-dot-product attention (PyTorch fused)

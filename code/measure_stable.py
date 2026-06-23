@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import os
 import random
+import statistics
 import time
 import torch
 
@@ -38,6 +39,7 @@ WARMUP_S      = 0.5       # brief: ramp the clock + prime caches
 MEASURE_S     = 3.0       # short window -> stays un-throttled (< ~80 C)
 DECODE_SYNC_EVERY = 16    # queue this many decode steps between syncs (keep GPU fed)
 SEED = 0
+N_REPEAT = 3              # repeats per batch point, averaged (mean ± std)
 
 PREFILL_BATCHES = [1, 2, 4, 8, 16, 32, 64]
 DECODE_BATCHES  = [1, 2, 4, 8, 16, 32, 64]
@@ -114,24 +116,29 @@ def run_phase(name, batches, point_fn, model, sampler, fixed, vocab):
     order = list(batches)
     random.Random(SEED).shuffle(order)
     n = len(order)
-    print(f"\n=== {name.upper()} (cold-start, un-throttled; randomised order {order}) ===", flush=True)
+    print(f"\n=== {name.upper()} (cold-start; randomised order {order}; {N_REPEAT}x averaged) ===", flush=True)
     rows = []
     t_phase = time.perf_counter()
     for i, b in enumerate(order, 1):
-        free()
-        ct, cs = cooldown(sampler, b)
-        print(f"  [{i:>2}/{n}] > {name} b={b} | cooled to {ct:.0f}C in {cs:.0f}s | "
-              f"warm {WARMUP_S}s meas {MEASURE_S}s | elapsed {time.perf_counter()-t_phase:>3.0f}s", flush=True)
-        try:
-            r = point_fn(model, sampler, b, fixed, vocab)
-            rows.append(r)
-            print(f"  [{i:>2}/{n}] = b={b:>3} | {r['throughput_tok_s']:>9.0f} tok/s | "
-                  f"{r.get('power_avg_w',0):>6.1f} W (p50 {r.get('power_p50_w',0):>6.1f}, "
-                  f"std {r.get('power_std_w',0):>4.1f}) | clk {r.get('sm_clk_avg',0):>4.0f}"
-                  f"[{r.get('sm_clk_min',0):.0f}-{r.get('sm_clk_max',0):.0f}] | "
-                  f"{r['temp_start']:.0f}->{r['temp_end']:.0f}C | {r['tok_per_joule']:>6.1f} tok/J", flush=True)
-        except torch.cuda.OutOfMemoryError:
-            print(f"  [{i:>2}/{n}] b={b} -> OOM, skipped", flush=True); free()
+        reps = []
+        for _ in range(N_REPEAT):
+            free()
+            cooldown(sampler, b)
+            try:
+                reps.append(point_fn(model, sampler, b, fixed, vocab))
+            except torch.cuda.OutOfMemoryError:
+                print(f"  [{i:>2}/{n}] b={b} -> OOM, skipped", flush=True); free(); reps = []; break
+        if not reps:
+            continue
+        Ts = [r["throughput_tok_s"] for r in reps]; Ps = [r.get("power_avg_w", 0.0) for r in reps]
+        Tm = statistics.mean(Ts); Td = statistics.pstdev(Ts) if len(Ts) > 1 else 0.0
+        Pm = statistics.mean(Ps); Pd = statistics.pstdev(Ps) if len(Ps) > 1 else 0.0
+        row = dict(reps[-1])
+        row.update(throughput_tok_s=Tm, throughput_std=Td, power_avg_w=Pm, power_std_w=Pd,
+                   tok_per_joule=(Tm / Pm if Pm > 0 else float("nan")), n_rep=len(reps))
+        rows.append(row)
+        print(f"  [{i:>2}/{n}] = b={b:>3} | {Tm:>9.0f}±{Td:.0f} tok/s | {Pm:>6.1f}±{Pd:.1f} W "
+              f"({len(reps)}x) | {row['tok_per_joule']:>6.1f} tok/J | elapsed {time.perf_counter()-t_phase:>3.0f}s", flush=True)
     rows.sort(key=lambda r: r["batch"])
     return rows
 
