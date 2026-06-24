@@ -14,9 +14,21 @@ if [ "$(id -u)" -eq 0 ]; then
   exit 1
 fi
 python3 -c "import numpy, torch" 2>/dev/null || { echo "ERROR: numpy/torch not importable as $(whoami)"; exit 1; }
-[ -z "${SUDO_PASS:-}" ] && echo "WARN: SUDO_PASS unset -> DVFS sweeps skipped (batch sweeps still run)."
+[ -z "${SUDO_PASS:-}" ] && { echo "ERROR: SUDO_PASS required to lock the clock."; exit 1; }
 
 export CUDA_VISIBLE_DEVICES=0 TOKENIZERS_PARALLELISM=false PYTHONPATH=code PYTHONUNBUFFERED=1
+
+# --- FORCE a fixed SM clock for ALL models (no DVFS, no auto-throttle while it holds) ---
+# Note: the HARDWARE thermal slowdown (~85C) cannot be disabled in software; we pick a
+# clock the V100 sustains so it never triggers -> the clock stays put across every model.
+# Raise this only if you verify sm_clk_avg in the CSVs still equals it (else it throttled).
+FIXED_CLOCK="${FIXED_CLOCK:-1005}"
+sudo_nv() { printf '%s\n' "$SUDO_PASS" | sudo -S -p '' nvidia-smi -i 0 "$@"; }
+echo ">>> locking SM clock to ${FIXED_CLOCK} MHz for the whole run"
+sudo_nv -lgc "${FIXED_CLOCK}" 2>&1 | tail -1
+trap 'echo ">>> unlocking SM clock"; sudo_nv -rgc 2>&1 | tail -1' EXIT
+sleep 1
+echo ">>> SM clock now: $(nvidia-smi -i 0 --query-gpu=clocks.sm,clocks_event_reasons.active --format=csv,noheader) (expect ~${FIXED_CLOCK})"
 
 # stream(): run a command with LIVE line-by-line output + a full tee'd log.
 #   $1 = log file ; $2 = grep regex (or "ALL" to show everything) ; rest = command
@@ -30,7 +42,6 @@ stream() {
 }
 
 MEAS_RE='\] >|\] =|SWEEP|wrote |OOM|loaded |GPU |Error|Traceback|No module|RuntimeError|CUDA|assert'
-DVFS_RE='req |reset|wrote |FAILED|Error|Traceback|RuntimeError'
 
 MODELS=(
   "facebook/opt-1.3b"
@@ -39,7 +50,6 @@ MODELS=(
   "microsoft/Phi-3-mini-4k-instruct"
   "Qwen/Qwen2.5-7B-Instruct"
 )
-DVFS_MODELS=" Qwen/Qwen2.5-3B-Instruct microsoft/Phi-3-mini-4k-instruct "
 
 echo ">>> clearing stale mm_* outputs"
 rm -f results/mm_*
@@ -63,12 +73,6 @@ for M in "${MODELS[@]}"; do
   else echo "!! [$slug] prefill FAILED (see results/mm_${slug}_measure.log)"; fi
   if [ -f results/decode.csv ]; then cp results/decode.csv "results/mm_${slug}_decode.csv";
   else echo "!! [$slug] decode FAILED (see results/mm_${slug}_measure.log)"; fi
-
-  if [[ "$DVFS_MODELS" == *" $M "* && -n "${SUDO_PASS:-}" ]]; then
-    echo ">>> [$slug] DVFS frequency sweep (live)"
-    stream "results/mm_${slug}_dvfs.log" "$DVFS_RE" python3 -u code/dvfs_sweep.py
-    [ -f results/dvfs.csv ] && cp results/dvfs.csv "results/mm_${slug}_dvfs.csv" || echo "!! [$slug] dvfs FAILED"
-  fi
 
   rm -rf "$HOME/.cache/huggingface/hub/models--${M//\//--}" 2>/dev/null
   echo ">>> [$slug] done; disk free: $(df -h / | awk 'NR==2{print $4}')"
