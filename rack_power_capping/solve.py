@@ -28,6 +28,10 @@ the ratio only sets the GPU-count split. Both sweet-spots sit ~165-170 W, far be
 250 W TDP -> under a power cap you deploy MORE GPUs at lower power. We compare the optimum
 against the TDP baseline (every GPU at 250 W nameplate) and a uniform-170 W cap.
 
+CONSTRAINT: GPU counts are INTEGER with >=1 GPU in EACH phase (disaggregated serving needs at
+least one prefill worker and one decode worker). At extreme ratios this floor binds (e.g. a
+decode-heavy 1:20 still spends one whole GPU on prefill, over-provisioning it). See solve().
+
   beta=6.26e11 B/s effective HBM (0.8x782 GB/s peak), W_bytes=7.642e9, kv=393216 B/token.
 """
 from __future__ import annotations
@@ -64,15 +68,35 @@ def best_eff_prefill():
 
 
 def solve(P, D, p_p, p_d, C=CTX, W=W_RACK):
-    """Token ratio P:D, per-GPU powers (p_p prefill, p_d decode) -> full-budget allocation."""
+    """Token ratio P:D, per-GPU powers -> INTEGER allocation with >=1 GPU in EACH phase.
+
+    Disaggregated serving needs at least one prefill worker AND one decode worker, and GPUs are
+    whole units -> Np>=1, Nd>=1, integer (the continuous closed form gives fractions like 0.2 at
+    extreme ratios, which is non-physical). The balanced workload is served at request rate
+    lam = min(prefill_capacity/P, decode_capacity/D); total useful throughput = lam*(P+D).
+    We sweep integer Np>=1 and fill the remaining budget with Nd>=1 decode GPUs, taking the best.
+    Returns None if the budget cannot fit one GPU of each phase."""
     tp, td = Tpre(p_p), Tdec(p_d, C)
-    eta_p, eta_d = tp / p_p, td / p_d
+    best = None
+    npre_max = int((W - p_d) // p_p)             # leave budget for >=1 decode GPU
+    for npre in range(1, npre_max + 1):
+        ndec = int((W - npre * p_p) // p_d)      # fill the rest with decode
+        if ndec < 1:
+            break                                # budget exhausted (ndec falls as npre rises)
+        lam = min(npre * tp / P, ndec * td / D)  # bottleneck request rate
+        tot = lam * (P + D)                      # useful tok/s (balanced; excess capacity wasted)
+        if best is None or tot > best["tot"]:
+            best = dict(p_p=p_p, p_d=p_d, tp=tp, td=td, tot=tot, lam=lam, Np=npre, Nd=ndec,
+                        Wp=npre * p_p, Wd=ndec * p_d, pre_cap=npre * tp, dec_cap=ndec * td)
+    return best
+
+
+def solve_cont(P, D, p_p, p_d, C=CTX, W=W_RACK):
+    """Continuous relaxation (fractional GPUs, perfectly balanced) -> upper bound on solve()."""
+    tp, td = Tpre(p_p), Tdec(p_d, C)
     fp, fd = P / (P + D), D / (P + D)
-    tot = W / (fp / eta_p + fd / eta_d)          # max total tok/s at full budget
-    A_pre, B_dec = fp * tot, fd * tot            # phase throughputs (tok/s)
-    Np, Nd = A_pre / tp, B_dec / td              # GPU counts (continuous)
-    return dict(p_p=p_p, p_d=p_d, tp=tp, td=td, eta_p=eta_p, eta_d=eta_d,
-                tot=tot, Np=Np, Nd=Nd, Wp=Np * p_p, Wd=Nd * p_d)
+    tot = W / (fp / (tp / p_p) + fd / (td / p_d))
+    return dict(tot=tot, Np=fp * tot / tp, Nd=fd * tot / td)
 
 
 # policies: name -> (prefill per-GPU W, decode per-GPU W)
@@ -91,20 +115,21 @@ def main():
           f"decode {P_DEC_OPT:.0f} W (C-independent)")
     print(f"decode bandwidth ceiling T_max(C={CTX}) = {Tmax(CTX):.0f} tok/s, "
           f"@169W -> {Tdec(P_DEC_OPT, CTX):.0f} tok/s ({Tdec(P_DEC_OPT, CTX)/P_DEC_OPT:.1f} tok/J)")
-    print(f"\nrack {W_RACK:.0f} W, context C={CTX}   (OPTIMAL pre@{pP:.0f}/dec@{P_DEC_OPT:.0f}W  vs  TDP 250/250W)")
-    print(f"{'P:D':>7} | {'OPT ktok/s':>10}{'N_pre':>7}{'N_dec':>7} | {'TDP ktok/s':>10}{'N_pre':>7}{'N_dec':>7} | {'gain':>7}")
+    print(f"\nrack {W_RACK:.0f} W, context C={CTX}   integer GPUs, >=1 per phase   (OPTIMAL pre@{pP:.0f}/dec@{P_DEC_OPT:.0f}W  vs  TDP 250/250W)")
+    print(f"{'P:D':>7} | {'OPT ktok/s':>10}{'N_pre':>6}{'N_dec':>6} | {'TDP ktok/s':>10}{'N_pre':>6}{'N_dec':>6} | {'gain':>7}  note")
     rows = []
     for (P, D) in RATIOS:
         o = solve(P, D, *pol["OPTIMAL"]); t = solve(P, D, *pol["TDP"]); u = solve(P, D, *pol["Uniform170"])
         gain = 100 * (o["tot"] / t["tot"] - 1)
-        print(f"{P}:{D:<5} | {o['tot']/1000:>10.1f}{o['Np']:>7.1f}{o['Nd']:>7.1f} | "
-              f"{t['tot']/1000:>10.1f}{t['Np']:>7.1f}{t['Nd']:>7.1f} | {gain:>6.1f}%")
+        bind = "Np=1 floor binds" if o["Np"] == 1 and P < D else ("Nd=1 floor binds" if o["Nd"] == 1 and D < P else "")
+        print(f"{P}:{D:<5} | {o['tot']/1000:>10.1f}{o['Np']:>6d}{o['Nd']:>6d} | "
+              f"{t['tot']/1000:>10.1f}{t['Np']:>6d}{t['Nd']:>6d} | {gain:>6.1f}%  {bind}")
         rows.append({"context_C": CTX, "P": P, "D": D,
-                     "opt_tok_s": round(o["tot"]), "opt_N_prefill": round(o["Np"], 2), "opt_N_decode": round(o["Nd"], 2),
+                     "opt_tok_s": round(o["tot"]), "opt_N_prefill": o["Np"], "opt_N_decode": o["Nd"],
                      "opt_p_prefill_w": round(pP), "opt_p_decode_w": round(P_DEC_OPT),
-                     "tdp_tok_s": round(t["tot"]), "tdp_N_prefill": round(t["Np"], 2), "tdp_N_decode": round(t["Nd"], 2),
+                     "tdp_tok_s": round(t["tot"]), "tdp_N_prefill": t["Np"], "tdp_N_decode": t["Nd"],
                      "uniform170_tok_s": round(u["tot"]),
-                     "gain_opt_vs_tdp_pct": round(gain, 1)})
+                     "gain_opt_vs_tdp_pct": round(gain, 1), "constraint_binds": bind})
 
     here = os.path.dirname(os.path.abspath(__file__))
     with open(os.path.join(here, "results.csv"), "w", newline="") as f:

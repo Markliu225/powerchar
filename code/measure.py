@@ -106,7 +106,7 @@ def run_decode_point(model, sampler, batch, ctx_len, vocab):
     kv, nxt = _seed_kv(model, batch, ctx_len, vocab)
     torch.cuda.synchronize()
     steps = 0
-    max_cache = ctx_len + 256
+    max_cache = ctx_len + int(os.environ.get("DECODE_KV_HEADROOM", "256"))
     cur_len = ctx_len
     t0 = sampler.now()
     t_end = t0 + C.MEASURE_S
