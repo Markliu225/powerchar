@@ -1,0 +1,11 @@
+{
+  "name": "Tesla V100-DGXS-32GB",
+  "slowdown_c": 87,
+  "shutdown_c": 90,
+  "gpu_max_c": 83,
+  "load_on_s": 17.0,
+  "load_off_s": 107.2,
+  "peak_temp_c": 83,
+  "min_clk_under_load_mhz": 247,
+  "thermal_throttle_samples": 885
+}
