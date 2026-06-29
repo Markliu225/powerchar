@@ -63,7 +63,7 @@ design fixes.
   (~1.5 k tok/s) — ~14× lower than prefill.
 
 ### Step 3 — Analytic model `P(T)` & validation
-[ANALYTIC_MODEL.md](ANALYTIC_MODEL.md) + `analyze.py --step 3` → `results/fit_summary.json`
+[THEORY.zh.md](THEORY.zh.md) + `analyze.py --step 3` → `results/fit_summary.json`
 and `figures/step3_*.png`
 - Compose two measured batch-domain laws into a single-valued `P(T)`: affine step
   time `t(B)=t_fixed+β·B` (→ throughput ceiling `n/β`) and saturating power
@@ -95,7 +95,7 @@ and `figures/step3_*.png`
 ```
 config.py / power_sampler.py / measure.py / model_info.py / analyze.py   (code/)
 WORKPLAN.md          this file
-ANALYTIC_MODEL.md    derivations + measured-vs-theory comparison
+THEORY.zh.md    derivations + measured-vs-theory comparison
 README.md            overview, how-to-run, results summary
 results/             *.csv, model_info.json, fit_summary.json, dvfs.csv
 figures/             step0..step5 PNGs

@@ -8,7 +8,7 @@ data. Everything is reproducible from a single config file.
   throughput↔power relationship in **prefill** (prompt ingestion, compute-bound)
   and **decode** (token generation, memory-bandwidth-bound), swept separately.
 - **The model** — roofline + DVFS derivations in
-  [ANALYTIC_MODEL.md](ANALYTIC_MODEL.md), fitted to the data with R² and MAPE.
+  [THEORY.zh.md](THEORY.zh.md), fitted to the data with R² and MAPE.
 - **The plan** — the step-by-step requirements in [WORKPLAN.md](WORKPLAN.md).
 
 ## Setup (measured, not assumed)
@@ -81,7 +81,7 @@ Same shape, ceilings ~14× apart: **at the same near-cap power, prefill delivers
 ~14× the tokens/s of decode.** Energy: prefill **43–74 tok/J** vs decode
 **0.4–5.6 tok/J** (~13× at best, `figures/step4_combined_efficiency_vs_throughput.png`).
 
-Full derivations: [ANALYTIC_MODEL.md](ANALYTIC_MODEL.md).
+Full derivations: [THEORY.zh.md](THEORY.zh.md).
 
 ## The ≈cubic DVFS law — `code/measure_dvfs.py` (measured)
 ![dvfs cubic](figures/step5_dvfs_cubic.png)
@@ -100,7 +100,7 @@ Raising throughput via **clock** → each core runs faster (`P_dyn = C·V²·f`,
 cores active → `P ∝ T` then caps. Same GPU, two knobs, both correct. Run it
 yourself (needs admin for clock-lock):
 `python code/measure_dvfs.py && python code/analyze.py --step dvfs`.
-See [ANALYTIC_MODEL.md](ANALYTIC_MODEL.md) §5.
+See [THEORY.zh.md](THEORY.zh.md) §5.
 
 Other note: no flash/mem-efficient SDPA kernel exists for this sm_120 build, so
 prefill attention is O(S²) in memory and hits the 8 GB wall at S≈5 k (hence the
