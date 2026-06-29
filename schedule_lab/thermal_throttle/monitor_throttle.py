@@ -7,12 +7,16 @@ the GPU AUTO-THROTTLES the SM clock (NVML reports HW/SW thermal-slowdown) to pul
 back down -- exactly the behaviour we want to capture. We deliberately do NOT lock the clock:
 the point is to observe the system's own thermal governor.
 
-  CUDA_VISIBLE_DEVICES=0 python3 thermal_throttle/monitor_throttle.py
+  CUDA_VISIBLE_DEVICES=1 python3 thermal_throttle/monitor_throttle.py
 Writes throttle.csv + meta.json (read by plot_throttle.py). No sudo needed.
 """
 from __future__ import annotations
 import csv, json, os, threading, time
 import pynvml
+
+os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
+if os.environ.get("CUDA_VISIBLE_DEVICES", "").strip() in ("", "0"):
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # always GPU1, never device 0
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BASELINE_S, LOAD_S, COOLDOWN_S = 15.0, 90.0, 50.0
@@ -78,7 +82,7 @@ class Sampler(threading.Thread):
 
 def main():
     pynvml.nvmlInit()
-    h = pynvml.nvmlDeviceGetHandleByIndex(0)
+    h = pynvml.nvmlDeviceGetHandleByIndex(int((os.environ.get("CUDA_VISIBLE_DEVICES","1").split(",")[0] or "1")))
     name = pynvml.nvmlDeviceGetName(h)
     if isinstance(name, bytes):
         name = name.decode()

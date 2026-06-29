@@ -7,21 +7,29 @@ samples inside that window -- so warmup and tail never contaminate the result,
 and power is averaged over *exactly* the interval throughput is computed over.
 """
 from __future__ import annotations
+import os
 import statistics
 import threading
 import time
 import pynvml
 
 
+def _visible_gpu_index() -> int:
+    """Physical NVML index of the GPU torch is using. NVML ignores CUDA_VISIBLE_DEVICES and
+    indexes physically, so when CUDA_VISIBLE_DEVICES=1 we must sample physical GPU 1, not 0."""
+    cvd = os.environ.get("CUDA_VISIBLE_DEVICES", "").split(",")[0].strip()
+    return int(cvd) if cvd.isdigit() else 1   # default GPU1, never 0
+
+
 class PowerSampler:
-    def __init__(self, device_index: int = 0, interval_s: float = 0.02):
-        self.device_index = device_index
+    def __init__(self, device_index: int | None = None, interval_s: float = 0.02):
+        self.device_index = _visible_gpu_index() if device_index is None else device_index
         self.interval_s = interval_s
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self.samples: list[dict] = []
         pynvml.nvmlInit()
-        self._h = pynvml.nvmlDeviceGetHandleByIndex(device_index)
+        self._h = pynvml.nvmlDeviceGetHandleByIndex(self.device_index)
         self.power_limit_w = pynvml.nvmlDeviceGetEnforcedPowerLimit(self._h) / 1000.0
         self.name = pynvml.nvmlDeviceGetName(self._h)
         if isinstance(self.name, bytes):

@@ -9,7 +9,7 @@
 
 ## 启动
 ```bash
-CUDA_VISIBLE_DEVICES=0 python3 schedule_lab/app.py
+CUDA_VISIBLE_DEVICES=1 python3 schedule_lab/app.py
 ```
 然后浏览器打开 **http://localhost:8000**(VS Code 会自动转发端口;远程 SSH 用 `ssh -L 8000:localhost:8000`)。无需 sudo、不锁频——观察系统自己的热行为。
 

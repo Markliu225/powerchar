@@ -51,7 +51,7 @@ def can_lock(h) -> bool:
 
 def main():
     pynvml.nvmlInit()
-    h = pynvml.nvmlDeviceGetHandleByIndex(0)
+    h = pynvml.nvmlDeviceGetHandleByIndex(int((os.environ.get("CUDA_VISIBLE_DEVICES","0").split(",")[0] or "0")))
     if not can_lock(h):
         pynvml.nvmlShutdown()
         return

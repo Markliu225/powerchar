@@ -14,7 +14,7 @@ We record the ACTUAL clock per point to prove the lock held (act ~ req == succes
 Caveat: this is a TRANSIENT peak, not a sustainable operating point; at the very top clock +
 large batch the die may still heat past the limit within 1 s (then act < req -> shorten window).
 
-  SUDO_PASS=... CUDA_VISIBLE_DEVICES=0 PYTHONPATH=code python3 code/goodput_burst.py
+  SUDO_PASS=... CUDA_VISIBLE_DEVICES=1 PYTHONPATH=code python3 code/goodput_burst.py
 """
 from __future__ import annotations
 import csv, os, subprocess, time
@@ -24,6 +24,7 @@ import config as C
 C.WARMUP_S = 0.4; C.SETTLE_S = 0.05; C.MEASURE_S = 1.0
 from power_sampler import PowerSampler                       # noqa: E402
 from measure import load_model, run_prefill_point, run_decode_point, free  # noqa: E402
+import os
 
 PW = os.environ.get("SUDO_PASS", "")
 CLOCKS = [600, 810, 1020, 1230, 1380, 1530]   # MHz, the "push frequency" knob (spans power)
@@ -34,7 +35,7 @@ COOL_TARGET, COOL_MAX_S = 52.0, 200.0
 
 
 def sudo_nv(*a):
-    return subprocess.run(["sudo", "-S", "-p", "", "nvidia-smi", "-i", "0", *a],
+    return subprocess.run(["sudo", "-S", "-p", "", "nvidia-smi", "-i", (os.environ.get("CUDA_VISIBLE_DEVICES","0").split(",")[0] or "0"), *a],
                           input=PW + "\n", text=True, capture_output=True)
 
 

@@ -16,7 +16,7 @@ fi
 python3 -c "import numpy, torch" 2>/dev/null || { echo "ERROR: numpy/torch not importable as $(whoami)"; exit 1; }
 [ -z "${SUDO_PASS:-}" ] && { echo "ERROR: SUDO_PASS required to lock the clock."; exit 1; }
 
-export CUDA_VISIBLE_DEVICES=0 TOKENIZERS_PARALLELISM=false PYTHONPATH=code PYTHONUNBUFFERED=1
+export CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=1 TOKENIZERS_PARALLELISM=false PYTHONPATH=code PYTHONUNBUFFERED=1
 
 # --- FORCE a fixed SM clock for ALL models (no DVFS, no auto-throttle while it holds) ---
 # Note: the HARDWARE thermal slowdown (~85C) cannot be disabled in software; we pick a

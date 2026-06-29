@@ -11,12 +11,15 @@ GPU, logs temperature / SM clock / power at 20 Hz, and writes the result straigh
 The web page just loads result.png from disk (so the figure is a real local file you can also
 open in the editor). No sudo, no clock locking — you observe the system's own thermal behaviour.
 
-  CUDA_VISIBLE_DEVICES=0 python3 schedule_lab/app.py      # then open http://localhost:8000
+  CUDA_VISIBLE_DEVICES=1 python3 schedule_lab/app.py      # then open http://localhost:8000
 """
 from __future__ import annotations
 import csv, json, os, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import numpy as np
+os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
+if os.environ.get("CUDA_VISIBLE_DEVICES", "").strip() in ("", "0"):
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # always GPU1, never device 0
 import torch
 import pynvml
 import matplotlib
@@ -35,7 +38,7 @@ OUT_PNG = os.path.join(HERE, "result.png")
 OUT_CSV = os.path.join(HERE, "result.csv")
 
 pynvml.nvmlInit()
-H = pynvml.nvmlDeviceGetHandleByIndex(0)
+H = pynvml.nvmlDeviceGetHandleByIndex(int((os.environ.get("CUDA_VISIBLE_DEVICES","1").split(",")[0] or "1")))
 NAME = pynvml.nvmlDeviceGetName(H)
 NAME = NAME.decode() if isinstance(NAME, bytes) else NAME
 try:

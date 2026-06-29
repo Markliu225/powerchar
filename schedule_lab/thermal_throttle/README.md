@@ -11,7 +11,7 @@ thermal_throttle/
 └── fig_thermal_throttle.png
 ```
 
-运行:`CUDA_VISIBLE_DEVICES=0 python3 monitor_throttle.py && python3 plot_throttle.py`(无需 sudo)。
+运行:`CUDA_VISIBLE_DEVICES=1 python3 monitor_throttle.py && python3 plot_throttle.py`(无需 sudo)。
 
 ## 实验设计
 - **不锁频**——目的就是观察系统自己的热管理(锁频反而看不到)。

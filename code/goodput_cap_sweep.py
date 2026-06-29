@@ -11,7 +11,7 @@ Design:
   * Sweep the power cap. goodput(cap, SLO) = best throughput meeting the SLO at that cap
     (derived in plot_goodput.py; STOP_* here are loose guards so tighter SLOs are still covered).
 
-  SUDO_PASS=... CUDA_VISIBLE_DEVICES=0 PYTHONPATH=code python3 code/goodput_cap_sweep.py
+  SUDO_PASS=... CUDA_VISIBLE_DEVICES=1 PYTHONPATH=code python3 code/goodput_cap_sweep.py
 """
 from __future__ import annotations
 import csv, os, subprocess, time
@@ -21,6 +21,7 @@ import config as C
 C.WARMUP_S = 0.4; C.SETTLE_S = 0.05; C.MEASURE_S = 1.2     # short burst: clock holds while cold
 from power_sampler import PowerSampler                       # noqa: E402
 from measure import load_model, run_prefill_point, run_decode_point, free  # noqa: E402
+import os
 
 PW = os.environ.get("SUDO_PASS", "")
 LOCK_CLOCK = 1530                       # push frequency to max; the cap limits power below it
@@ -34,7 +35,7 @@ STOP_TPOT_MS = 150.0                    # decode:  stop once per-token latency e
 
 
 def sudo_nv(*a):
-    return subprocess.run(["sudo", "-S", "-p", "", "nvidia-smi", "-i", "0", *a],
+    return subprocess.run(["sudo", "-S", "-p", "", "nvidia-smi", "-i", (os.environ.get("CUDA_VISIBLE_DEVICES","0").split(",")[0] or "0"), *a],
                           input=PW + "\n", text=True, capture_output=True)
 
 
@@ -54,7 +55,7 @@ def reactive_cool(sampler):
 def main():
     if not PW:
         print("ERROR: set SUDO_PASS"); return
-    pynvml.nvmlInit(); h = pynvml.nvmlDeviceGetHandleByIndex(0)
+    pynvml.nvmlInit(); h = pynvml.nvmlDeviceGetHandleByIndex(int((os.environ.get("CUDA_VISIBLE_DEVICES","0").split(",")[0] or "0")))
     mn, mx = [x / 1000.0 for x in pynvml.nvmlDeviceGetPowerManagementLimitConstraints(h)]
     default = pynvml.nvmlDeviceGetPowerManagementDefaultLimit(h) / 1000.0
     caps = [c for c in CAP_GRID if mn <= c <= mx]

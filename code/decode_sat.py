@@ -10,7 +10,7 @@ saturating), and the IMPLIED effective bandwidth beta_eff = T*(W+B*C*kv)/B. If t
 holds, beta_eff is ~constant across batch and equals the real achieved HBM bandwidth; then the true
 ceiling is T_max = beta_eff/(C*kv).
 
-  SUDO_PASS=... CUDA_VISIBLE_DEVICES=0 PYTHONPATH=code python3 code/decode_sat.py
+  SUDO_PASS=... CUDA_VISIBLE_DEVICES=1 PYTHONPATH=code python3 code/decode_sat.py
 """
 from __future__ import annotations
 import csv, os, subprocess, time
@@ -20,6 +20,7 @@ import config as C
 C.WARMUP_S = 0.6; C.SETTLE_S = 0.1; C.MEASURE_S = 3.0
 from power_sampler import PowerSampler                       # noqa: E402
 from measure import load_model, run_decode_point, free        # noqa: E402
+import os
 
 os.environ["DECODE_KV_HEADROOM"] = "64"   # shrink KV reserve so high batch fits (32 GB / huge MHA KV)
 PW = os.environ.get("SUDO_PASS", "")
@@ -37,7 +38,7 @@ GRID = {
 
 
 def sudo_nv(*a):
-    return subprocess.run(["sudo", "-S", "-p", "", "nvidia-smi", "-i", "0", *a],
+    return subprocess.run(["sudo", "-S", "-p", "", "nvidia-smi", "-i", (os.environ.get("CUDA_VISIBLE_DEVICES","0").split(",")[0] or "0"), *a],
                           input=PW + "\n", text=True, capture_output=True)
 
 

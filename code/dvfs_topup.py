@@ -9,7 +9,7 @@ the clock down — cooling cannot beat a power cap; we record the achieved clock
 
 Updates the prefill rows for these clocks in results/dvfs.csv.
 
-  SUDO_PASS=... CUDA_VISIBLE_DEVICES=0 PYTHONPATH=code python3 code/dvfs_topup.py
+  SUDO_PASS=... CUDA_VISIBLE_DEVICES=1 PYTHONPATH=code python3 code/dvfs_topup.py
 """
 from __future__ import annotations
 import csv, os, statistics, subprocess, time
@@ -17,6 +17,7 @@ import torch
 import config as C
 from power_sampler import PowerSampler
 from measure import load_model, run_prefill_point, free
+import os
 
 FREQS_TOP = [1260, 1530]
 PREFILL_WL = dict(batch=4, seq_len=256)          # SAME fixed workload as dvfs_sweep
@@ -26,8 +27,8 @@ PW = os.environ.get("SUDO_PASS", "")
 
 
 def _sudo(a): return subprocess.run(["sudo", "-S", "-p", "", *a], input=PW + "\n", text=True, capture_output=True)
-def lock(f):  return _sudo(["nvidia-smi", "-i", "0", "-lgc", str(f)])
-def reset():  return _sudo(["nvidia-smi", "-i", "0", "-rgc"])
+def lock(f):  return _sudo(["nvidia-smi", "-i", (os.environ.get("CUDA_VISIBLE_DEVICES","0").split(",")[0] or "0"), "-lgc", str(f)])
+def reset():  return _sudo(["nvidia-smi", "-i", (os.environ.get("CUDA_VISIBLE_DEVICES","0").split(",")[0] or "0"), "-rgc"])
 
 
 def cool(sampler, target, cap_s):
