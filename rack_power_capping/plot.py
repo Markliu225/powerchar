@@ -54,7 +54,7 @@ for i in range(len(x)):
     a.text(i, Np[i] + Nd[i] + max(Np[i]+Nd[i] for i in range(len(x))) * .02,
            f"{Np[i]:.0f}+{Nd[i]:.0f}\n={Np[i]+Nd[i]:.0f}", ha="center", fontsize=8)
 a.set_xticks(x); a.set_xticklabels(labels); a.set_ylabel(f"GPUs in {kW:.0f} kW rack")
-a.set_title("OPTIMAL fleet: how many GPUs in each phase (per-GPU 164/169 W)")
+a.set_title(f"OPTIMAL fleet: how many GPUs in each phase (per-GPU {P_PRE_OPT:.0f}/{P_DEC_OPT:.0f} W)")
 a.legend(fontsize=9); a.grid(alpha=.3, axis="y"); a.set_ylim(0, max(np.array(Np)+np.array(Nd)) * 1.20)
 
 # (2) TDP fleet composition

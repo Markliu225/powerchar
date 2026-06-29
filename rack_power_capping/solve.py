@@ -1,108 +1,90 @@
-"""Rack-level power-capping optimizer (Phi-3-mini / Tesla V100 curves).
+"""Rack-level power-capping optimizer — driven by the CURRENT measured-fitted curves.
 
 PROBLEM. Requests arrive with a FIXED prefill:decode token ratio P:D. Given a rack power
 budget W, decide: how many GPUs, each in which phase (prefill / decode), each at what
-per-GPU power cap, to MAXIMISE total token throughput.
+per-GPU power cap, to MAXIMISE total (balanced) token throughput.
 
-PER-GPU CURVES
-  prefill (compute-bound, measured): piecewise-linear over the clean V100 frequency-sweep
-      points; efficiency tok/J peaks at ~164 W (well below the 250 W TDP). The 250 W point
-      is a linear extrapolation so the TDP baseline can run prefill at nameplate (this card
-      thermally caps ~236 W in practice).
-  decode (memory-bound, FIRST-PRINCIPLES bandwidth roofline -- NOT the measured affine curve,
-      which was launch-overhead limited and never reached the bandwidth ceiling):
-          T_dec(B,C) = beta*B/(W_bytes + B*C*kv) = T_max(C) * B/(B+B*(C))
-          T_max(C) = beta/(C*kv)     <- HBM-bandwidth ceiling: throughput rises with power
-                                         (concurrency) then goes FLAT here.
-          B*(C)    = W_bytes/(C*kv)  <- half-saturation batch.
-      Power frontier:  T_dec(P) = T_max(C)*(P-P0)/((P-P0)+K),  P0=90 W, K=70 W.
-      Efficiency optimum:  P_opt = P0 + sqrt(P0*K) = 169 W, INDEPENDENT of context C
-          (eta=T/P peaks where (P-P0)^2 = P0*K; T_max's 1/C factor cancels in d eta/dP).
-      Context C only scales achievable throughput/efficiency (~1/C), not the optimal power.
+PER-GPU CURVES come straight from ../pt_cap_gpu1/plot_theory.py — the models fitted to the latest
+measured prefill.csv / decode.csv on this V100-GPU1 — so this solver ALWAYS matches that figure
+(including any hand-set PRE_*/DEC_* parameters there):
+    prefill (compute-bound):  T(P) = inverse of  P = P0 + kappa*T*(1+rho*T)^2     (V²f)
+    decode  (memory-bound) :  T(P) = min( T_{V²f}(P), T_max )                     (piecewise roofline)
+Each phase's efficiency (tok/J) sweet spot = argmax_P T(P)/P, found numerically below.
 
-OPTIMUM. With each phase at per-GPU efficiency eta=T/P (tok/J) and token fractions
-f_p=P/(P+D), f_d=D/(P+D), the max rack throughput at full budget is
-      Tot* = W / (f_p/eta_p + f_d/eta_d),
-so the optimum runs EACH PHASE AT ITS EFFICIENCY SWEET-SPOT (prefill 164 W, decode 169 W);
-the ratio only sets the GPU-count split. Both sweet-spots sit ~165-170 W, far below the
-250 W TDP -> under a power cap you deploy MORE GPUs at lower power. We compare the optimum
-against the TDP baseline (every GPU at 250 W nameplate) and a uniform-170 W cap.
+OPTIMUM. With each phase run at its efficiency eta=T/P and token fractions f_p=P/(P+D),
+f_d=D/(P+D), the max balanced rack throughput at full budget is
+        Tot* = W / (f_p/eta_p + f_d/eta_d),
+so the optimum runs EACH PHASE AT ITS SWEET SPOT; the ratio only sets the GPU-count split. We
+compare the optimum against the TDP baseline (every GPU at 250 W nameplate).
 
-CONSTRAINT: GPU counts are INTEGER with >=1 GPU in EACH phase (disaggregated serving needs at
-least one prefill worker and one decode worker). At extreme ratios this floor binds (e.g. a
-decode-heavy 1:20 still spends one whole GPU on prefill, over-provisioning it). See solve().
-
-  beta=6.26e11 B/s effective HBM (0.8x782 GB/s peak), W_bytes=7.642e9, kv=393216 B/token.
+CONSTRAINT: integer GPUs, >=1 per phase (disaggregated serving needs >=1 prefill worker AND >=1
+decode worker). At extreme ratios the >=1 floor binds (e.g. decode-heavy 1:20 still spends one
+whole GPU on prefill). See solve().
 """
 from __future__ import annotations
-import csv, os
+import csv, os, sys
 import numpy as np
 
-# ---- prefill: measured clean points (+ 250 W nameplate extrapolation) ----
-PRE_P = np.array([103.63, 119.36, 139.76, 163.70, 202.97, 235.63, 250.0])
-PRE_T = np.array([3361.9, 4114.2, 5120.6, 6115.4, 6879.0, 7334.2, 7534.5])
-P_PRE_LO, P_PRE_HI = float(PRE_P[0]), float(PRE_P[-1])
+HERE = os.path.dirname(os.path.abspath(__file__))
+_PT = os.path.join(os.path.dirname(HERE), "pt_cap_gpu1")
+sys.path.insert(0, _PT)
+import plot_theory as pt                      # noqa: E402  (import-safe: its main() is guarded)
 
-# ---- decode: first-principles bandwidth-roofline model ----
-BETA = 6.26e11          # effective HBM bandwidth (B/s)
-KV = 393216.0           # KV bytes per token = 2*L*n_kv*head_dim*b
-W_BYTES = 7.642e9       # weight bytes read per decode step
-P0, K = 90.0, 70.0      # static floor / power-scale (W)
-P_DEC_OPT = P0 + (P0 * K) ** 0.5            # 169.4 W, context-independent
+# ---- per-GPU curves: the SAME models plot_theory.py fits to the latest measured data ----
+_Pp, _Tp = pt.read(pt.PREFILL_CSV, "power_avg_w", "throughput_tok_s", lambda r: r["phase"] == "prefill")
+_Pf, _Tf = pt.read(pt.FRONTIER_CSV, "power_w", "throughput_tok_s")
+_preT, PRE = pt.fit_prefill(_Pp, _Tp)         # T_pre(P) + params dict {P0,kappa,rho,R2,manual}
+_decT, DEC = pt.fit_decode(_Pf, _Tf)          # T_dec(P) + params dict {...,T_max}
+
+
+def Tpre(p):  return float(np.maximum(_preT(np.asarray(p, float)), 0.0))   # prefill tok/s at cap p
+def Tdec(p):  return float(np.maximum(_decT(np.asarray(p, float)), 0.0))   # decode  tok/s at cap p
+
 
 # ---- scenario knobs ----
-W_RACK = 5000.0         # rack power budget (W); results scale linearly
-CTX = 1024              # decode context length (KV tokens); T_max ∝ 1/CTX
+W_RACK = 5000.0                               # rack power budget (W); results scale linearly
+P_TDP = 250.0                                 # nameplate TDP per GPU (W)
+CTX = 256                                     # context the decode curve was measured at (label only)
+P_PRE_LO, P_DEC_LO = float(_Pp.min()), float(_Pf.min())
 
 
-def Tmax(C):     return BETA / (C * KV)                       # bandwidth ceiling (tok/s)
-def Bstar(C):    return W_BYTES / (C * KV)                    # half-saturation batch
-def Tpre(p):     return float(np.interp(p, PRE_P, PRE_T))     # prefill (measured interp)
-def Tdec(p, C):  x = max(p - P0, 0.0); return Tmax(C) * x / (x + K)   # decode frontier T(P)
+def best_eff(Tfun, lo, hi=P_TDP):
+    """Efficiency (tok/J) sweet spot of a curve: argmax_P T(P)/P over [lo, hi]."""
+    ps = np.linspace(lo, hi, 4000)
+    eff = np.array([Tfun(p) / p for p in ps]); i = int(np.argmax(eff))
+    return float(ps[i]), float(Tfun(ps[i])), float(eff[i])
 
 
-def best_eff_prefill():
-    ps = np.linspace(P_PRE_LO, P_PRE_HI, 2000)
-    eff = np.array([Tpre(p) / p for p in ps]); i = int(np.argmax(eff))
-    return float(ps[i]), Tpre(ps[i]), float(eff[i])
+def best_eff_prefill():  return best_eff(Tpre, P_PRE_LO)
+def best_eff_decode():   return best_eff(Tdec, P_DEC_LO)
+
+P_PRE_OPT = best_eff_prefill()[0]             # prefill efficiency sweet-spot power (W)
+P_DEC_OPT = best_eff_decode()[0]              # decode  efficiency sweet-spot power (W)
 
 
-def solve(P, D, p_p, p_d, C=CTX, W=W_RACK):
-    """Token ratio P:D, per-GPU powers -> INTEGER allocation with >=1 GPU in EACH phase.
+def solve(P, D, p_p, p_d, W=W_RACK):
+    """Token ratio P:D, per-GPU caps p_p/p_d -> INTEGER allocation with >=1 GPU in EACH phase.
 
-    Disaggregated serving needs at least one prefill worker AND one decode worker, and GPUs are
-    whole units -> Np>=1, Nd>=1, integer (the continuous closed form gives fractions like 0.2 at
-    extreme ratios, which is non-physical). The balanced workload is served at request rate
-    lam = min(prefill_capacity/P, decode_capacity/D); total useful throughput = lam*(P+D).
-    We sweep integer Np>=1 and fill the remaining budget with Nd>=1 decode GPUs, taking the best.
-    Returns None if the budget cannot fit one GPU of each phase."""
-    tp, td = Tpre(p_p), Tdec(p_d, C)
+    Whole GPUs, Np>=1 and Nd>=1. The balanced workload is served at request rate
+    lam = min(prefill_capacity/P, decode_capacity/D); useful throughput = lam*(P+D). Sweep integer
+    Np>=1, fill the rest of the budget with Nd>=1 decode GPUs, keep the best. None if budget < 1+1."""
+    tp, td = Tpre(p_p), Tdec(p_d)
     best = None
-    npre_max = int((W - p_d) // p_p)             # leave budget for >=1 decode GPU
+    npre_max = int((W - p_d) // p_p)              # leave room for >=1 decode GPU
     for npre in range(1, npre_max + 1):
-        ndec = int((W - npre * p_p) // p_d)      # fill the rest with decode
+        ndec = int((W - npre * p_p) // p_d)       # fill remaining budget with decode
         if ndec < 1:
-            break                                # budget exhausted (ndec falls as npre rises)
-        lam = min(npre * tp / P, ndec * td / D)  # bottleneck request rate
-        tot = lam * (P + D)                      # useful tok/s (balanced; excess capacity wasted)
+            break                                 # ndec falls as npre rises -> budget exhausted
+        lam = min(npre * tp / P, ndec * td / D)   # bottleneck request rate (token balance)
+        tot = lam * (P + D)                       # useful tok/s (excess capacity wasted)
         if best is None or tot > best["tot"]:
             best = dict(p_p=p_p, p_d=p_d, tp=tp, td=td, tot=tot, lam=lam, Np=npre, Nd=ndec,
                         Wp=npre * p_p, Wd=ndec * p_d, pre_cap=npre * tp, dec_cap=ndec * td)
     return best
 
 
-def solve_cont(P, D, p_p, p_d, C=CTX, W=W_RACK):
-    """Continuous relaxation (fractional GPUs, perfectly balanced) -> upper bound on solve()."""
-    tp, td = Tpre(p_p), Tdec(p_d, C)
-    fp, fd = P / (P + D), D / (P + D)
-    tot = W / (fp / (tp / p_p) + fd / (td / p_d))
-    return dict(tot=tot, Np=fp * tot / tp, Nd=fd * tot / td)
-
-
-# policies: name -> (prefill per-GPU W, decode per-GPU W)
 def policies():
-    pP, _, _ = best_eff_prefill()
-    return {"OPTIMAL": (pP, P_DEC_OPT), "TDP": (250.0, 250.0), "Uniform170": (170.0, 170.0)}
+    return {"OPTIMAL": (P_PRE_OPT, P_DEC_OPT), "TDP": (P_TDP, P_TDP)}
 
 
 RATIOS = [(1, 20), (1, 10), (1, 5), (1, 2), (1, 1), (2, 1), (5, 1), (10, 1), (20, 1)]
@@ -110,29 +92,30 @@ RATIOS = [(1, 20), (1, 10), (1, 5), (1, 2), (1, 1), (2, 1), (5, 1), (10, 1), (20
 
 def main():
     pP, tP, eP = best_eff_prefill()
-    pol = policies()
-    print(f"per-GPU sweet spots:  prefill {pP:.0f} W -> {tP:.0f} tok/s ({eP:.1f} tok/J) | "
-          f"decode {P_DEC_OPT:.0f} W (C-independent)")
-    print(f"decode bandwidth ceiling T_max(C={CTX}) = {Tmax(CTX):.0f} tok/s, "
-          f"@169W -> {Tdec(P_DEC_OPT, CTX):.0f} tok/s ({Tdec(P_DEC_OPT, CTX)/P_DEC_OPT:.1f} tok/J)")
-    print(f"\nrack {W_RACK:.0f} W, context C={CTX}   integer GPUs, >=1 per phase   (OPTIMAL pre@{pP:.0f}/dec@{P_DEC_OPT:.0f}W  vs  TDP 250/250W)")
-    print(f"{'P:D':>7} | {'OPT ktok/s':>10}{'N_pre':>6}{'N_dec':>6} | {'TDP ktok/s':>10}{'N_pre':>6}{'N_dec':>6} | {'gain':>7}  note")
+    pD, tD, eD = best_eff_decode()
+    print(f"prefill fit:  P0={PRE['P0']:.0f} kappa={PRE['kappa']:.2e} rho={PRE['rho']:.1e}  R²={PRE['R2']:.3f}"
+          + (f"  [hand-set:{','.join(PRE['manual'])}]" if PRE['manual'] else "  [auto]"))
+    print(f"decode  fit:  P0={DEC['P0']:.0f} kappa={DEC['kappa']:.2e} rho={DEC['rho']:.1e} T_max={DEC['T_max']:.0f}  R²={DEC['R2']:.3f}"
+          + (f"  [hand-set:{','.join(DEC['manual'])}]" if DEC['manual'] else "  [auto]"))
+    print(f"sweet spots:  prefill {pP:.0f} W -> {tP:.0f} tok/s ({eP:.1f} tok/J) | "
+          f"decode {pD:.0f} W -> {tD:.0f} tok/s ({eD:.1f} tok/J)   (decode capped at T_max={DEC['T_max']:.0f})")
+    print(f"\nrack {W_RACK:.0f} W, context C={CTX}   integer GPUs, >=1 per phase   "
+          f"(OPTIMAL pre@{pP:.0f}/dec@{pD:.0f}W  vs  TDP {P_TDP:.0f}/{P_TDP:.0f}W)")
+    print(f"{'P:D':>7} | {'OPT ktok/s':>10}{'Np':>4}{'Nd':>4} | {'TDP ktok/s':>10}{'Np':>4}{'Nd':>4} | {'gain':>7}  note")
     rows = []
     for (P, D) in RATIOS:
-        o = solve(P, D, *pol["OPTIMAL"]); t = solve(P, D, *pol["TDP"]); u = solve(P, D, *pol["Uniform170"])
+        o = solve(P, D, *policies()["OPTIMAL"]); t = solve(P, D, *policies()["TDP"])
         gain = 100 * (o["tot"] / t["tot"] - 1)
-        bind = "Np=1 floor binds" if o["Np"] == 1 and P < D else ("Nd=1 floor binds" if o["Nd"] == 1 and D < P else "")
-        print(f"{P}:{D:<5} | {o['tot']/1000:>10.1f}{o['Np']:>6d}{o['Nd']:>6d} | "
-              f"{t['tot']/1000:>10.1f}{t['Np']:>6d}{t['Nd']:>6d} | {gain:>6.1f}%  {bind}")
+        bind = "Np=1 floor" if o["Np"] == 1 and P < D else ("Nd=1 floor" if o["Nd"] == 1 and D < P else "")
+        print(f"{P}:{D:<5} | {o['tot']/1000:>10.1f}{o['Np']:>4d}{o['Nd']:>4d} | "
+              f"{t['tot']/1000:>10.1f}{t['Np']:>4d}{t['Nd']:>4d} | {gain:>6.1f}%  {bind}")
         rows.append({"context_C": CTX, "P": P, "D": D,
                      "opt_tok_s": round(o["tot"]), "opt_N_prefill": o["Np"], "opt_N_decode": o["Nd"],
-                     "opt_p_prefill_w": round(pP), "opt_p_decode_w": round(P_DEC_OPT),
+                     "opt_p_prefill_w": round(pP), "opt_p_decode_w": round(pD),
                      "tdp_tok_s": round(t["tot"]), "tdp_N_prefill": t["Np"], "tdp_N_decode": t["Nd"],
-                     "uniform170_tok_s": round(u["tot"]),
                      "gain_opt_vs_tdp_pct": round(gain, 1), "constraint_binds": bind})
 
-    here = os.path.dirname(os.path.abspath(__file__))
-    with open(os.path.join(here, "results.csv"), "w", newline="") as f:
+    with open(os.path.join(HERE, "results.csv"), "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys())); w.writeheader(); [w.writerow(r) for r in rows]
     print("\nwrote results.csv")
 
