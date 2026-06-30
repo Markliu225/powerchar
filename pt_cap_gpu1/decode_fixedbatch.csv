@@ -1,13 +1,13 @@
-64.8W @ 352MHz  |    163 tok/s | 3.64 tok/J
-80.4W @ 487MHz  |    289 tok/s | 4.78 tok/J
-92.2W @ 720MHz  |    374 tok/s | 5.19 tok/J
-100.8W @ 900MHz |    438 tok/s | 5.42 tok/J
-113.9W @1057MHz |    490 tok/s | 5.22 tok/J
-124.1W @1140MHz |    516 tok/s | 4.96 tok/J
-143.0W @1207MHz |    554 tok/s | 4.51 tok/J
-152.7W @1252MHz |    586 tok/s | 4.42 tok/J
-162.7W @1312MHz |    591 tok/s | 4.14 tok/J
-177.9W @1380MHz |    626 tok/s | 3.96 tok/J
-185.8W @1462MHz |    639 tok/s | 3.85 tok/J
-202.3W @1520MHz |    642 tok/s | 3.52 tok/J
-211.9W @1528MHz |    643 tok/s | 3.53 tok/J
+56.8W @ 352MHz  |    163 tok/s | 
+74.4W @ 487MHz  |    289 tok/s |
+86.2W @ 720MHz  |    374 tok/s |
+100.8W @ 900MHz |    438 tok/s |
+113.9W @1057MHz |    490 tok/s |
+124.1W @1140MHz |    516 tok/s |
+143.0W @1207MHz |    554 tok/s |
+152.7W @1252MHz |    586 tok/s |
+162.7W @1312MHz |    591 tok/s |
+177.9W @1380MHz |    626 tok/s |
+185.8W @1462MHz |    639 tok/s |
+202.3W @1520MHz |    642 tok/s |
+211.9W @1528MHz |    643 tok/s |
