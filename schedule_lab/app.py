@@ -19,7 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import numpy as np
 os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
 if os.environ.get("CUDA_VISIBLE_DEVICES", "").strip() in ("", "0"):
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # always GPU1, never device 0
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # always GPU1, never device 0
 import torch
 import pynvml
 import matplotlib

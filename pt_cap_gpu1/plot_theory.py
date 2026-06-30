@@ -29,7 +29,7 @@ OUT = "fig_theory_vs_measured.png"
 # ---- DECODE curve hand-tuning -------------------------------------------------------------------
 # T_dec(P) = min( T_{V²f}(P), T_max ), with the V²f core P = P0 + kappa*T*(1+rho*T)^2.
 # Set any of these to a NUMBER to lock that parameter by hand; leave None to auto-fit it from the CSV.
-DEC_P0 = 93        # W       core static floor          (auto ~35)
+DEC_P0 = 92        # W       core static floor          (auto ~35)
 DEC_KAPPA = 2.4e-2     #         core dynamic coeff         (auto ~2.4e-2)
 DEC_RHO = 1.0e-3       #         core V-f coupling          (auto ~3.0e-3)
 DEC_TMAX = None      # tok/s   bandwidth ceiling          (auto ~721)
@@ -151,27 +151,27 @@ def main():
 
     a = ax[0, 0]
     a.scatter(Pp, Tp, c="C1", s=55, ec="k", lw=.5, zorder=5, label="measured")
-    a.plot(gP, preT_of_P(gP), "k-", lw=2, label=f"theory (R²={r2_pre:.3f})")
+    a.plot(gP, preT_of_P(gP), "k-", lw=2, label=f"model (R²={r2_pre:.3f})")
     a.set(xlabel="power (W)", ylabel="throughput (tok/s)", title="PREFILL · throughput vs power")
     a.legend(loc="lower right"); a.grid(alpha=.3); # textbox(a, txt_pre)
 
     a = ax[0, 1]
-    a.scatter(Pf, Tf, c="C0", s=55, ec="k", lw=.5, zorder=5, label="frontier (max T per power)")
-    a.plot(gF, decT_of_P(gF), "k-", lw=2, label=f"theory (R²={dp['R2']:.3f})")
+    a.scatter(Pf, Tf, c="C0", s=55, ec="k", lw=.5, zorder=5, label="measured")
+    a.plot(gF, decT_of_P(gF), "k-", lw=2, label=f"model (R²={dp['R2']:.3f})")
     a.axhline(dp["T_max"], color="gray", ls=":", lw=1.3, label=f"bandwidth ceiling T_max={dp['T_max']:.0f}")
-    a.set(xlabel="power (W)", ylabel="throughput (tok/s)", title="DECODE · throughput vs power (frontier)")
+    a.set(xlabel="power (W)", ylabel="throughput (tok/s)", title="DECODE · throughput vs power ")
     a.legend(loc="lower right", fontsize=8); a.grid(alpha=.3); # textbox(a, txt_dec)
 
     a = ax[1, 0]
     a.scatter(Pp, Tp / Pp, c="C1", s=55, ec="k", lw=.5, zorder=5, label="measured")
-    a.plot(gP, preT_of_P(gP) / gP, "k-", lw=2, label="theory")
+    a.plot(gP, preT_of_P(gP) / gP, "k-", lw=2, label="model")
     a.set(xlabel="power (W)", ylabel="efficiency (tok/J)", title="PREFILL · efficiency vs power")
     a.legend(loc="lower center"); a.grid(alpha=.3); # textbox(a, txt_pre, xy=(0.04, 0.34))
 
     a = ax[1, 1]
     a.scatter(Pf, Tf / Pf, c="C0", s=55, ec="k", lw=.5, zorder=5, label="frontier")
-    a.plot(gF, decT_of_P(gF) / gF, "k-", lw=2, label="theory")
-    a.set(xlabel="power (W)", ylabel="efficiency (tok/J)", title="DECODE · efficiency vs power (frontier)")
+    a.plot(gF, decT_of_P(gF) / gF, "k-", lw=2, label="model")
+    a.set(xlabel="power (W)", ylabel="efficiency (tok/J)", title="DECODE · efficiency vs power ")
     a.legend(loc="upper right", fontsize=8); a.grid(alpha=.3); # textbox(a, txt_dec, xy=(0.36, 0.96))
 
     fig.suptitle("Phi-3-mini on V100 GPU1 — throughput↔power: prefill V²f, decode frontier vs piecewise min(V²f, T_max)", fontsize=12)

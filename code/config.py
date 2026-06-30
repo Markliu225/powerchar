@@ -9,15 +9,13 @@ from __future__ import annotations
 import os
 
 # ---------------------------------------------------------------------------
-# GPU pinning — ALWAYS GPU1, NEVER device 0 (GPU0 on this box is flaky).
-# Set before importing torch so CUDA initialises on the right device. Order
-# devices by PCI bus so index 1 is deterministically physical GPU1 even if GPU0
-# faults (default "fastest-first" ordering can remap a faulted GPU0). An explicit
-# CUDA_VISIBLE_DEVICES=2/3 still wins; only unset/empty/"0" is forced to "1".
+# GPU pinning — the box now presents a single healthy GPU at index 0 (the other
+# slots fault/disappear after a driver wedge; post-reboot only GPU0 enumerates and
+# CUDA initialises there). Default to device 0; an explicit CUDA_VISIBLE_DEVICES
+# still wins. Order by PCI bus so indices are deterministic.
 # ---------------------------------------------------------------------------
 os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
-if os.environ.get("CUDA_VISIBLE_DEVICES", "").strip() in ("", "0"):
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ.setdefault("CUDA_VISIBLE_DEVICES", "0")
 
 import torch
 

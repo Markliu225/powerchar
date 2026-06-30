@@ -18,7 +18,7 @@ def _visible_gpu_index() -> int:
     """Physical NVML index of the GPU torch is using. NVML ignores CUDA_VISIBLE_DEVICES and
     indexes physically, so when CUDA_VISIBLE_DEVICES=1 we must sample physical GPU 1, not 0."""
     cvd = os.environ.get("CUDA_VISIBLE_DEVICES", "").split(",")[0].strip()
-    return int(cvd) if cvd.isdigit() else 1   # default GPU1, never 0
+    return int(cvd) if cvd.isdigit() else 0   # single healthy GPU now enumerates at index 0
 
 
 class PowerSampler:
