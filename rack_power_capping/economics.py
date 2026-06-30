@@ -2,7 +2,7 @@
 
 THE TRADE.  Same rack power budget, two fleets:
     TDP : N_tdp GPUs @250 W      (fewer GPUs, each at full nameplate power)
-    OPT : N_opt GPUs @~145 W     (more GPUs, each at its efficiency sweet spot)
+    OPT : N_opt GPUs, capped     (more GPUs; full-budget throughput-max caps from solve_opt, ~140-165 W)
 OPT buys (N_opt - N_tdp) EXTRA GPUs but serves more tokens. Crucially, BOTH fleets draw the SAME
 power, so the extra tokens cost NO extra energy -> the only extra cost is the extra GPUs' CapEx and
 the extra-token revenue is (nearly) pure upside.
@@ -57,7 +57,7 @@ def plot(rows):
     a = ax[0]
     net_opt = (-r["opt_capex_usd"] + r["opt_net_usd_day"] * days) / 1e3
     net_tdp = (-r["tdp_capex_usd"] + r["tdp_net_usd_day"] * days) / 1e3
-    a.plot(months, net_opt, color=GREEN, lw=2.3, label=f"POWER CAP — {r['opt_gpus']} GPUs @~145 W")
+    a.plot(months, net_opt, color=GREEN, lw=2.3, label=f"POWER CAP — {r['opt_gpus']} GPUs (throughput-max caps)")
     a.plot(months, net_tdp, color=RED, lw=2.3, label=f"NO CAP (TDP) — {r['tdp_gpus']} GPUs @250 W")
     a.axhline(0, color="k", ls="--", lw=1.1)
     be_opt = r["opt_capex_usd"] / r["opt_net_usd_day"] / 30.44       # each fleet's own break-even (mo)
@@ -106,7 +106,7 @@ def main():
           f"{'Δrev/day':>9} {'Δrev/yr':>9} | {'payback':>8}")
     rows = []
     for (P, D) in S.RATIOS:
-        o = S.solve(P, D, *pol["OPTIMAL"]); t = S.solve(P, D, *pol["TDP"])
+        o = S.solve_opt(P, D); t = S.solve(P, D, *pol["TDP"])
         n_opt, n_tdp = o["Np"] + o["Nd"], t["Np"] + t["Nd"]
         n_extra = n_opt - n_tdp
         capex = n_extra * GPU_USD

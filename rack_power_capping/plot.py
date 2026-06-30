@@ -1,7 +1,8 @@
 """Optimal-vs-TDP across P:D ratios: GPU counts, per-GPU settings, throughput gain.
 
-Per-GPU power is fixed by each policy (the ratio only changes the COUNTS):
-  OPTIMAL : prefill @164 W, decode @169 W  (each phase at its efficiency sweet-spot)
+  OPTIMAL : full-budget throughput max (solve_opt) — per-GPU caps FLOAT by ratio: the bottleneck phase
+            is pushed above its sweet spot to burn the leftover, the over-provisioned phase trimmed
+            below it to free budget for one more GPU. Each bar is annotated with its chosen pre/dec cap.
   TDP     : prefill @250 W, decode @250 W  (nameplate full power)
 Reads everything from solve.py (theoretical bandwidth-roofline decode, context solve.CTX).
   python3 plot.py   ->   fig_opt_vs_tdp.png
@@ -22,7 +23,7 @@ RATIOS = S.RATIOS
 labels = [f"{p}:{d}" for p, d in RATIOS]
 kW = S.W_RACK / 1000.0
 
-opt = [S.solve(P, D, P_PRE_OPT, P_DEC_OPT) for P, D in RATIOS]
+opt = [S.solve_opt(P, D) for P, D in RATIOS]
 tdp = [S.solve(P, D, P_TDP, P_TDP) for P, D in RATIOS]
 impr = [100 * (o["tot"] / t["tot"] - 1) for o, t in zip(opt, tdp)]
 
@@ -32,7 +33,7 @@ fig, ax = plt.subplots(3, 1, figsize=(13, 14), gridspec_kw={"height_ratios": [1.
 # (0) throughput optimal vs TDP + improvement
 a = ax[0]
 a.bar(x - w / 2, [o["tot"] / 1000 for o in opt], w, color="#2ca02c",
-      label=f"OPTIMAL (prefill@{P_PRE_OPT:.0f}W, decode@{P_DEC_OPT:.0f}W)")
+      label="OPTIMAL (full-budget throughput max — per-GPU caps float by ratio)")
 a.bar(x + w / 2, [t["tot"] / 1000 for t in tdp], w, color="#d62728",
       label=f"TDP (prefill@{P_TDP:.0f}W, decode@{P_TDP:.0f}W)")
 for i, im in enumerate(impr):
@@ -45,17 +46,20 @@ a.set_title(f"Rack throughput — OPTIMAL vs TDP across P:D ratios   (C={S.CTX},
             f"green = throughput gain of optimal over TDP")
 a.legend(fontsize=9); a.grid(alpha=.3, axis="y")
 
-# (1) OPTIMAL fleet composition
+# (1) OPTIMAL fleet composition — counts AND the per-GPU caps the optimiser chose for each ratio
 a = ax[1]
 Np = [o["Np"] for o in opt]; Nd = [o["Nd"] for o in opt]
-a.bar(x, Np, color="#1f77b4", label=f"prefill GPUs @{P_PRE_OPT:.0f}W")
-a.bar(x, Nd, bottom=Np, color="#ff7f0e", label=f"decode GPUs @{P_DEC_OPT:.0f}W")
+a.bar(x, Np, color="#1f77b4", label="prefill GPUs (cap floats, see labels)")
+a.bar(x, Nd, bottom=Np, color="#ff7f0e", label="decode GPUs (cap floats, see labels)")
+tot_max = max(Np[i] + Nd[i] for i in range(len(x)))
 for i in range(len(x)):
-    a.text(i, Np[i] + Nd[i] + max(Np[i]+Nd[i] for i in range(len(x))) * .02,
-           f"{Np[i]:.0f}+{Nd[i]:.0f}\n={Np[i]+Nd[i]:.0f}", ha="center", fontsize=8)
+    a.text(i, Np[i] + Nd[i] + tot_max * .02,
+           f"{Np[i]:.0f}+{Nd[i]:.0f}={Np[i]+Nd[i]:.0f}\n@{opt[i]['p_p']:.0f}/{opt[i]['p_d']:.0f}W",
+           ha="center", fontsize=7.5)
 a.set_xticks(x); a.set_xticklabels(labels); a.set_ylabel(f"GPUs in {kW:.0f} kW rack")
-a.set_title(f"OPTIMAL fleet: how many GPUs in each phase (per-GPU {P_PRE_OPT:.0f}/{P_DEC_OPT:.0f} W)")
-a.legend(fontsize=9); a.grid(alpha=.3, axis="y"); a.set_ylim(0, max(np.array(Np)+np.array(Nd)) * 1.20)
+a.set_title("OPTIMAL fleet: GPUs per phase + the chosen per-GPU caps "
+            "(prefill@pp / decode@pd W — note pp rises when prefill is the bottleneck)")
+a.legend(fontsize=9); a.grid(alpha=.3, axis="y"); a.set_ylim(0, tot_max * 1.22)
 
 # (2) TDP fleet composition
 a = ax[2]
