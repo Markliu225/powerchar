@@ -91,7 +91,7 @@ The cubic and the linear law are two faces of one fact: **compute pays `V²` to 
 
 ## 8. Measured DVFS test (V100, clock locked 510→1530 MHz) — honest result
 
-We finally ran the frequency knob directly (`code/dvfs_sweep.py`, `figures/dvfs_cubic.png`): a fixed light prefill workload (B=4, S=256) and a fixed decode workload (B=16) measured at each locked SM clock.
+We finally ran the frequency knob directly (`code/dvfs_sweep.py` measures → `code/plot_dvfs.py` plots `figures/dvfs_cubic.png`): a fixed light prefill workload (B=4, S=256) and a fixed decode workload (B=16) measured at each locked SM clock.
 
 **The mechanism is confirmed (§3):**
 - prefill **`T ∝ f^0.90`** (R²=0.99) — compute-bound, throughput tracks the clock ✓

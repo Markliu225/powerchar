@@ -1,12 +1,12 @@
 """Read CSV -> fit models -> plot.  Prefill & decode power<->throughput on V100 GPU1.
 
 Pipeline (one entry point: `python3 plot_theory.py`):
-  1. LOAD   pt_cap.csv (prefill)  +  decode_frontier.csv (the pre-extracted decode frontier).
+  1. LOAD   prefill.csv (prefill)  +  decode.csv (the pre-extracted decode frontier).
   2. FIT    a model to each phase.
   3. PLOT   throughput-vs-power and efficiency-vs-power, measured + model -> fig_theory_vs_measured.png.
 
 The decode FRONTIER (max throughput per power budget) is produced separately by make_frontier.py
-(decode_pt.csv -> decode_frontier.csv); this script just reads it.
+(decode_pt.csv -> decode.csv); this script just reads it.
 
 Axes: POWER (x) -> THROUGHPUT (y).  Models:
   PREFILL  compute-bound V²f:   P(T) = P0 + kappa*T*(1+rho*T)^2     (plotted as its inverse T(P))

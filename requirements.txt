@@ -1,5 +1,5 @@
-# Measured on: Windows 11, RTX 5060 (8 GB, 149 W cap), driver 591.86 / CUDA 13.1
-torch>=2.9          # built with cu128
+# Measured on: Linux, Tesla V100-DGXS-32GB (250 W cap), CUDA / PyTorch as below
+torch>=2.9
 transformers>=4.44
 accelerate>=0.30
 pynvml>=11.5        # NVML GPU telemetry

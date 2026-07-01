@@ -124,4 +124,4 @@ $$P(f)=P_{\text{static}}+\kappa\,V(f)^2 f,\quad V=V_0+\gamma f$$
 - **显存频率不可调是 V100 的硬约束**:decode 段2 天花板因此固定。换显存频率可 DVFS 的卡(A100/消费级),段2 也随显存频率走 V²f(`P–T` 呈凸而非竖直),那时显存频率才成为第二个旋钮。
 - `P–T` 为**未热降频(冷启短测)**口径;持续重载 V100 会在 ~83°C 热降频。
 - `t_ov`(eager PyTorch,数十 ms)把达成带宽压到峰值 ~22%;优化引擎(CUDA Graph/连续批处理)能逼近真实带宽顶,但**分段结构不变**。
-- 参数取自 GPU1 功率封顶扫描(`pt_cap_gpu1/pt_cap.csv`);换模型/卡只改 §1 常数并重拟合。
+- 参数取自 GPU1 功率封顶扫描(`pt_cap_gpu1/prefill.csv`、`pt_cap_gpu1/decode_fixedbatch.csv`);换模型/卡只改 §1 常数并重拟合。

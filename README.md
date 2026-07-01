@@ -1,119 +1,78 @@
 # LLM Inference Power Characterisation — Prefill vs Decode
 
-Real measurements on real hardware of **token throughput vs GPU power** for the
-two phases of LLM inference, plus an **analytic model** validated against the
-data. Everything is reproducible from a single config file.
+Real measurements on real hardware of **GPU power vs token throughput** for the two
+phases of LLM inference — **prefill** (prompt ingestion, compute-bound) and
+**decode** (token generation, memory-bandwidth-bound) — plus **analytic `P↔T`
+models** validated against the data, and downstream **power-capping** and
+**workload-planning** studies built on top of the measured curves.
 
-- **What is measured** — for a *given* model + parameter config, the
-  throughput↔power relationship in **prefill** (prompt ingestion, compute-bound)
-  and **decode** (token generation, memory-bandwidth-bound), swept separately.
-- **The model** — roofline + DVFS derivations in
-  [THEORY.zh.md](THEORY.zh.md), fitted to the data with R² and MAPE.
-- **The plan** — the step-by-step requirements in [WORKPLAN.md](WORKPLAN.md).
-
-## Setup (measured, not assumed)
+## Hardware / setup (measured, not assumed)
 
 | | |
 |---|---|
-| Model | `Qwen/Qwen2.5-1.5B-Instruct` — 1.544 B params, 28 layers, d=1536, GQA 12q:2kv×128, fp16, SDPA |
-| GPU | NVIDIA GeForce RTX 5060, 8 GB, **149 W** cap (Blackwell sm_120) |
-| Measured peak | **38.1 TFLOP/s** fp16, **372 GB/s** bandwidth → roofline ridge **102 FLOP/byte** |
-| Host | Windows 11, driver 591.86 / CUDA 13.1, PyTorch 2.11+cu128, transformers 5.x |
-| Telemetry | NVML (`pynvml`) sampled at 50 Hz, averaged over the exact timed window |
+| GPU | **NVIDIA Tesla V100-DGXS-32GB** (sm_70), HBM2 fixed at 877 MHz, **250 W** cap |
+| Default model | `microsoft/Phi-3-mini-4k-instruct` (fp16, MHA); cross-model set below |
+| Multi-model set | `facebook/opt-1.3b`, `Qwen2.5-1.5B / 3B / 7B-Instruct`, `Phi-3-mini-4k-instruct` |
+| Control knob | **power cap** (`nvidia-smi -pl`) — sets the operating power, which sets both `T` and `P`; frequency is the intermediate mechanism (see the model docs) |
+| Telemetry | NVML (`pynvml`) sampled in a background thread, averaged over the exact timed window |
+
+The whole single-model pipeline is a pure function of [code/config.py](code/config.py)
+(model, sweep grids, timing) — override the model with `POWERCHAR_MODEL=…`.
+
+## The analytic models (`P ↔ T`)
+
+- [POWER_THROUGHPUT_MODEL.zh.md](POWER_THROUGHPUT_MODEL.zh.md) — **the authoritative,
+  measured-and-fitted model** (V100 + Phi-3-mini). Prefill is a single convex `V²f`
+  curve `P(T)=P₀+κ·T·(1+ρT)²`; decode is **piecewise** `T(P)=min(T_{V²f}(P), T_max)` —
+  it rises with power along the same `V²f` law, then hits a hard **bandwidth ceiling**
+  `T_max` (fixed because the V100's HBM clock cannot DVFS), beyond which extra power
+  buys no throughput. Fit: prefill R²=0.99; decode ceiling ≈690 tok/s @ b48/C256.
+- [POWER_THROUGHPUT_MODEL.md](POWER_THROUGHPUT_MODEL.md) — the **idealised first-principles
+  derivation** (no fitted data): in the `V∝f` limit, compute-bound prefill obeys
+  `P≈P₀+k_c·T³` (cubic) and memory-bound decode `P≈P₀+k_m·T` (linear). §8 is an honest
+  measured DVFS test showing the V100 does **not** reach the clean-cubic regime.
+
+**Punchline (energy).** At the same near-cap power, prefill delivers far more tokens/J
+than decode (~10×): prefill reuses each weight tile across the whole prompt, while
+decode re-streams all weights every step to emit only `batch` tokens.
+
+## The measurement engine — `code/`
+
+```
+code/config.py        all experiment parameters (model, sweeps, timing, roofline)
+code/model_info.py    arch extraction + peak-FLOP/BW microbench + roofline
+code/power_sampler.py NVML sampler with windowed aggregation
+code/measure.py       prefill & decode batch sweeps  -> results/*.csv  (core; imported by the sweeps)
+code/measure_dvfs.py  clock-locked DVFS sweep (needs admin)
+code/analyze.py       single-model fits + figures    -> figures/
+code/*_sweep.py       power-cap / clock / goodput sweeps that feed the sub-experiments
+                      (decode_*_sweep.py, pt_cap_sweep.py -> pt_cap_gpu1/;
+                       decode_sat*.py -> results/decode_saturation*.csv;
+                       goodput_cap_sweep.py -> results/goodput_*.csv)
+code/plot_*.py        standalone plotters for the above
+results/              measured CSVs + model_info.json + fit_summary.json + multi-model mm_*.{csv,json}
+figures/              regenerated locally by the pipeline (not committed)
+```
+
+## Sub-experiments (each self-contained, with its own doc + data + figures)
+
+| dir | what it is | doc |
+|---|---|---|
+| [pt_cap_gpu1/](pt_cap_gpu1/) | decode power-capping `P(T)`: additive `T_mem+T_comp` three-stage model, fitted to a V100 clock/power sweep | [decode_model_theory.md](pt_cap_gpu1/decode_model_theory.md) |
+| [rack_power_capping/](rack_power_capping/) | rack-level economics/optimisation on the `P(T)` curves — how to split prefill/decode GPUs and cap each to maximise goodput per watt / payback | [WORKLOAD_PORTFOLIO.zh.md](rack_power_capping/WORKLOAD_PORTFOLIO.zh.md) |
+| [workload_analysis/](workload_analysis/) | prefill:decode token ratios by use-case, from real production traces (Azure, BurstGPT) + Dolly-15k | [README](workload_analysis/README.md) · [REFERENCES.zh.md](workload_analysis/REFERENCES.zh.md) |
+| [schedule_lab/](schedule_lab/) | interactive tool to hand-schedule a GPU workload and watch temperature/clock/power; includes a thermal-throttle probe | [README](schedule_lab/README.md) · [thermal_throttle](schedule_lab/thermal_throttle/README.md) |
 
 ## How to run
 
 ```bash
 pip install -r requirements.txt
-python code/model_info.py            # Step 0: model+GPU constants, roofline
-python code/measure.py --phase both  # Steps 1-2: prefill + decode sweeps -> CSVs
-python code/analyze.py --step all    # Steps 1-4: all figures + model fits
+
+# single model: model_info -> measure(prefill+decode) -> analyze (figures + fits)
+./run.sh
+
+# cross-model validation of the P(T) model (locks the SM clock; needs sudo)
+SUDO_PASS='<pw>' bash run_multimodel.sh
 ```
 
-## Results
-
-### Step 0 — the chip
-![roofline](figures/step0_roofline.png)
-
-Decode (arithmetic intensity ≈ batch) lives left of the ridge → **memory-bound**;
-prefill (intensity ≈ seq_len) lives far right → **compute-bound**.
-
-**Controlled experiment.** `P(T)` is only single-valued if throughput is a
-*monotone* function of the one swept variable. So we **fix the sequence/context
-length and sweep batch (concurrency)** — holding the per-token cost constant
-makes throughput rise monotonically toward a ceiling. (Sweeping sequence length
-instead makes prefill throughput non-monotone — it rises then falls with
-attention O(S²) — folding `P(T)` into one-x-two-y; that is the mistake this
-design avoids.)
-
-### Step 1 — Prefill (fixed S=128, sweep batch)
-![prefill power vs throughput](figures/step1_prefill_power_vs_throughput.png)
-
-Power rises with throughput **86 → 146 W as throughput climbs 3.7 → 10.7 k tok/s**
-and saturates at the **compute roof** (~11.8 k tok/s). Single-valued.
-
-### Step 2 — Decode (fixed ctx=256, sweep batch)
-![decode power vs throughput](figures/step2_decode_power_vs_throughput.png)
-
-Power rises with throughput **63 → 135 W as throughput climbs 29 → 749 tok/s**,
-saturating at the **memory/overhead ceiling** (~1.5 k tok/s) — ~14× lower than
-prefill, because each step re-reads all 3.09 GB of weights to emit only `batch`
-tokens. Beyond b≈48 the KV cache exhausts the 8 GB VRAM (shared ~1.7 GB with the
-desktop) and WDDM spills to host — a hard wall, documented and excluded.
-
-### Steps 3–4 — analytic model `P(T)` & synthesis
-| | |
-|---|---|
-| ![prefill model](figures/step3_prefill_model.png) | ![decode model](figures/step3_decode_model.png) |
-
-Both `P(T)` come from composing two measured batch-domain laws — affine step time
-`t(B)=t_fixed+β·B` (→ throughput `T(B)=n·B/t(B)`, ceiling `n/β`) and saturating
-power `P(B)=P_idle+A(1−e^{−B/B₀})`:
-
-| phase | bottleneck / ceiling | fit | power range |
-|---|---|---|---|
-| prefill | compute roof, **11.8 k tok/s** (MFU 74 %) | **R²=0.991**, MAPE 1.0 % | 86→146 W |
-| decode | memory+overhead, **1.5 k tok/s** | **R²=0.982**, MAPE 3.5 % | 54→139 W |
-
-![combined](figures/step4_combined_power_vs_throughput.png)
-
-Same shape, ceilings ~14× apart: **at the same near-cap power, prefill delivers
-~14× the tokens/s of decode.** Energy: prefill **43–74 tok/J** vs decode
-**0.4–5.6 tok/J** (~13× at best, `figures/step4_combined_efficiency_vs_throughput.png`).
-
-Full derivations: [THEORY.zh.md](THEORY.zh.md).
-
-## The ≈cubic DVFS law — `code/measure_dvfs.py` (measured)
-![dvfs cubic](figures/step5_dvfs_cubic.png)
-
-Prefill power **does** grow ~cubically with throughput — but only for the
-**frequency** knob, not the concurrency knob of Steps 1–4. Pinning the workload
-and sweeping the **SM clock 600→2687 MHz** gives (measured, clock-locked):
-
-| workload | throughput vs clock | power vs throughput |
-|---|---|---|
-| **prefill** | `T ∝ f^0.91` (compute-bound) | **`P ≈ 31 + k·T^2.94`, R²=0.989** — the cubic law |
-| **decode** | `T ∝ f^0.50` (memory-bound — clock barely helps) | T compressed (0.24→0.48 k); raising clock just wastes power |
-
-Raising throughput via **clock** → each core runs faster (`P_dyn = C·V²·f`,
-`V∝f`) → `P ∝ T^~3`. Raising it via **batch** at fixed clock (Steps 1–4) → more
-cores active → `P ∝ T` then caps. Same GPU, two knobs, both correct. Run it
-yourself (needs admin for clock-lock):
-`python code/measure_dvfs.py && python code/analyze.py --step dvfs`.
-See [THEORY.zh.md](THEORY.zh.md) §5.
-
-Other note: no flash/mem-efficient SDPA kernel exists for this sm_120 build, so
-prefill attention is O(S²) in memory and hits the 8 GB wall at S≈5 k (hence the
-small fixed S=128 for the batch sweep).
-
-## Files
-```
-code/config.py        all experiment parameters (model, sweeps, timing)
-code/model_info.py    Step 0: arch extraction + peak-FLOP/BW microbench + roofline
-code/measure.py       Steps 1-2: prefill & decode batch sweeps -> results/*.csv
-code/measure_dvfs.py  DVFS clock sweep for the ≈cubic law (needs admin)
-code/analyze.py       Steps 1-4 + --step dvfs: fits + every figure
-code/power_sampler.py 50 Hz NVML sampler with windowed aggregation
-results/              *.csv, model_info.json, fit_summary.json
-figures/              step0..step4 PNGs (+ step5_dvfs_cubic if DVFS run)
-```
+Each sub-experiment is run from its own directory — see the per-directory docs above.
