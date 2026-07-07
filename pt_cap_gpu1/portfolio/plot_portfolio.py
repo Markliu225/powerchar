@@ -39,12 +39,14 @@ ARCH = {
     "Qwen/Qwen2.5-1.5B-Instruct":      dict(weight_bytes=3_087_428_608,  kv_bytes_per_token=28_672),
     "Qwen/Qwen2.5-3B-Instruct":        dict(weight_bytes=6_171_877_376,  kv_bytes_per_token=36_864),
     "Qwen/Qwen2.5-7B-Instruct":        dict(weight_bytes=15_231_233_024, kv_bytes_per_token=57_344),
+    "Qwen/Qwen3-4B-Instruct-2507":     dict(weight_bytes=8_044_936_192,  kv_bytes_per_token=147_456),
 }
 MODEL_COLOR = {
     "microsoft/Phi-3-mini-4k-instruct": "C0",
     "Qwen/Qwen2.5-7B-Instruct": "C3",
     "Qwen/Qwen2.5-3B-Instruct": "C2",
     "Qwen/Qwen2.5-1.5B-Instruct": "C4",
+    "Qwen/Qwen3-4B-Instruct-2507": "C5",
 }
 def short(m): return m.split("/")[-1]
 
@@ -52,10 +54,13 @@ def short(m): return m.split("/")[-1]
 # ============================================================== IO
 def read_csv(path, p_key="power_avg_w", t_key="throughput_tok_s"):
     if not os.path.exists(path):
-        return np.array([]), np.array([])
+        return np.array([]), np.array([]), None
     rows = [r for r in csv.DictReader(open(path)) if float(r[t_key]) > 0]
+    # traffic-weighted effective context (v3 CSVs; None for older data without the column)
+    ce = [float(r["ctx_eff"]) for r in rows if r.get("ctx_eff")]
     return (np.array([float(r[p_key]) for r in rows]),
-            np.array([float(r[t_key]) for r in rows]))
+            np.array([float(r[t_key]) for r in rows]),
+            (sum(ce) / len(ce)) if ce else None)
 
 
 # ============================================================== FIT
@@ -113,8 +118,8 @@ def fit_decode(P, T):
 def main():
     fits = []
     for w in PORTFOLIO:
-        Pp, Tp = read_csv(os.path.join(DATA, f"{w['id']}_prefill.csv"))
-        Pd, Td = read_csv(os.path.join(DATA, f"{w['id']}_decode.csv"))
+        Pp, Tp, _ = read_csv(os.path.join(DATA, f"{w['id']}_prefill.csv"))
+        Pd, Td, ctx_eff = read_csv(os.path.join(DATA, f"{w['id']}_decode.csv"))
         rec = dict(w=w, Pp=Pp, Tp=Tp, Pd=Pd, Td=Td, pre=None, dec=None, preF=None, decF=None)
         if len(Pp) >= 3:
             rec["preF"], rec["pre"] = fit_prefill(Pp, Tp)
@@ -122,7 +127,8 @@ def main():
             rec["decF"], rec["dec"] = fit_decode(Pd, Td)
         a = ARCH.get(w["model_id"])
         if a and rec["dec"]:
-            Dmem = a["weight_bytes"] + w["decode_batch"] * w["decode_ctx"] * a["kv_bytes_per_token"]
+            C_use = ctx_eff if ctx_eff else w["decode_ctx"]     # drift-corrected context (v3)
+            Dmem = a["weight_bytes"] + w["decode_batch"] * C_use * a["kv_bytes_per_token"]
             rec["Dmem"] = Dmem
             rec["B_over_Dmem"] = w["decode_batch"] / Dmem
             rec["BW_impl"] = rec["dec"]["T_max"] * Dmem / w["decode_batch"]   # implied effective BW (B/s)
