@@ -55,6 +55,17 @@ PORTFOLIO = [
     dict(id="classify-qwen7b", name_en="Classification / extraction (prefill-only)", application="classification",
          model_id="Qwen/Qwen2.5-7B-Instruct",
          prefill_seq_len=2048, prefill_batch=4, decode_ctx=256, decode_batch=8),
+
+    # ---- frontier (2025) additions: Qwen3-4B-Instruct-2507 (GQA 8 kv-heads, QK-Norm, 262k ctx).
+    # 'reasoning' is the signature 2025 workload: short prompt, thousands of chain-of-thought
+    # decode tokens accumulating a long KV -- decode-dominated with a mid-size effective context.
+    dict(id="qwen3chat-4b", name_en="Modern chat (Qwen3-4B, 2025)", application="chat",
+         model_id="Qwen/Qwen3-4B-Instruct-2507",
+         prefill_seq_len=512, prefill_batch=8, decode_ctx=1024, decode_batch=32),
+
+    dict(id="qwen3think-4b", name_en="Reasoning / long chain-of-thought (Qwen3-4B)", application="reasoning",
+         model_id="Qwen/Qwen3-4B-Instruct-2507",
+         prefill_seq_len=2048, prefill_batch=4, decode_ctx=8192, decode_batch=8),
 ]
 
 # Power-cap sweep grid (W). Same grid the validated baseline used; run_portfolio filters to [min,max].

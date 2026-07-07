@@ -21,6 +21,7 @@ ARCH = {
     "Qwen/Qwen2.5-1.5B-Instruct":       dict(weight_b=3_087_428_608,  kv_b=28_672,  max_ctx=32768),
     "Qwen/Qwen2.5-3B-Instruct":         dict(weight_b=6_171_877_376,  kv_b=36_864,  max_ctx=32768),
     "Qwen/Qwen2.5-7B-Instruct":         dict(weight_b=15_231_233_024, kv_b=57_344,  max_ctx=32768),
+    "Qwen/Qwen3-4B-Instruct-2507":      dict(weight_b=8_044_936_192,  kv_b=147_456, max_ctx=262144),
 }
 VRAM_GB = 32.0
 HEADROOM_GB = 6.0
