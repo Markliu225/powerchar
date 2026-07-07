@@ -1,0 +1,19 @@
+=== Qwen/Qwen2.5-1.5B-Instruct ===
+Fetching 10 files:   0%|          | 0/10 [00:00<?, ?it/s]Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Fetching 10 files:  70%|███████   | 7/10 [01:03<00:27,  9.14s/it]Fetching 10 files: 100%|██████████| 10/10 [01:03<00:00,  6.40s/it]
+  done -> /home/markliu/.cache/huggingface/hub/models--Qwen--Qwen2.5-1.5B-Instruct/snapshots/989aa7980e4cf806f80c7fef2b1adb7bc71aa306
+=== Qwen/Qwen2.5-3B-Instruct ===
+Fetching 12 files:   0%|          | 0/12 [00:00<?, ?it/s]Fetching 12 files:   8%|▊         | 1/12 [00:00<00:03,  3.61it/s]Fetching 12 files:  58%|█████▊    | 7/12 [01:00<00:45,  9.03s/it]Fetching 12 files: 100%|██████████| 12/12 [01:00<00:00,  5.05s/it]
+  done -> /home/markliu/.cache/huggingface/hub/models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1
+=== Qwen/Qwen2.5-7B-Instruct ===
+Fetching 14 files:   0%|          | 0/14 [00:00<?, ?it/s]Fetching 14 files:   7%|▋         | 1/14 [00:00<00:02,  4.42it/s]=== Qwen/Qwen2.5-1.5B-Instruct ===
+Fetching 10 files:   0%|          | 0/10 [00:00<?, ?it/s]Fetching 10 files: 100%|██████████| 10/10 [00:00<00:00, 12957.38it/s]
+  done -> /home/markliu/.cache/huggingface/hub/models--Qwen--Qwen2.5-1.5B-Instruct/snapshots/989aa7980e4cf806f80c7fef2b1adb7bc71aa306
+=== Qwen/Qwen2.5-3B-Instruct ===
+Fetching 12 files:   0%|          | 0/12 [00:00<?, ?it/s]Fetching 12 files: 100%|██████████| 12/12 [00:00<00:00, 41838.44it/s]
+  done -> /home/markliu/.cache/huggingface/hub/models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1
+=== Qwen/Qwen2.5-7B-Instruct ===
+Fetching 14 files:   0%|          | 0/14 [00:00<?, ?it/s]Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Fetching 14 files:  50%|█████     | 7/14 [02:30<02:30, 21.44s/it]Fetching 14 files: 100%|██████████| 14/14 [02:30<00:00, 10.72s/it]
+  done -> /home/markliu/.cache/huggingface/hub/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28
+ALL MODELS CACHED
