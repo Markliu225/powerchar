@@ -104,3 +104,23 @@ $$
 3. 阶段 1 的幂律只给**形状（指数 0.855）**可靠，裸前置系数在该区间不可靠（少数点）；$P_{static}$ 触下界、真值可能更低，会平移 $(P-P_{static})$ 原点。
 
 > 理论部分（一~三）为纯符号；本节为在实测上的标定数值，与图一一对应（图 (a) 即上式的 $\text{Throughput}(P)$ 曲线 + 三阶段 + 天花板）。
+
+---
+
+## 五、跨 workload 验证（portfolio 级，v3 数据）
+
+本模型已在 **10 类 workload × 5 个模型**（Phi-3-mini MHA、Qwen2.5-1.5B/3B/7B、Qwen3-4B GQA；
+上下文 256→32768、batch 4→64）的功率-cap 扫描上整体验证：
+[`portfolio/plot_decode_models.py`](portfolio/plot_decode_models.py) →
+[`portfolio/fig_decode_models.png`](portfolio/fig_decode_models.png) /
+[`portfolio/decode_model_compare.csv`](portfolio/decode_model_compare.csv)。
+
+与旧的完美重叠 roofline 近似 $T=\min(T_{V^2f},\,T_{max})$ 对比（公平基线：旧模型网格已放开收敛）：
+可加三阶段模型在 9/10 上 $R^2=0.90$–$0.997$（相对 RMSE 0.6–3.2%），旧模型 0.44–0.93
+（3.3–12.1%）；留一交叉验证（防过拟合）8/10 胜出。中段（阶段 2，计算-访存相当）的系统性低估
+正是 min() 假设"完美重叠"的必然，可加模型将其消除。拟合出的阶段边界 $P_1\approx87$–97 W
+（阶段 1 几乎全在 100 W 量程下限以下）、$P_2\approx109$–177 W（越访存受限越靠前），与机理一致。
+两个极端访存受限的 workload（32k 摘要、B=8 分类）是同一定律的小 $C$ 极限——无需特判。
+注意：$p,\theta$ 为**有效**指数（对近平坦曲线弱可辨识，CSV 中 `exponents_railed` 标记），
+且 transformers 的 DynamicCache 每步对全 KV 做 cat（读+写拷贝），每步实际访存 ≈ 权重 + ~3×KV，
+这部分流量被 $T_{mem}$ 的标定自然吸收。
