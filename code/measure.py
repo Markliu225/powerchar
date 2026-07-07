@@ -90,8 +90,17 @@ def _seed_kv(model, batch, ctx_len, vocab):
 
 
 @torch.no_grad()
-def run_decode_point(model, sampler, batch, ctx_len, vocab):
-    """Single-token autoregressive steps over `batch` sequences (steady state)."""
+def run_decode_point(model, sampler, batch, ctx_len, vocab,
+                     target_steps=None, min_s=None, max_s=45.0):
+    """Single-token autoregressive steps over `batch` sequences (steady state).
+
+    Default (target_steps=None): fixed MEASURE_S wall-clock window (legacy behaviour).
+    With target_steps=N: run until BOTH N decode steps AND min_s (default MEASURE_S) have
+    elapsed, capped at max_s. This kills the step-quantization noise of slow points (a
+    6 tok/s @ b4 point does ~4 steps in 2.5 s -> +-25% quantization) while keeping fast
+    points short -- and because N bounds the in-window steps, the KV cache only grows
+    ctx -> ctx+N, so the memory-traffic drift is bounded and *known* (report ctx+steps/2
+    as the traffic-weighted effective context instead of pretending it is ctx)."""
     kv, nxt = _seed_kv(model, batch, ctx_len, vocab)
     t_warm_end = time.perf_counter() + C.WARMUP_S
     while time.perf_counter() < t_warm_end:
@@ -106,14 +115,22 @@ def run_decode_point(model, sampler, batch, ctx_len, vocab):
     kv, nxt = _seed_kv(model, batch, ctx_len, vocab)
     torch.cuda.synchronize()
     steps = 0
-    max_cache = ctx_len + int(os.environ.get("DECODE_KV_HEADROOM", "256"))
+    min_s = C.MEASURE_S if min_s is None else min_s
+    max_cache = ctx_len + (target_steps + 16 if target_steps
+                           else int(os.environ.get("DECODE_KV_HEADROOM", "256")))
     cur_len = ctx_len
     t0 = sampler.now()
-    t_end = t0 + C.MEASURE_S
     ev0 = torch.cuda.Event(enable_timing=True)
     ev1 = torch.cuda.Event(enable_timing=True)
     ev0.record()
-    while sampler.now() < t_end:
+    while True:
+        now = sampler.now()
+        if target_steps is None:
+            if now >= t0 + min_s:
+                break
+        else:
+            if (steps >= target_steps and now >= t0 + min_s) or now >= t0 + max_s:
+                break
         out = model(input_ids=nxt, past_key_values=kv, use_cache=True)
         kv = out.past_key_values
         nxt = out.logits[:, -1:].argmax(dim=-1)
@@ -134,6 +151,10 @@ def run_decode_point(model, sampler, batch, ctx_len, vocab):
     p = stats.get("power_avg_w", float("nan"))
     return {
         "phase": "decode", "batch": batch, "ctx_len": ctx_len,
+        # traffic-weighted effective context: the cache grows ctx -> ctx+steps within the
+        # window (cycling back at the headroom bound if it reseeds), so the average KV read
+        # during the window corresponds to ~ctx + grown/2 tokens, not the nominal ctx.
+        "ctx_eff": ctx_len + min(steps, max_cache - ctx_len) / 2.0,
         "load_tokens": batch, "steps": steps,
         "wall_s": wall_s, "cuda_s": ev0.elapsed_time(ev1) / 1000.0,
         "throughput_tok_s": tokens / wall_s,

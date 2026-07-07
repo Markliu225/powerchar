@@ -2,3 +2,5 @@ __pycache__/
 *.pyc
 results/*.log
 .claude/settings.local.json
+pt_cap_gpu1/portfolio/*.log
+pt_cap_gpu1/portfolio/data_v1/
