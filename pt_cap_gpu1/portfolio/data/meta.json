@@ -1,0 +1,29 @@
+{
+ "gpu_name": "Tesla V100-DGXS-32GB",
+ "driver": "580.173.02",
+ "torch": "2.6.0+cu124",
+ "cuda": "12.4",
+ "pl_min_w": 100.0,
+ "pl_max_w": 300.0,
+ "pl_default_w": 300.0,
+ "pl_enforced_at_start_w": 250.0,
+ "supported_mem_clocks_mhz": [
+  877
+ ],
+ "sm_clk_min_mhz": 135,
+ "f_max_mhz": 1530,
+ "temp_slowdown_c": 87,
+ "temp_shutdown_c": 90,
+ "cap_grid_w": [
+  100,
+  120,
+  140,
+  160,
+  180,
+  200,
+  220,
+  250
+ ],
+ "methodology": "v3: seed_chunk=ctx, expandable_segments, step-targeted windows, repeats+median, ctx_eff",
+ "note": "retroactive metadata: the v3 dataset predates the meta.json feature; fields queried on the same box/GPU model (2026-07-09)"
+}

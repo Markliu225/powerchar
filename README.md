@@ -21,16 +21,16 @@ The whole single-model pipeline is a pure function of [code/config.py](code/conf
 
 ## The analytic models (`P ↔ T`)
 
-- [POWER_THROUGHPUT_MODEL.zh.md](POWER_THROUGHPUT_MODEL.zh.md) — **the authoritative,
-  measured-and-fitted model** (V100 + Phi-3-mini). Prefill is a single convex `V²f`
-  curve `P(T)=P₀+κ·T·(1+ρT)²`; decode is **piecewise** `T(P)=min(T_{V²f}(P), T_max)` —
-  it rises with power along the same `V²f` law, then hits a hard **bandwidth ceiling**
-  `T_max` (fixed because the V100's HBM clock cannot DVFS), beyond which extra power
-  buys no throughput. Fit: prefill R²=0.99; decode ceiling ≈690 tok/s @ b48/C256.
-- [POWER_THROUGHPUT_MODEL.md](POWER_THROUGHPUT_MODEL.md) — the **idealised first-principles
-  derivation** (no fitted data): in the `V∝f` limit, compute-bound prefill obeys
-  `P≈P₀+k_c·T³` (cubic) and memory-bound decode `P≈P₀+k_m·T` (linear). §8 is an honest
-  measured DVFS test showing the V100 does **not** reach the clean-cubic regime.
+- [MODEL_AND_RESULTS.zh.md](MODEL_AND_RESULTS.zh.md) — **the single authoritative
+  reference**: full prefill + decode theory (first-principles limits → measured forms)
+  plus ALL validation results. Prefill is a single convex `V²f` curve
+  `P(T)=P₀+κ·T·(1+ρT)²` (R² 0.956–0.995 on 9/10 workload types); decode is the
+  **additive three-stage** model `T(P)=B/(T_mem+C_c[x(P)^{-p}−1])` — compute-dominated
+  rise → compute–memory mix → hard **bandwidth plateau** `T_max=B·BW_eff/(W+B·C·kv)`
+  (fixed because the HBM clock cannot DVFS), validated over a ~140× ceiling span.
+- [pt_cap_gpu1/decode_model_theory.md](pt_cap_gpu1/decode_model_theory.md) — decode
+  derivation details + single-card calibration; the old piecewise `min(V²f, T_max)`
+  is its perfect-overlap limiting case (kept as the comparison baseline).
 
 **Punchline (energy).** At the same near-cap power, prefill delivers far more tokens/J
 than decode (~10×): prefill reuses each weight tile across the whole prompt, while
