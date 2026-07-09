@@ -1,6 +1,7 @@
 # 解码阶段：功率 → 吞吐 的三阶段理论模型
 
 > 总纲（prefill+decode 理论与全部结果）见 [../MODEL_AND_RESULTS.zh.md](../MODEL_AND_RESULTS.zh.md)；本文件保留推导细节与单卡标定。
+> 姊妹篇：[prefill_model_theory.md](prefill_model_theory.md) —— 同一构建方式下的 prefill（$T_{mem}\to0$ 退化、单段无阶段）。
 
 > **对象**：自回归解码（decode），固定 batch；通过 DVFS 调节 SM 频率 $f_{sm}$ 来限制功耗。
 > **目标**：给出**吞吐量关于功率的显式解析模型**，并解释其三阶段曲线机理。

@@ -15,11 +15,12 @@
 
 | 阶段 | 瓶颈（roofline） | 功率↔吞吐模型 | 形状 |
 |---|---|---|---|
-| **prefill** | 计算受限（`I ≫ I*`） | `P(T) = P₀ + κ·T·(1+ρT)²`（V²f） | 单段、凸，无天花板 |
+| **prefill** | 计算受限（`I ≫ I*`） | `T(P) = T_fmax·((P−P_s)/χ)^{p/θ}`（`T_mem→0` 退化） | **单段**幂律、凹，量程内无平台 |
 | **decode** | 访存受限（`I ≪ I*`） | `T(P) = B / (T_mem + C_c·[x(P)^{-p} − 1])`，`x(P)=((P−P_s)/χ)^{1/θ}` 钳到 ≤1 | **三阶段**：幂律上升 → 交替过渡 → 带宽平台 `T_max = B/T_mem` |
 
 **验证结论（V100，10 类 workload × 5 模型，功率 cap 扫描）**：
-- prefill V²f：R² = **0.956–0.995**（10 个中 9 个；qwen3chat 0.849，低功率端偏离，见 §2.2）；
+- prefill 统一显式模型：9/10 R² ≥0.92，且 **10 个 workload 全部复原 `p≈1`**（吞吐∝频率的
+  计算受限机制指数，与 DVFS 直测 `T∝f^0.90` 一致）；等价的 V²f 参数化 R² 0.85–0.995；
 - decode 三阶段可加模型：9/10 的 R² = **0.90–0.997**（相对 RMSE 0.6–3.2%），全面优于旧的
   `min(V²f, T_max)` 分段近似（R² −0.21–0.93）；
 - 平台量级 `T_max = B·BW_eff/(权重 + B·C·kv/tok)` 跨 **~140×**（6.4→900 tok/s）成立。
@@ -67,40 +68,48 @@ V-f 曲线平坦（`V≈const ⇒ P_dyn∝f`），拟合指数对静态底 P₀ 
 
 ---
 
-## 2. Prefill 理论模型（计算受限 → V²f 凸线）
+## 2. Prefill 理论模型（计算受限 → 单段显式幂律）
 
-### 2.1 推导
+> 完整推导（与 decode 严格同构）见 [pt_cap_gpu1/prefill_model_theory.md](pt_cap_gpu1/prefill_model_theory.md)。
 
-吞吐随核心频率：`T ∝ f`。功率走动态律 `P = P_static + κ'·V²f`，代入 `V = V₀+γf`、`f ∝ T`，
-展开成完全平方：
+### 2.1 构建（与 decode 同一条定律，`T_mem→0` 的退化）
 
-$$\boxed{\;P_{\text{pre}}(T) \;=\; P_0 \;+\; \kappa\,T\,(1+\rho T)^2\;}$$
+每次前向耗时同样服从 `t = T_mem + T_comp`；prefill 权重复用（`I≫I*`）使 **`T_mem ≪ T_comp`
+在整个 DVFS 范围成立**，故 `t ≈ O_comp/OPS(f_sm)`、`OPS ∝ f^p`：
 
-- `P₀` 带载静态底，`κ` 动态系数，`ρ` 电压-频率耦合强度；
-- 形状：低频近线性（电压触底）→ 高频趋立方（`V∝f` 区）——**单段凸曲线，无天花板**；
-- 理想立方律是 `ρT ≫ 1` 的极限，V100 实测工作区大多在中段。
+$$T(x) = T_{f_{max}}\cdot x^{p},\qquad P(x) = P_s + \chi x^{\theta},\qquad x=f_{sm}/f_{max}$$
+
+反解功率代回（与 decode 相同的合成步骤），得显式模型：
+
+$$\boxed{\;\text{Throughput}(P) = T_{f_{max}}\left(\frac{P-P_s}{\chi}\right)^{p/\theta}\;}$$
+
+**单段**幂律（指数 `p/θ<1` → 凹），无阶段、无带宽平台——唯一的饱和是频率顶 `x=1`
+（通常在 cap 量程之外）。阶段结构的有无完全由 `T_mem` 地板决定：decode 有地板 → 三阶段；
+prefill 没有 → 单段。旧文档的 V²f 形式 `P(T)=P₀+κT(1+ρT)²` 是同一物理在仿射电压下的
+等价参数化，保留作基线。
 
 ### 2.2 实测验证（跨 10 类 workload）
 
-对每个 workload 固定 `(S, B)`、只扫功率 cap，逐一拟合上式（V100，方法学 v3）：
+两步时钟空间拟合（与 decode 同流程），V100 方法学 v3：
 
-| workload | S×B | R² | | workload | S×B | R² |
-|---|---|--:|---|---|---|--:|
-| chat-phi3 | 512×8 | 0.972 | | translate-qwen3b | 512×8 | 0.984 |
-| rag-phi3 | 4096×2 | 0.991 | | fastchat-qwen15b | 512×16 | 0.984 |
-| code-phi3 | 2048×4 | 0.992 | | classify-qwen7b | 2048×4 | 0.991 |
-| longform-phi3 | 256×16 | 0.956 | | qwen3chat-4b | 512×8 | 0.849* |
-| summarize-qwen7b | 4096×2 | 0.995 | | qwen3think-4b | 2048×4 | 0.974 |
+| workload | S×B | 统一 R² | V²f R² | p | | workload | S×B | 统一 R² | V²f R² | p |
+|---|---|--:|--:|--:|---|---|---|--:|--:|--:|
+| chat-phi3 | 512×8 | 0.923 | 0.972 | 1.32 | | translate-qwen3b | 512×8 | 0.962 | 0.984 | 1.02 |
+| rag-phi3 | 4096×2 | 0.992 | 0.991 | 0.92 | | fastchat-qwen15b | 512×16 | 0.950 | 0.984 | 1.01 |
+| code-phi3 | 2048×4 | 0.992 | 0.992 | 0.97 | | classify-qwen7b | 2048×4 | 0.986 | 0.991 | 0.91 |
+| longform-phi3 | 256×16 | 0.957 | 0.956 | 1.19 | | qwen3chat-4b | 512×8 | 0.871 | 0.849 | 1.18 |
+| summarize-qwen7b | 4096×2 | 0.986 | 0.995 | 0.94 | | qwen3think-4b | 2048×4 | 0.979 | 0.974 | 0.81 |
 
-跨模型大小（1.5B→7.6B）、注意力结构（MHA/GQA）、prompt 长度（256→4096）、batch（2→16），
-**同一条凸 V²f 成立**（9/10 ≥0.956）。（* qwen3chat 的 0.849 来自最低 cap 点：cap=100 W 时
-调速器把时钟压到 441 MHz、实际仅抽 72 W，落在 V²f 低功率角之外 —— 电压地板区的已知偏离。）
+**核心验证是 p 列**：`p = 0.81–1.32`（中位 ≈0.99）——10 个 workload 从 cap 扫描**独立复原**
+"计算受限 ⇒ 吞吐∝频率"的机制指数，与锁频 DVFS 直测的 `T∝f^0.90` 一致。两种参数化拟合能力
+相当（统一模型胜在框架一致与参数可解释；V²f 样本内略优）；qwen3chat 两者皆偏低（0.85/0.87，
+最低 cap 点落在电压地板区）。图：[fig_prefill_models.png](pt_cap_gpu1/portfolio/fig_prefill_models.png)。
 
-### 2.3 能效推论
+### 2.3 能效推论（闭式）
 
-`E(P) = T(P)/P` 单峰：低功率端静态底摊薄差（`E↑`），高功率端立方烧电（`E↓`）。
-V100 + Phi-3 的峰 ≈ **40 tok/J @ ~155 W**（62% TDP）。能效敏感的部署应把 prefill 压到峰附近，
-代价是首 token 延迟 —— 交互应用的 cap 下界由 TTFT SLO 决定。
+`E(P) = T/P ∝ (P−P_s)^{p/θ}/P`，令 `a=p/θ`，能效峰在 **`P* = P_s/(1−a)`**。
+V100+Phi-3 实测峰 ≈**40 tok/J @ ~155 W**（62% TDP），与 `P_s≈70–90 W、a≈0.4–0.5` 一致。
+能效敏感的部署把 prefill 压到峰附近，代价是 TTFT——交互应用的 cap 下界由延迟 SLO 决定。
 
 ---
 
@@ -272,12 +281,14 @@ cat 拷贝——每步实际访存 ≈ 权重+~3×KV——都被标定吸收）�
 | 内容 | 文件 |
 |---|---|
 | **本总纲**（理论+结果唯一入口） | `MODEL_AND_RESULTS.zh.md` |
+| prefill 显式模型推导（与 decode 同构） | [pt_cap_gpu1/prefill_model_theory.md](pt_cap_gpu1/prefill_model_theory.md) |
 | decode 三阶段推导细节 + 单卡标定 | [pt_cap_gpu1/decode_model_theory.md](pt_cap_gpu1/decode_model_theory.md) |
 | 测量方法学 v3 证据链 | [pt_cap_gpu1/portfolio/DATA_QUALITY.zh.md](pt_cap_gpu1/portfolio/DATA_QUALITY.zh.md) |
 | portfolio 结果细节 | [pt_cap_gpu1/portfolio/RESULTS.zh.md](pt_cap_gpu1/portfolio/RESULTS.zh.md) |
 | 10 workload 配置 | [pt_cap_gpu1/portfolio/portfolio.py](pt_cap_gpu1/portfolio/portfolio.py) |
 | 原始数据（V100 v3） | `pt_cap_gpu1/portfolio/data/*.csv` + `meta.json`（元数据为事后补记：v3 采集早于 meta 功能） |
-| 主图：双模型对比 | `pt_cap_gpu1/portfolio/fig_decode_models.png` |
+| 主图：decode 双模型对比 | `pt_cap_gpu1/portfolio/fig_decode_models.png` |
+| prefill 统一模型 vs V²f | `pt_cap_gpu1/portfolio/fig_prefill_models.png` + `prefill_model_compare.csv` |
 | 总览 / 天花板验证 | `fig_portfolio_grid.png` / `fig_tmax_validation.png` |
 | 拟合参数表 | `decode_model_compare.csv` / `portfolio_fits.csv` |
 | 一键测量（H200/任意卡） | `pt_cap_gpu1/portfolio/run_all.sh`（`--smoke` 验机） |

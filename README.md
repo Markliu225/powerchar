@@ -23,14 +23,18 @@ The whole single-model pipeline is a pure function of [code/config.py](code/conf
 
 - [MODEL_AND_RESULTS.zh.md](MODEL_AND_RESULTS.zh.md) — **the single authoritative
   reference**: full prefill + decode theory (first-principles limits → measured forms)
-  plus ALL validation results. Prefill is a single convex `V²f` curve
-  `P(T)=P₀+κ·T·(1+ρT)²` (R² 0.956–0.995 on 9/10 workload types); decode is the
+  plus ALL validation results. Prefill and decode share ONE explicit law
+  (`t = T_mem + C·x^{-p}`, `P = P_s + χx^θ`, composed to `Throughput(P)`):
+  prefill is the `T_mem→0` case — a single concave power law
+  `T(P)=T_fmax·((P−P_s)/χ)^{p/θ}` whose fitted `p≈1` on all 10 workloads
+  recovers the compute-bound `T∝f` mechanism; decode is the
   **additive three-stage** model `T(P)=B/(T_mem+C_c[x(P)^{-p}−1])` — compute-dominated
   rise → compute–memory mix → hard **bandwidth plateau** `T_max=B·BW_eff/(W+B·C·kv)`
   (fixed because the HBM clock cannot DVFS), validated over a ~140× ceiling span.
-- [pt_cap_gpu1/decode_model_theory.md](pt_cap_gpu1/decode_model_theory.md) — decode
-  derivation details + single-card calibration; the old piecewise `min(V²f, T_max)`
-  is its perfect-overlap limiting case (kept as the comparison baseline).
+- [pt_cap_gpu1/prefill_model_theory.md](pt_cap_gpu1/prefill_model_theory.md) /
+  [pt_cap_gpu1/decode_model_theory.md](pt_cap_gpu1/decode_model_theory.md) — the two
+  phases' derivations in the SAME construction; legacy forms (`V²f P(T)`,
+  piecewise `min(V²f, T_max)`) kept as comparison baselines.
 
 **Punchline (energy).** At the same near-cap power, prefill delivers far more tokens/J
 than decode (~10×): prefill reuses each weight tile across the whole prompt, while
