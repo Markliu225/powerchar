@@ -289,8 +289,8 @@ cat 拷贝——每步实际访存 ≈ 权重+~3×KV——都被标定吸收）�
 | 原始数据（V100 v3） | `pt_cap_gpu1/portfolio/data/*.csv` + `meta.json`（元数据为事后补记：v3 采集早于 meta 功能） |
 | 主图：decode 双模型对比 | `pt_cap_gpu1/portfolio/fig_decode_models.png` |
 | prefill 统一模型 vs V²f | `pt_cap_gpu1/portfolio/fig_prefill_models.png` + `prefill_model_compare.csv` |
-| 总览 / 天花板验证 | `fig_portfolio_grid.png` / `fig_tmax_validation.png` |
+| 总览（统一模型 vs 全部实测点） / 天花板验证 | `fig_portfolio_grid.png` / `fig_tmax_validation.png` |
 | 拟合参数表 | `decode_model_compare.csv` / `portfolio_fits.csv` |
 | 一键测量（H200/任意卡） | `pt_cap_gpu1/portfolio/run_all.sh`（`--smoke` 验机） |
-| 单模型早期基线（Phi-3 单卡） | `pt_cap_gpu1/fig_theory_vs_measured.png` |
+| 单模型早期基线（**legacy**：变-batch frontier + 旧 min() 模型，仅作历史对照） | `pt_cap_gpu1/fig_theory_vs_measured.png` |
 | 机架级规划 / 负载分类 | [rack_power_capping/](rack_power_capping/) / [workload_analysis/](workload_analysis/) |
