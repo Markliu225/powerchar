@@ -5,6 +5,19 @@ wall-clock timestamp on every sample. A benchmark records the synchronized
 [t0, t1] wall-clock window it ran in and asks `stats_between` to average only the
 samples inside that window -- so warmup and tail never contaminate the result,
 and power is averaged over *exactly* the interval throughput is computed over.
+
+Window power uses the ENERGY-ACCUMULATOR method when the driver supports it
+(H200_EXPERIMENT_MANUAL.zh.md section 7.3): P = (E(t1)-E(t0)) / (t1-t0) from the
+monotonic nvmlDeviceGetTotalEnergyConsumption counter. On Hopper the classic
+nvmlDeviceGetPowerUsage is a ~1 s sliding average that smears and lags power-cap
+steps, so the sampled mean is kept only as `power_sample_avg_w` for comparison;
+on Volta the two agree to ~1%. Falls back to the sampled mean when the energy
+counter is unsupported.
+
+Each sample also records the CLOCKS-EVENT/THROTTLE reason bitmask when available
+(manual section 7.4): stats_between returns the window OR-mask plus the fraction
+of samples showing thermal bits, so sweep code can gate out thermally
+contaminated points instead of publishing them.
 """
 from __future__ import annotations
 import os
@@ -13,12 +26,16 @@ import threading
 import time
 import pynvml
 
+# Thermal / protective throttle-reason bits (manual section 7.4). Power-cap and
+# applications-clocks bits are the EXPECTED reasons during a cap sweep.
+THERMAL_BITS = 0x20 | 0x40 | 0x08 | 0x80   # SwThermal | HwThermal | HwSlowdown | HwPowerBrake
+
 
 def _visible_gpu_index() -> int:
     """Physical NVML index of the GPU torch is using. NVML ignores CUDA_VISIBLE_DEVICES and
     indexes physically, so when CUDA_VISIBLE_DEVICES=1 we must sample physical GPU 1, not 0."""
     cvd = os.environ.get("CUDA_VISIBLE_DEVICES", "").split(",")[0].strip()
-    return int(cvd) if cvd.isdigit() else 0   # single healthy GPU now enumerates at index 0
+    return int(cvd) if cvd.isdigit() else 0
 
 
 class PowerSampler:
@@ -34,6 +51,28 @@ class PowerSampler:
         self.name = pynvml.nvmlDeviceGetName(self._h)
         if isinstance(self.name, bytes):
             self.name = self.name.decode()
+        # capability probes (unsupported on some GPUs/drivers -> feature off, no error spam)
+        self.has_energy = self._probe(lambda: pynvml.nvmlDeviceGetTotalEnergyConsumption(self._h))
+        self.has_throttle = self._probe(lambda: self._throttle_reasons())
+        self.has_mem_temp = self._probe(
+            lambda: pynvml.nvmlDeviceGetTemperature(self._h, getattr(pynvml, "NVML_TEMPERATURE_MEM", 2)))
+
+    @staticmethod
+    def _probe(fn) -> bool:
+        try:
+            fn()
+            return True
+        except Exception:
+            return False
+
+    def _throttle_reasons(self) -> int:
+        """Clocks-event (throttle) reason bitmask; NVML renamed this API across versions."""
+        for attr in ("nvmlDeviceGetCurrentClocksEventReasons",
+                     "nvmlDeviceGetCurrentClocksThrottleReasons"):
+            fn = getattr(pynvml, attr, None)
+            if fn is not None:
+                return fn(self._h)
+        raise pynvml.NVMLError(pynvml.NVML_ERROR_NOT_SUPPORTED)
 
     def _loop(self):
         h = self._h
@@ -45,11 +84,22 @@ class PowerSampler:
                 sm = pynvml.nvmlDeviceGetClockInfo(h, pynvml.NVML_CLOCK_SM)
                 mem_clk = pynvml.nvmlDeviceGetClockInfo(h, pynvml.NVML_CLOCK_MEM)
                 temp = pynvml.nvmlDeviceGetTemperature(h, pynvml.NVML_TEMPERATURE_GPU)
-                self.samples.append({
+                s = {
                     "t": t, "power_w": power, "util_gpu": u.gpu,
                     "util_mem": u.memory, "sm_clk": sm, "mem_clk": mem_clk,
                     "temp": temp,
-                })
+                }
+                if self.has_energy:
+                    s["energy_mj"] = pynvml.nvmlDeviceGetTotalEnergyConsumption(h)
+                if self.has_throttle:
+                    s["throttle"] = self._throttle_reasons()
+                if self.has_mem_temp:
+                    try:
+                        s["mem_temp"] = pynvml.nvmlDeviceGetTemperature(
+                            h, getattr(pynvml, "NVML_TEMPERATURE_MEM", 2))
+                    except Exception:
+                        pass
+                self.samples.append(s)
             except pynvml.NVMLError:
                 pass
             time.sleep(self.interval_s)
@@ -77,9 +127,9 @@ class PowerSampler:
         n = len(win)
         avg = lambda k: sum(s[k] for s in win) / n
         powers = [s["power_w"] for s in win]
-        return {
+        out = {
             "n_samples": n,
-            "power_avg_w": avg("power_w"),
+            "power_sample_avg_w": avg("power_w"),
             "power_max_w": max(powers),
             "power_p50_w": statistics.median(powers),
             "power_std_w": statistics.pstdev(powers) if n > 1 else 0.0,
@@ -92,6 +142,25 @@ class PowerSampler:
             "temp_avg": avg("temp"),
             "window_s": t1 - t0,
         }
+        # primary power figure: energy-accumulator over the window when available
+        es = [s["energy_mj"] for s in win if "energy_mj" in s]
+        if len(es) >= 2 and win[-1]["t"] > win[0]["t"]:
+            out["power_energy_w"] = (es[-1] - es[0]) / 1000.0 / (win[-1]["t"] - win[0]["t"])
+            out["power_avg_w"] = out["power_energy_w"]
+        else:
+            out["power_avg_w"] = out["power_sample_avg_w"]
+        # throttle gating info (manual section 7.4)
+        ths = [s.get("throttle", 0) for s in win if "throttle" in s]
+        if ths:
+            mask = 0
+            for m in ths:
+                mask |= m
+            out["throttle_mask"] = mask
+            out["thermal_frac"] = sum(1 for m in ths if m & THERMAL_BITS) / len(ths)
+        if any("mem_temp" in s for s in win):
+            mts = [s["mem_temp"] for s in win if "mem_temp" in s]
+            out["mem_temp_avg"] = sum(mts) / len(mts)
+        return out
 
     def shutdown(self):
         try:

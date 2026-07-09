@@ -1,7 +1,8 @@
-# Measured on: Linux, Tesla V100-DGXS-32GB (250 W cap), CUDA / PyTorch as below
-torch>=2.9
-transformers>=4.44
+# Measured on: Linux, Tesla V100-DGXS-32GB (250 W cap); H200 portfolio runner needs the same set.
+torch>=2.9          # CUDA build matching the host (H200 needs an sm_90 / cu12x build)
+transformers>=4.51  # >=4.51 for Qwen3 (portfolio frontier model)
 accelerate>=0.30
-pynvml>=11.5        # NVML GPU telemetry
-matplotlib>=3.7
+pynvml>=11.5        # NVML GPU telemetry (energy counter + clocks-event reasons)
+huggingface_hub     # offline model-cache checks (preflight) + prefetch (download_models.py)
+matplotlib>=3.7     # optional on the measurement host -- plots can run elsewhere
 numpy>=1.24

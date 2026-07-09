@@ -30,7 +30,11 @@ import matplotlib.pyplot as plt
 from portfolio import PORTFOLIO
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DATA = os.path.join(HERE, "data")
+DATA = os.environ.get("PORTFOLIO_DATA", os.path.join(HERE, "data"))   # e.g. data_h200 / data_v1
+if not os.path.isabs(DATA):
+    DATA = os.path.join(HERE, DATA)
+# figures/CSVs land next to the data when PORTFOLIO_DATA is set (never overwrite V100 results)
+FIGDIR = DATA if os.environ.get("PORTFOLIO_DATA") else HERE
 
 # fp16 arch facts from results/mm_*_info.json
 ARCH = {
@@ -189,7 +193,7 @@ def _grid(fits):
     fig.suptitle("Power-cap P↔T model vs measured across 8 workload types  "
                  "(prefill V²f · decode piecewise bandwidth ceiling)", fontsize=12, y=0.997)
     fig.tight_layout(rect=(0, 0, 1, 0.992))
-    out = os.path.join(HERE, "fig_portfolio_grid.png")
+    out = os.path.join(FIGDIR, "fig_portfolio_grid.png")
     fig.savefig(out, dpi=120, bbox_inches="tight"); print("wrote", out)
 
 
@@ -217,12 +221,12 @@ def _tmax_scatter(fits, bw_model):
     a.set_xscale("log"); a.set_yscale("log")
     a.set_xlim(3, lim); a.set_ylim(3, lim); a.grid(alpha=.3, which="both"); a.legend(loc="upper left", fontsize=8)
     fig.tight_layout()
-    out = os.path.join(HERE, "fig_tmax_validation.png")
+    out = os.path.join(FIGDIR, "fig_tmax_validation.png")
     fig.savefig(out, dpi=130, bbox_inches="tight"); print("wrote", out)
 
 
 def _table(fits, bw_model):
-    out = os.path.join(HERE, "portfolio_fits.csv")
+    out = os.path.join(FIGDIR, "portfolio_fits.csv")
     keys = ["id", "application", "model_id", "decode_ctx", "decode_batch",
             "pre_R2", "dec_R2", "dec_saturated", "dec_Tmax_fit", "dec_Tmax_pred",
             "Dmem_GB", "BW_impl_GBs"]

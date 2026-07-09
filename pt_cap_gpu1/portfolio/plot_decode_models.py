@@ -37,8 +37,24 @@ import matplotlib.pyplot as plt
 from portfolio import PORTFOLIO
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DATA = os.environ.get("PORTFOLIO_DATA", os.path.join(HERE, "data"))   # e.g. data_v1 for the old set
-F_MAX = 1530.0                     # V100 max SM clock (MHz)
+DATA = os.environ.get("PORTFOLIO_DATA", os.path.join(HERE, "data"))   # e.g. data_h200 / data_v1
+if not os.path.isabs(DATA):
+    DATA = os.path.join(HERE, DATA)
+
+
+def _f_max():
+    """Max SM clock for x=f/f_max: from the run's meta.json (GPU-agnostic), fallback = V100 boost."""
+    try:
+        import json
+        return float(json.load(open(os.path.join(DATA, "meta.json")))["f_max_mhz"])
+    except Exception:
+        return 1530.0
+
+
+F_MAX = _f_max()
+# figures/CSVs land next to the data they describe when PORTFOLIO_DATA is set (e.g. data_h200/),
+# so a new machine's results never overwrite the committed V100 ones
+FIGDIR = DATA if os.environ.get("PORTFOLIO_DATA") else HERE
 
 
 def read_decode(path):
@@ -234,11 +250,11 @@ def main():
                  "stage I compute-dominated · stage II compute–memory mix · stage III bandwidth plateau",
                  fontsize=12)
     fig.tight_layout(rect=(0, 0, 1, 0.965))
-    out = os.path.join(HERE, "fig_decode_models.png")
+    out = os.path.join(FIGDIR, "fig_decode_models.png")
     fig.savefig(out, dpi=120, bbox_inches="tight"); print("wrote", out)
 
     # ---- csv ----
-    out = os.path.join(HERE, "decode_model_compare.csv")
+    out = os.path.join(FIGDIR, "decode_model_compare.csv")
     keys = ["id", "decode_ctx", "decode_batch", "R2_old", "R2_additive",
             "relRMSE_old_pct", "relRMSE_additive_pct", "LOO_old_pct", "LOO_additive_pct",
             "R2_power_fit", "R2_clock_fit", "P_s_W", "chi_W", "theta", "T_mem_ms", "Cc_ms", "p",
