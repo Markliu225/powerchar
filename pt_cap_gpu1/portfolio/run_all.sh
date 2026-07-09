@@ -15,7 +15,16 @@
 # Resume-aware: re-running skips workloads whose CSVs already exist (use FORCE=1 to redo).
 # The sweep script itself restores the pre-run power cap in its `finally`.
 set -u
+[ -n "${BASH_VERSION:-}" ] || exec bash "$0" "$@"   # arrays/PIPESTATUS need bash, not sh
 cd "$(dirname "$0")"
+
+# Running via `sudo ./run_all.sh` resets HOME to /root -> the HF model cache "disappears".
+# Point HF_HOME back at the invoking user's cache unless the caller already set it.
+if [ "$(id -u)" = "0" ] && [ -n "${SUDO_USER:-}" ] && [ -z "${HF_HOME:-}" ]; then
+  U_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+  [ -d "$U_HOME/.cache/huggingface" ] && export HF_HOME="$U_HOME/.cache/huggingface" \
+    && echo "(sudo detected: HF_HOME -> $HF_HOME)"
+fi
 
 GPU=0; OUTDIR=""; SMOKE=0; IDS=""; CAPS="auto"
 while [ $# -gt 0 ]; do

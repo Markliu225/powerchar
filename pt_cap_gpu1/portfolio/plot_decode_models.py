@@ -43,11 +43,18 @@ if not os.path.isabs(DATA):
 
 
 def _f_max():
-    """Max SM clock for x=f/f_max: from the run's meta.json (GPU-agnostic), fallback = V100 boost."""
+    """Max SM clock for x=f/f_max: from the run's meta.json (GPU-agnostic). A silent fallback
+    would quietly skew every fit on a non-V100 (H200 boost is 1980, not 1530) -- so the source
+    of F_MAX is always announced, and the fallback warns loudly."""
+    import json
     try:
-        import json
-        return float(json.load(open(os.path.join(DATA, "meta.json")))["f_max_mhz"])
-    except Exception:
+        v = float(json.load(open(os.path.join(DATA, "meta.json")))["f_max_mhz"])
+        print(f"F_MAX = {v:.0f} MHz  (from {os.path.join(DATA, 'meta.json')})")
+        return v
+    except Exception as e:
+        print(f"[WARN] no usable meta.json in {DATA} ({type(e).__name__}); "
+              f"falling back to V100 F_MAX=1530 MHz.\n"
+              f"       If this data is NOT from a V100, the clock-space fits will be skewed!")
         return 1530.0
 
 
@@ -85,7 +92,7 @@ def fit_additive(P, T, F, B):
     x = np.clip(F / F_MAX, 1e-3, 1.0)
 
     # -- 1. power side: P = P_s + chi * x^theta ------------------------------------
-    # (P_s and theta are partially degenerate -- POWER_THROUGHPUT_MODEL.md section 8 -- so the
+    # (P_s and theta are partially degenerate -- MODEL_AND_RESULTS.zh.md section 1.3 -- so the
     #  individual values are indicative; only the composed x(P) matters for T(P).)
     best = None
     TH_GRID = np.linspace(1.0, 6.0, 160)

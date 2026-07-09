@@ -23,8 +23,18 @@ from power_sampler import PowerSampler
 
 def load_model():
     tok = AutoTokenizer.from_pretrained(C.MODEL_ID)
-    model = AutoModelForCausalLM.from_pretrained(
-        C.MODEL_ID, dtype=C.DTYPE, attn_implementation=C.ATTN_IMPL).to(C.DEVICE).eval()
+    # transformers renamed torch_dtype -> dtype across versions; some mid versions silently
+    # IGNORE the unknown kwarg (model lands in fp32 -> 2x memory, wrong numbers). Try both
+    # spellings, then enforce the dtype unconditionally.
+    try:
+        model = AutoModelForCausalLM.from_pretrained(
+            C.MODEL_ID, dtype=C.DTYPE, attn_implementation=C.ATTN_IMPL)
+    except TypeError:
+        model = AutoModelForCausalLM.from_pretrained(
+            C.MODEL_ID, torch_dtype=C.DTYPE, attn_implementation=C.ATTN_IMPL)
+    if next(model.parameters()).dtype != C.DTYPE:
+        model = model.to(C.DTYPE)
+    model = model.to(C.DEVICE).eval()
     return tok, model
 
 
@@ -97,27 +107,39 @@ def run_decode_point(model, sampler, batch, ctx_len, vocab,
     Default (target_steps=None): fixed MEASURE_S wall-clock window (legacy behaviour).
     With target_steps=N: run until BOTH N decode steps AND min_s (default MEASURE_S) have
     elapsed, capped at max_s. This kills the step-quantization noise of slow points (a
-    6 tok/s @ b4 point does ~4 steps in 2.5 s -> +-25% quantization) while keeping fast
-    points short -- and because N bounds the in-window steps, the KV cache only grows
-    ctx -> ctx+N, so the memory-traffic drift is bounded and *known* (report ctx+steps/2
-    as the traffic-weighted effective context instead of pretending it is ctx)."""
+    6 tok/s @ b4 point does ~4 steps in 2.5 s -> +-25% quantization).
+
+    NO RESEED EVER HAPPENS INSIDE THE TIMED WINDOW in target_steps mode: on a fast GPU a
+    point can exceed target_steps long before min_s elapses, and a mid-window reseed would
+    inject an uncredited ctx-length prefill into the measured interval (biasing throughput
+    low). Instead the warmup measures the step rate, the headroom is sized to the expected
+    in-window steps, and the KV is simply allowed to grow ctx -> ctx+steps; the real,
+    traffic-weighted context is reported as ctx_eff = ctx + steps/2 and used downstream."""
     kv, nxt = _seed_kv(model, batch, ctx_len, vocab)
     t_warm_end = time.perf_counter() + C.WARMUP_S
+    warm_steps, t_warm0 = 0, time.perf_counter()
     while time.perf_counter() < t_warm_end:
         out = model(input_ids=nxt, past_key_values=kv, use_cache=True)
         kv = out.past_key_values
         nxt = out.logits[:, -1:].argmax(dim=-1)
+        warm_steps += 1
+    torch.cuda.synchronize()
+    warm_rate = warm_steps / max(time.perf_counter() - t_warm0, 1e-6)   # steps/s at this cap
     del kv, nxt, out
     torch.cuda.empty_cache()
-    torch.cuda.synchronize()
     time.sleep(C.SETTLE_S)
 
     kv, nxt = _seed_kv(model, batch, ctx_len, vocab)
     torch.cuda.synchronize()
-    steps = 0
+    steps, reseeds = 0, 0
     min_s = C.MEASURE_S if min_s is None else min_s
-    max_cache = ctx_len + (target_steps + 16 if target_steps
-                           else int(os.environ.get("DECODE_KV_HEADROOM", "256")))
+    if target_steps:
+        # expected steps in the window = rate x min_s; headroom sized so the cache never hits
+        # the bound mid-window (the +25% margin covers warmup-rate underestimation)
+        expect = max(target_steps, int(warm_rate * min_s * 1.25) + 8)
+        max_cache = ctx_len + expect + 16
+    else:
+        max_cache = ctx_len + int(os.environ.get("DECODE_KV_HEADROOM", "256"))
     cur_len = ctx_len
     t0 = sampler.now()
     ev0 = torch.cuda.Event(enable_timing=True)
@@ -136,11 +158,12 @@ def run_decode_point(model, sampler, batch, ctx_len, vocab,
         nxt = out.logits[:, -1:].argmax(dim=-1)
         steps += 1
         cur_len += 1
-        if cur_len >= max_cache:            # keep KV length bounded
+        if cur_len >= max_cache:            # keep KV length bounded (should NOT fire in target mode)
             del kv, out
             torch.cuda.empty_cache()
             kv, nxt = _seed_kv(model, batch, ctx_len, vocab)
             cur_len = ctx_len
+            reseeds += 1
     ev1.record()
     torch.cuda.synchronize()
     t1 = sampler.now()
@@ -155,6 +178,9 @@ def run_decode_point(model, sampler, batch, ctx_len, vocab,
         # window (cycling back at the headroom bound if it reseeds), so the average KV read
         # during the window corresponds to ~ctx + grown/2 tokens, not the nominal ctx.
         "ctx_eff": ctx_len + min(steps, max_cache - ctx_len) / 2.0,
+        # >0 in target mode means the headroom estimate was beaten and the point carries an
+        # uncredited in-window prefill -> treat with suspicion / re-measure
+        "reseeds": reseeds,
         "load_tokens": batch, "steps": steps,
         "wall_s": wall_s, "cuda_s": ev0.elapsed_time(ev1) / 1000.0,
         "throughput_tok_s": tokens / wall_s,

@@ -39,12 +39,21 @@ def main():
             name = torch.cuda.get_device_name(int(GPU) if int(GPU) < torch.cuda.device_count() else 0)
             cap = torch.cuda.get_device_capability(0)
             check("gpu", True, f"{name} sm_{cap[0]}{cap[1]}")
+            try:                       # a wheel without this arch's kernels passes import but dies here
+                (torch.zeros(8, device="cuda") + 1).sum().item()
+                check("cuda kernel executes", True)
+            except Exception as e:
+                check("cuda kernel executes", False, str(e)[:80],
+                      "torch wheel lacks this GPU's sm_XX kernels -- install a matching CUDA build")
     except Exception as e:
         check("torch", False, str(e), "pip install torch (CUDA build)")
     try:
         import transformers
-        ok = tuple(int(x) for x in transformers.__version__.split(".")[:2]) >= (4, 51)
-        check("transformers", ok, transformers.__version__, ">=4.51 needed for Qwen3")
+        ver = tuple(int(x) for x in transformers.__version__.split(".")[:2])
+        check("transformers", ver >= (4, 51), transformers.__version__, ">=4.51 needed for Qwen3")
+        if (4, 51) <= ver < (4, 56):
+            print("  [WARN] transformers 4.51-4.55: from_pretrained(dtype=) may be ignored/crash --"
+                  " the loaders carry a fallback shim, but >=4.56 is safer")
     except Exception as e:
         check("transformers", False, str(e), "pip install 'transformers>=4.51'")
     try:
@@ -69,13 +78,19 @@ def main():
         cur = pynvml.nvmlDeviceGetEnforcedPowerLimit(h) / 1000
         check("nvml", True, f"{nm} | -pl range [{mn:.0f},{mx:.0f}]W, enforced {cur:.0f}W")
         try:
+            if pynvml.nvmlDeviceGetPersistenceMode(h) != 1:
+                print("  [WARN] persistence mode OFF -- run `sudo nvidia-smi -pm 1` for stable"
+                      " clocks and a monotonic energy counter")
+        except pynvml.NVMLError:
+            pass
+        try:
             pynvml.nvmlDeviceGetTotalEnergyConsumption(h)
             check("energy counter (window-power method)", True)
         except Exception:
             print("  [WARN] no energy counter -- falls back to sampled power average")
         # benign privilege test: set the cap to its current value
         pw = os.environ.get("SUDO_PASS", "")
-        cmd = ["nvidia-smi", "-i", GPU, "-pl", str(int(cur))]
+        cmd = ["nvidia-smi", "-i", GPU, "-pl", str(int(round(cur)))]
         if hasattr(os, "geteuid") and os.geteuid() == 0:
             r = subprocess.run(cmd, text=True, capture_output=True)
         elif pw:
@@ -100,10 +115,18 @@ def main():
                 p = snapshot_download(mid, local_files_only=True,
                                       ignore_patterns=["*.pth", "*.onnx", "original/*", "*.gguf"])
                 import glob
-                has_weights = bool(glob.glob(os.path.join(p, "*.safetensors")) or
-                                   glob.glob(os.path.join(p, "*.bin")))
-                check(mid, has_weights, p if has_weights else "snapshot has no weight files",
-                      "re-copy the model dir from the online machine (download_models.py)")
+                wf = glob.glob(os.path.join(p, "*.safetensors")) or glob.glob(os.path.join(p, "*.bin"))
+                # snapshots are symlinks into blobs/ -- a partial rsync leaves them DANGLING,
+                # so resolve and stat every weight file instead of trusting the listing
+                ok_w, bad = bool(wf), ""
+                for x in wf:
+                    try:
+                        if os.path.getsize(os.path.realpath(x)) <= 0:
+                            ok_w, bad = False, f"empty: {os.path.basename(x)}"; break
+                    except OSError:
+                        ok_w, bad = False, f"dangling symlink: {os.path.basename(x)}"; break
+                check(mid, ok_w, p if ok_w else (bad or "snapshot has no weight files"),
+                      "re-copy the FULL model dir (snapshots/ AND blobs/) from the online machine")
             except Exception as e:
                 check(mid, False, str(e)[:80],
                       "copy ~/.cache/huggingface/hub/models--... from the online machine")

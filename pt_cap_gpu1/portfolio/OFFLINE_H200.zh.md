@@ -1,8 +1,7 @@
 # 离线 H200 一键测量 —— 搬运与运行手册
 
 把 portfolio 功率-cap 实验（10 个 workload × prefill+decode，**方法学 v3**）搬到一台**离线**的
-H200 主机上跑。测量规范遵循 [../../H200_EXPERIMENT_MANUAL.zh.md](../../H200_EXPERIMENT_MANUAL.zh.md)：
-能量累加器读窗口功率（§7.3）、降频原因门控（§7.4）、约束落盘 meta.json（§2.3）。
+H200 主机上跑。测量规范已内建在脚本里：能量累加器读窗口功率、降频原因门控、约束落盘 meta.json。
 代码全部 GPU 无关：cap 网格从本机 `-pl` 约束自动生成，f_max 写进 meta.json 供拟合使用。
 
 ## 一、在线机器上备料（两样东西）
@@ -31,7 +30,7 @@ rsync -a ~/.cache/huggingface/hub/models--microsoft--Phi-3-mini-4k-instruct \
 
 ```bash
 cd pt_cap_gpu1/portfolio
-sudo nvidia-smi -pm 1                      # 持久模式（手册 §2.2；能量计数器保持单调）
+sudo nvidia-smi -pm 1                      # 持久模式（驱动常驻，能量计数器保持单调）
 
 # 1. 先验机（~4 分钟：chat-phi3 单 workload、4 个 cap，全链路走一遍）
 ./run_all.sh --gpu 0 --smoke

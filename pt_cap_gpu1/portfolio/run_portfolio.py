@@ -29,11 +29,16 @@ import argparse, csv, json, os, subprocess, time
 # bimodal 225-267 tok/s, +-9%). expandable_segments grows one VA segment smoothly: 272-281 tok/s,
 # +-1.6% AND ~15% faster -- the artifact-free measurement. Verified on V100, 8 repeats each.
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+# measurement hosts are often air-gapped: never let transformers/hub touch the network
+# (models must already be in the local cache -- preflight.py verifies)
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 import torch
 import pynvml
 
 import config as C                                   # noqa: E402  (from ../../code via PYTHONPATH)
-C.WARMUP_S = 0.5; C.SETTLE_S = 0.1; C.MEASURE_S = 2.5   # short bursts -> stay cool, clean cap-limited points
+C.WARMUP_S = 0.8; C.SETTLE_S = 0.2; C.MEASURE_S = 2.5   # short bursts; warmup also estimates the step
+                                                        # rate (a 700 W part settles slower than a 250 W one)
 C.DECODE_SEED_CHUNK = 256                            # seed the KV in ONE prefill-sized chunk stream
                                                      # (small-chunk seeding fragments the allocator
                                                      #  and starves the GPU -- DATA_QUALITY.zh.md #1)
@@ -84,13 +89,12 @@ def cool(sampler):
 
 
 def load_model_for(model_id):
-    """Load an arbitrary model (portfolio overrides the config default)."""
+    """Load an arbitrary model (portfolio overrides the config default). Delegates to
+    measure.load_model, which carries the dtype-kwarg compatibility shim (transformers
+    renamed torch_dtype->dtype; some versions silently ignore the unknown spelling)."""
     C.MODEL_ID = model_id
-    from transformers import AutoModelForCausalLM, AutoTokenizer
-    tok = AutoTokenizer.from_pretrained(model_id)
-    model = AutoModelForCausalLM.from_pretrained(
-        model_id, dtype=C.DTYPE, attn_implementation=C.ATTN_IMPL).to(C.DEVICE).eval()
-    return tok, model
+    from measure import load_model
+    return load_model()
 
 
 def _thermally_clean(r):
@@ -116,7 +120,11 @@ def _decode_median(model, sampler, db, dc, vocab):
                                      target_steps=DEC_TARGET_STEPS, max_s=DEC_MAX_S))
         ts = [r["throughput_tok_s"] for r in runs]
         spread = (max(ts) - min(ts)) / (sum(ts) / len(ts)) * 100
-    chosen = sorted(runs, key=lambda r: r["throughput_tok_s"])[len(runs) // 2]
+    if len(runs) == 2:   # median of 2 = the run closer to the mean (picking [1] would bias fast)
+        m = sum(ts) / 2
+        chosen = min(runs, key=lambda r: abs(r["throughput_tok_s"] - m))
+    else:
+        chosen = sorted(runs, key=lambda r: r["throughput_tok_s"])[len(runs) // 2]
     return chosen, spread, len(runs)
 
 
@@ -136,8 +144,9 @@ def run_workload(w, sampler, caps, outdir, phase="both"):
     dc, db = w["decode_ctx"], w["decode_batch"]
     try:
         for cap in caps:
-            if sudo_pl(cap).returncode != 0:
-                print(f"  -pl {cap} FAILED"); continue
+            rpl = sudo_pl(cap)
+            if rpl.returncode != 0:
+                print(f"  -pl {cap} FAILED: {(rpl.stderr or rpl.stdout).strip()[:90]}"); continue
             time.sleep(0.4)
             print(f"  === CAP {cap} W ===", flush=True)
             # ---- prefill: fixed (S,B), compute-bound ----
@@ -283,8 +292,11 @@ def main():
     # privilege check up-front (root / sudo -n / SUDO_PASS)
     pynvml.nvmlInit(); h = pynvml.nvmlDeviceGetHandleByIndex(int(GPU))
     start_limit = pynvml.nvmlDeviceGetEnforcedPowerLimit(h) / 1000.0
-    if sudo_pl(round(start_limit)).returncode != 0:
-        print("ERROR: cannot run `nvidia-smi -pl` (need root, passwordless sudo, or SUDO_PASS)"); return
+    r0 = sudo_pl(round(start_limit))
+    if r0.returncode != 0:
+        print("ERROR: cannot run `nvidia-smi -pl` (need root, passwordless sudo, or SUDO_PASS)")
+        print((r0.stderr or r0.stdout).strip()[:200])
+        raise SystemExit(1)
 
     wanted = [x.strip() for x in args.ids.split(",") if x.strip()]
     todo = [w for w in PORTFOLIO if (not wanted or w["id"] in wanted)]
@@ -301,18 +313,25 @@ def main():
     mn, mx = meta["pl_min_w"], meta["pl_max_w"]
     if args.caps == "auto":
         n = max(args.grid_n, 4)
-        caps = sorted({int(round(mn + (mx - mn) * i / (n - 1))) for i in range(n)})
+        # exponent 1.35 packs points toward the LOW end, where all the decode structure lives
+        # (on a 700 W part the plateau starts ~400 W; a uniform grid would waste half its points there)
+        caps = sorted({int(round(mn + (mx - mn) * (i / (n - 1)) ** 1.35)) for i in range(n)})
     else:
         caps = [c for c in (int(x) for x in args.caps.split(",")) if mn <= c <= mx]
+    if not caps:
+        print(f"ERROR: no caps to sweep (requested '{args.caps}', device range [{mn:.0f},{mx:.0f}] W)")
+        raise SystemExit(1)
+    if len(caps) < 3:
+        print(f"[warn] only {len(caps)} cap point(s) -- P(T) curve will be degenerate")
     meta["cap_grid_w"] = caps
     with open(os.path.join(outdir, "meta.json"), "w") as f:
         json.dump(meta, f, indent=1)
 
     # cooling thresholds relative to the device's own slowdown threshold (fallback: V100 constants)
     slow = meta.get("temp_slowdown_c")
-    if slow:
-        COOL_HOT = min(slow - 20, 75)
-        COOL_TARGET = COOL_HOT - 12
+    if slow and slow >= 60:                      # Hopper may report margin-to-threshold semantics;
+        COOL_HOT = min(max(slow - 20, 60), 78)   # a tiny/absurd value would push COOL_HOT negative
+        COOL_TARGET = COOL_HOT - 12              # and stall 90 s per point -> clamp to a sane band
 
     sampler = PowerSampler(interval_s=C.SAMPLE_INTERVAL_S); sampler.start(); time.sleep(0.3)
     print(f"GPU{GPU} {sampler.name} | cap range [{mn:.0f},{mx:.0f}] restore-to {start_limit:.0f}W\n"
@@ -323,6 +342,9 @@ def main():
     try:
         for w in todo:
             run_workload(w, sampler, caps, outdir, phase=args.phase)
+            # keep the sampler ring small: a multi-hour sweep would otherwise accumulate
+            # ~500k samples and make every stats_between()/cool() scan crawl
+            sampler.samples = sampler.samples[-20000:]
     finally:
         # restore the cap that was in force BEFORE we started (not the factory default -- on shared
         # boxes an admin may have set a lower fleet-wide cap that we must not overwrite)

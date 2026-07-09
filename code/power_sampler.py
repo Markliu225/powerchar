@@ -7,7 +7,7 @@ samples inside that window -- so warmup and tail never contaminate the result,
 and power is averaged over *exactly* the interval throughput is computed over.
 
 Window power uses the ENERGY-ACCUMULATOR method when the driver supports it
-(H200_EXPERIMENT_MANUAL.zh.md section 7.3): P = (E(t1)-E(t0)) / (t1-t0) from the
+(energy-accumulator method): P = (E(t1)-E(t0)) / (t1-t0) from the
 monotonic nvmlDeviceGetTotalEnergyConsumption counter. On Hopper the classic
 nvmlDeviceGetPowerUsage is a ~1 s sliding average that smears and lags power-cap
 steps, so the sampled mean is kept only as `power_sample_avg_w` for comparison;
@@ -15,7 +15,7 @@ on Volta the two agree to ~1%. Falls back to the sampled mean when the energy
 counter is unsupported.
 
 Each sample also records the CLOCKS-EVENT/THROTTLE reason bitmask when available
-(manual section 7.4): stats_between returns the window OR-mask plus the fraction
+(throttle-reason gating): stats_between returns the window OR-mask plus the fraction
 of samples showing thermal bits, so sweep code can gate out thermally
 contaminated points instead of publishing them.
 """
@@ -26,7 +26,7 @@ import threading
 import time
 import pynvml
 
-# Thermal / protective throttle-reason bits (manual section 7.4). Power-cap and
+# Thermal / protective throttle-reason bits (throttle-reason gating). Power-cap and
 # applications-clocks bits are the EXPECTED reasons during a cap sweep.
 THERMAL_BITS = 0x20 | 0x40 | 0x08 | 0x80   # SwThermal | HwThermal | HwSlowdown | HwPowerBrake
 
@@ -54,8 +54,8 @@ class PowerSampler:
         # capability probes (unsupported on some GPUs/drivers -> feature off, no error spam)
         self.has_energy = self._probe(lambda: pynvml.nvmlDeviceGetTotalEnergyConsumption(self._h))
         self.has_throttle = self._probe(lambda: self._throttle_reasons())
-        self.has_mem_temp = self._probe(
-            lambda: pynvml.nvmlDeviceGetTemperature(self._h, getattr(pynvml, "NVML_TEMPERATURE_MEM", 2)))
+        mt = self._mem_temp()
+        self.has_mem_temp = mt is not None and 0 < mt < 130   # sane HBM junction range
 
     @staticmethod
     def _probe(fn) -> bool:
@@ -73,6 +73,22 @@ class PowerSampler:
             if fn is not None:
                 return fn(self._h)
         raise pynvml.NVMLError(pynvml.NVML_ERROR_NOT_SUPPORTED)
+
+    def _mem_temp(self):
+        """HBM junction temperature via the field-values API (NVML_FI_DEV_MEMORY_TEMP).
+        (pynvml has no NVML_TEMPERATURE_MEM sensor enum -- passing a made-up sensor id to
+        nvmlDeviceGetTemperature is undefined; the field-values route is the correct one.)"""
+        fid = getattr(pynvml, "NVML_FI_DEV_MEMORY_TEMP", None)
+        if fid is None:
+            return None
+        try:
+            fv = pynvml.nvmlDeviceGetFieldValues(self._h, [fid])[0]
+            if getattr(fv, "nvmlReturn", 1) != 0:
+                return None
+            v = fv.value.uiVal or fv.value.ullVal
+            return float(v) if v else None
+        except Exception:
+            return None
 
     def _loop(self):
         h = self._h
@@ -94,11 +110,9 @@ class PowerSampler:
                 if self.has_throttle:
                     s["throttle"] = self._throttle_reasons()
                 if self.has_mem_temp:
-                    try:
-                        s["mem_temp"] = pynvml.nvmlDeviceGetTemperature(
-                            h, getattr(pynvml, "NVML_TEMPERATURE_MEM", 2))
-                    except Exception:
-                        pass
+                    mt = self._mem_temp()
+                    if mt is not None:
+                        s["mem_temp"] = mt
                 self.samples.append(s)
             except pynvml.NVMLError:
                 pass
@@ -149,7 +163,7 @@ class PowerSampler:
             out["power_avg_w"] = out["power_energy_w"]
         else:
             out["power_avg_w"] = out["power_sample_avg_w"]
-        # throttle gating info (manual section 7.4)
+        # throttle gating info (throttle-reason gating)
         ths = [s.get("throttle", 0) for s in win if "throttle" in s]
         if ths:
             mask = 0
