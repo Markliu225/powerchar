@@ -338,8 +338,10 @@ cat 都被标定吸收）。显著残差：32k 超长上下文的稀疏 KV 读�
   decode 峰在拐点 $P_2$ 附近（≈4–5 tok/J），过拐点单调降。
 - **同功率 prefill:decode 能效 ≈ 10:1**。
 - 功率封顶的操作含义：**decode 卡放心压到 $P_2$ 附近**（平台内免费省电）；prefill 卡压 cap
-  直接换吞吐，受 TTFT SLO 约束。机架级劈分/回本见 [rack_power_capping/](rack_power_capping/)，
-  按应用 P:D 比例见 [workload_analysis/](workload_analysis/)。
+  直接换吞吐，受 TTFT SLO 约束。机架级规划见 [rack_power_capping/](rack_power_capping/)：
+  **10 个实测 workload 归入 6 个应用类，每类一张机架配方**（含物理插槽上限约束）在
+  [rack_power_capping/v100/WORKLOADS.zh.md](rack_power_capping/v100/WORKLOADS.zh.md)；
+  真实 trace 的 P:D 统计见 [workload_analysis/](workload_analysis/)。
 - 推理型负载（长 CoT）：同一模型 C 1024→8192，平台 129→16 tok/s——**decode 极重 + 长 KV
   的 2025 负载形态在功率规划里代价极高**。
 
@@ -377,4 +379,5 @@ cat 都被标定吸收）。显著残差：32k 超长上下文的稀疏 KV 读�
 | 天花板验证 | `portfolio/fig_tmax_validation.png` |
 | 单模型早期基线（**legacy**：变-batch frontier + 旧 min()） | `pt_cap_gpu1/fig_theory_vs_measured.png` |
 | 一键测量（H200/任意卡） | `portfolio/run_all.sh`（`--smoke` 验机） |
-| 机架级规划 / 负载分类 | [rack_power_capping/](rack_power_capping/) / [workload_analysis/](workload_analysis/) |
+| 机架级规划（V100，按 workload 类别的配方 + 经济性） | [rack_power_capping/v100/](rack_power_capping/v100/)，主文档 [WORKLOADS.zh.md](rack_power_capping/v100/WORKLOADS.zh.md) |
+| 真实 trace 的负载分类统计 | [workload_analysis/](workload_analysis/) |

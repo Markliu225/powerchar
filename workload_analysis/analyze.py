@@ -82,23 +82,42 @@ def main():
     s = stats(Pc, Dc); s.update(klass="Chat 多轮对话", source="Azure+BurstGPT conv", kind="prod-trace")
     rows.append(s)
 
-    # ---- the 8 Dolly categories (tokenize instruction+context -> prefill, response -> decode) ----
-    from transformers import AutoTokenizer
-    tok = AutoTokenizer.from_pretrained("microsoft/Phi-3-mini-4k-instruct")
-    nlen = lambda t: len(tok(t, add_special_tokens=False).input_ids) if t else 0
-    recs = hf_rows("databricks/databricks-dolly-15k", "default", "train", n=3000)
-    by = {}
-    for r in recs:
-        cat = r.get("category")
-        if cat not in DOLLY_MAP:
-            continue
-        instr, ctx, resp = r.get("instruction") or "", r.get("context") or "", r.get("response") or ""
-        by.setdefault(cat, ([], []))
-        by[cat][0].append(nlen(instr + ("\n" + ctx if ctx else "")))   # prefill
-        by[cat][1].append(nlen(resp))                                  # decode
-    for cat, (P, D) in by.items():
-        s = stats(P, D); s.update(klass=DOLLY_MAP[cat], source="Dolly-15k", kind="benchmark")
-        rows.append(s)
+    # ---- Code completion: the Azure CODE trace (production, token-counted) — the prompt is the
+    # file/repo context, the completion is short -> the real prefill-heavy production anchor ----
+    Pk, Dk = read_trace("AzureLLMInferenceTrace_code.csv", "ContextTokens", "GeneratedTokens")
+    s = stats(Pk, Dk); s.update(klass="Code 代码补全", source="Azure code", kind="prod-trace")
+    rows.append(s)
+
+    # ---- the 8 Dolly categories (tokenize instruction+context -> prefill, response -> decode);
+    # needs network (HF datasets-server) + cached tokenizer -> fall back to the committed CSV rows
+    def dolly_rows():
+        from transformers import AutoTokenizer
+        tok = AutoTokenizer.from_pretrained("microsoft/Phi-3-mini-4k-instruct")
+        nlen = lambda t: len(tok(t, add_special_tokens=False).input_ids) if t else 0
+        recs = hf_rows("databricks/databricks-dolly-15k", "default", "train", n=3000)
+        by = {}
+        for r in recs:
+            cat = r.get("category")
+            if cat not in DOLLY_MAP:
+                continue
+            instr, ctx, resp = r.get("instruction") or "", r.get("context") or "", r.get("response") or ""
+            by.setdefault(cat, ([], []))
+            by[cat][0].append(nlen(instr + ("\n" + ctx if ctx else "")))   # prefill
+            by[cat][1].append(nlen(resp))                                  # decode
+        out = []
+        for cat, (P, D) in by.items():
+            s = stats(P, D); s.update(klass=DOLLY_MAP[cat], source="Dolly-15k", kind="benchmark")
+            out.append(s)
+        return out
+
+    try:
+        rows += dolly_rows()
+    except Exception as e:
+        print(f"[warn] Dolly refetch failed ({type(e).__name__}: {e}); keeping the committed Dolly rows")
+        prev = os.path.join(HERE, "workload_ratios.csv")
+        kept = [r for r in csv.DictReader(open(prev)) if r["source"] == "Dolly-15k"]
+        for r in kept:
+            rows.append({k: (float(v) if k not in ("klass", "source", "kind") else v) for k, v in r.items()})
 
     rows.sort(key=lambda s: s["ratio_agg"])
     for s in rows:

@@ -2,24 +2,26 @@
 
 ## 为什么用这套分类(文献依据)
 
-我们**不自己拍分类**,而是直接采用文献里公认的一种:**InstructGPT**(Ouyang et al., 2022,[arXiv:2203.02155](https://arxiv.org/abs/2203.02155))从**真实 OpenAI API 流量**归纳出的使用类型分类(该文 Table 1),共约 9 类:
+我们**不自己拍分类**,而是直接采用文献里公认的一种:**InstructGPT**(Ouyang et al., 2022,[arXiv:2203.02155](https://arxiv.org/abs/2203.02155))从**真实 OpenAI API 流量**归纳出的使用类型分类(该文 Table 1),共 **10 类**:
 
-> **Generation(生成)· Open QA(开放问答)· Brainstorming(头脑风暴)· Chat(对话)· Rewrite(改写)· Summarization(摘要)· Classification(分类)· Closed QA(闭卷问答)· Extract(抽取)**
+> **Generation(生成)· Open QA(开放问答)· Brainstorming(头脑风暴)· Chat(对话)· Rewrite(改写)· Summarization(摘要)· Classification(分类)· Other(杂项)· Closed QA(闭卷问答)· Extract(抽取)**
 
-选它的理由:(1) 来自**真实生产使用统计**,不是凭空划分;(2) 9 类落在"6–10 类"的合理粒度;(3) 每一类的 input/output(= prefill/decode)长度特征天然不同,正好是功率规划需要的区分维度。
+选它的理由:(1) 来自**真实生产使用统计**,不是凭空划分;(2) 粒度合理;(3) 每一类的 input/output(= prefill/decode)长度特征天然不同,正好是功率规划需要的区分维度。覆盖情况如实说明:其中 8 类有数据(Rewrite 无干净公开数据集,Other 为杂项不计),另加 Dolly 增设的 General QA 与我们补充的生产级 Code 类,共 10 个使用类型。
 
 ## 怎么落到真实数据(operationalize)
 
-- **8 类用 Dolly-15k**:[databricks/databricks-dolly-15k](https://huggingface.co/datasets/databricks/databricks-dolly-15k)(Databricks 2023 发布的真实人工指令数据)自带 8 个 `category` 标签,**正好一一对应**上面的分类法。按 category 分组,`prefill = instruction + context`、`decode = response`,用本地 Phi-3 分词器计数。
+- **7+1 类用 Dolly-15k**:[databricks/databricks-dolly-15k](https://huggingface.co/datasets/databricks/databricks-dolly-15k)(Databricks 2023 发布的真实人工指令数据)自带 8 个 `category` 标签——其官方卡片写明**其中 7 个取自 InstructGPT 的分类法,General QA(常识问答)是 Databricks 增设的自由问答类**(图表中以 † 标注)。按 category 分组,`prefill = instruction + context`、`decode = response`,用本地 Phi-3 分词器计数。
 - **Chat 多轮对话用生产 trace**:Dolly 是单轮指令、没有 Chat 类,用真实生产日志 [Azure LLM Inference Trace](https://github.com/Azure/AzurePublicDataset)(conv)+ [BurstGPT](https://github.com/HPMLL/BurstGPT)(Conversation log)补上,token 数是线上实测,共 2.6 万条对话。
+- **Code 代码补全用生产 trace**(增补类,不在 InstructGPT 原分类中):InstructGPT 分类早于代码助手的爆发,而代码补全是当下最重要的 prefill-重生产负载之一,用 [Azure LLM Inference Trace](https://github.com/Azure/AzurePublicDataset)(code,8.8 千条)补上——提示是文件/仓库上下文(中位 1469 token),补全极短(中位 13 token),P:D=73.5:1。
 - InstructGPT 的 **Rewrite(改写)** 缺乏干净的公开数据集,本轮未单列(改写类 input≈output,P:D≈1:1)。
 
-## 结果:9 类的 prefill : decode
+## 结果:10 类的 prefill : decode
 
 按 prefill 重 → decode 重 排序(`P:D = Σprefill / Σdecode`):
 
-| 使用类型(InstructGPT) | 数据源 | prefill 中位 | decode 中位 | **聚合 P:D** |
+| 使用类型(InstructGPT + 增补) | 数据源 | prefill 中位 | decode 中位 | **聚合 P:D** |
 |---|---|--:|--:|--:|
+| Code 代码补全 ‡ | Azure code(生产) | 1469 | 13 | **73.5 : 1** |
 | Closed QA 闭卷问答(给定上下文) | Dolly-15k | 222 | 29 | **6.2 : 1** |
 | Chat 多轮对话 | Azure + BurstGPT(生产) | 968 | 135 | **4.9 : 1** |
 | Extract 信息抽取 | Dolly-15k | 240 | 36 | **3.1 : 1** |
@@ -27,9 +29,10 @@
 | Classification 分类 | Dolly-15k | 30 | 32 | **0.8 : 1**(≈1:1) |
 | Open QA 开放问答 | Dolly-15k | 10 | 38 | **1 : 6** |
 | Brainstorming 头脑风暴 | Dolly-15k | 13 | 65 | **1 : 7** |
-| General QA 常识问答 | Dolly-15k | 10 | 102 | **1 : 8** |
+| General QA 常识问答 † | Dolly-15k | 10 | 102 | **1 : 8** |
 | Generation 创作生成 | Dolly-15k | 14 | 160 | **1 : 11** |
 
+(† = Dolly 增设的自由问答类,非 InstructGPT 原类;‡ = 本仓库补充的生产级类。)
 完整统计见 [workload_ratios.csv](workload_ratios.csv),可视化见 `fig_workload_pd.png`。
 
 **结构很清楚**:有给定上下文/原文的任务(闭卷问答、抽取、摘要、对话)是 **prefill 重**;凭知识自由生成的任务(创作、头脑风暴、开放/常识问答)是 **decode 重**;分类正好在 1:1。这正是功率规划要区分的两端。
@@ -43,7 +46,7 @@
 
 ## 与功率规划的衔接
 
-在 [../rack_power_capping/WORKLOAD_PORTFOLIO.zh.md](../rack_power_capping/WORKLOAD_PORTFOLIO.zh.md) 的 router 假设下,**每一类使用类型的聚合 P:D 就是一个专供该类的机架该喂给 `solve.py` 的 `R_eff`**;再配上该类的上下文长度(≈prefill 中位)去定 decode 天花板 `T_max(C)`、用其 SLO 定功率 cap 下界,即可为每类算出专属机架配方。
+在 [../rack_power_capping/v100/WORKLOADS.zh.md](../rack_power_capping/v100/WORKLOADS.zh.md) 的 router 假设下,**每一类使用类型的聚合 P:D 就是一个专供该类的机架该喂给 `solve_workloads.py` 的类别形状假设**;再配上该类的上下文长度(≈prefill 中位)去定 decode 天花板 `T_max(C)`、用其 SLO 定功率 cap 下界,即可为每类算出专属机架配方。
 
 ## 参考文献
 
