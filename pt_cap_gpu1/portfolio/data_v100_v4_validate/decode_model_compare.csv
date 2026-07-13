@@ -1,0 +1,2 @@
+id,decode_ctx,decode_batch,R2_old,R2_additive,relRMSE_old_pct,relRMSE_additive_pct,LOO_old_pct,LOO_additive_pct,R2_power_fit,R2_clock_fit,P_s_W,chi_W,theta,T_mem_ms,Cc_ms,p,exponents_railed,stageI_II_W,stageII_III_W,T_plateau
+chat-phi3,256,64,0.943,0.991,4.0,1.6,5.4,2.7,0.999,0.996,88.6,156.7,3.48,75.75,11.991,2.46,False,98.0,194.8,844.8

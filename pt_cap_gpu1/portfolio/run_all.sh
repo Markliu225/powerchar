@@ -5,13 +5,14 @@
 # models must already be in the local HF cache (see preflight).
 #
 #   [SUDO_PASS=...] ./run_all.sh [--gpu N] [--outdir DIR] [--smoke] [--ids a,b] \
-#                                [--caps auto|LIST] [--clocks auto|LIST]
+#                                [--caps auto|LIST] [--clocks auto|LIST] [--phase prefill|decode|both]
 #
 #   --gpu N       which GPU to use (default 0)
 #   --outdir DIR  output directory (default: data_<gpu-name-slug>_v4, e.g. data_h200_v4;
 #                 v4 prefill CSVs are clock-swept and NOT comparable to v3 cap-swept ones,
 #                 so do NOT point this at an old v3 data dir -- resume would skip everything)
-#   --smoke       quick machine validation: ONE workload (chat-phi3), 4 caps + 4 clocks, ~6 min
+#   --smoke       quick machine validation: ONE workload (chat-phi3), 4 caps + 4 clocks, ~6 min;
+#                 writes to <outdir>_smoke so it can never poison the real run's resume logic
 #   --ids a,b     restrict to specific workload ids
 #   --caps ...    decode grid: 'auto' (default: 10 points spanning the device's own [min,max])
 #                 or '200,300,...'
@@ -34,7 +35,7 @@ if [ "$(id -u)" = "0" ] && [ -n "${SUDO_USER:-}" ] && [ -z "${HF_HOME:-}" ]; the
     && echo "(sudo detected: HF_HOME -> $HF_HOME)"
 fi
 
-GPU=0; OUTDIR=""; SMOKE=0; IDS=""; CAPS="auto"; CLOCKS="auto"
+GPU=0; OUTDIR=""; SMOKE=0; IDS=""; CAPS="auto"; CLOCKS="auto"; PHASE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --gpu)    GPU="$2"; shift 2;;
@@ -43,6 +44,7 @@ while [ $# -gt 0 ]; do
     --ids)    IDS="$2"; shift 2;;
     --caps)   CAPS="$2"; shift 2;;
     --clocks) CLOCKS="$2"; shift 2;;
+    --phase)  PHASE="$2"; shift 2;;
     *) echo "unknown arg: $1"; exit 2;;
   esac
 done
@@ -57,6 +59,12 @@ if [ -z "$OUTDIR" ]; then
   TAG=$(nvidia-smi -i "$GPU" --query-gpu=name --format=csv,noheader 2>/dev/null \
         | head -1 | tr 'A-Z ' 'a-z-' | sed 's/nvidia-//; s/-sxm.*//; s/-pcie.*//; s/[^a-z0-9-]//g')
   OUTDIR="data_${TAG:-unknown}_v4"
+fi
+# smoke runs go to a throwaway dir: its 4-point chat-phi3 CSVs must never land in the real
+# outdir, or the full run's resume logic would treat chat-phi3 as done and skip it forever
+if [ "$SMOKE" = "1" ]; then
+  OUTDIR="${OUTDIR%_smoke}_smoke"
+  echo "(smoke outdir: $OUTDIR -- throwaway, delete after the check passes)"
 fi
 mkdir -p "$OUTDIR"
 LOG="$OUTDIR/run_all.log"
@@ -95,6 +103,7 @@ if [ "$SMOKE" = "1" ]; then
         --caps "$CAPS" --clocks "$CLOCKS" --force)
   echo "(smoke mode: chat-phi3 only, 4 caps + 4 clocks)" | tee -a "$LOG"
 fi
+[ -n "$PHASE" ] && ARGS+=(--phase "$PHASE")
 python3 run_portfolio.py "${ARGS[@]}" 2>&1 | tee -a "$LOG"
 RC=${PIPESTATUS[0]}
 [ "$RC" -ne 0 ] && { echo "sweep exited rc=$RC -- re-run to resume from where it stopped." | tee -a "$LOG"; exit "$RC"; }

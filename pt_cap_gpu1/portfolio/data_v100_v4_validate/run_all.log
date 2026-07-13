@@ -1,0 +1,96 @@
+== 1/3 preflight ==
+== preflight: deps ==
+  [OK] torch -- 2.6.0+cu124 cuda=12.4
+  [OK] torch.cuda -- devices=1
+  [OK] gpu -- Tesla V100-DGXS-32GB sm_70
+  [OK] cuda kernel executes
+  [OK] transformers -- 5.12.1
+  [OK] numpy -- 2.2.6
+  [OK] matplotlib (optional, for plots) -- 3.10.9
+== preflight: NVML / power-cap privilege ==
+  [OK] nvml -- Tesla V100-DGXS-32GB | -pl range [100,300]W, enforced 250W
+  [OK] energy counter (window-power method)
+  [OK] nvidia-smi -pl privilege -- All done.
+  [OK] nvidia-smi -lgc/-rgc privilege (prefill clock sweep) -- SM clocks 135-1530 MHz (187 supported steps)
+== preflight: models in local HF cache ==
+  [OK] Qwen/Qwen2.5-1.5B-Instruct -- /home/markliu/.cache/huggingface/hub/models--Qwen--Qwen2.5-1.5B-Instruct/snapshots/989aa7980e4cf806f80c7fef2b1adb7bc71aa306
+  [OK] Qwen/Qwen2.5-3B-Instruct -- /home/markliu/.cache/huggingface/hub/models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1
+  [OK] Qwen/Qwen2.5-7B-Instruct -- /home/markliu/.cache/huggingface/hub/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28
+  [OK] Qwen/Qwen3-4B-Instruct-2507 -- /home/markliu/.cache/huggingface/hub/models--Qwen--Qwen3-4B-Instruct-2507/snapshots/cdbee75f17c01a7cc42f958dc650907174af0554
+  [OK] microsoft/Phi-3-mini-4k-instruct -- /home/markliu/.cache/huggingface/hub/models--microsoft--Phi-3-mini-4k-instruct/snapshots/f39ac1d28e925b323eae81227eaba4464caced4e
+
+preflight: READY
+== 2/3 sweep (methodology v4: prefill locked-clock + decode power-cap) ==
+GPU1 Tesla V100-DGXS-32GB | cap range [100,300] restore-to 250W
+decode caps [100, 110, 126, 145, 167, 190, 216, 242, 271, 300]
+prefill locked clocks [135, 337, 495, 630, 757, 877, 997, 1110, 1215, 1320, 1425, 1530] (cap pinned at 300W)
+energy-window power: True | throttle telemetry: True | cool at >67C -> 55C
+workloads: ['chat-phi3']
+
+########## chat-phi3  (Chat (short-context assistant))  model=microsoft/Phi-3-mini-4k-instruct ##########
+Loading weights:   0%|          | 0/195 [00:00<?, ?it/s]Loading weights:  14%|█▍        | 28/195 [00:00<00:00, 255.02it/s]Loading weights:  28%|██▊       | 54/195 [00:00<00:00, 196.07it/s]Loading weights:  38%|███▊      | 75/195 [00:00<00:00, 191.50it/s]Loading weights:  49%|████▊     | 95/195 [00:00<00:00, 188.12it/s]Loading weights:  59%|█████▉    | 116/195 [00:00<00:00, 188.92it/s]Loading weights:  70%|███████   | 137/195 [00:00<00:00, 189.03it/s]Loading weights:  83%|████████▎ | 161/195 [00:00<00:00, 191.34it/s]Loading weights:  95%|█████████▍| 185/195 [00:00<00:00, 201.16it/s]Loading weights: 100%|██████████| 195/195 [00:00<00:00, 202.11it/s]
+  loaded  VRAM=7.64 GB
+  === CLK 135 MHz (cap 300 W) ===
+    prefill b=8 S=512   |      843 tok/s |    54W | sm 135/135 | 15.6 tok/J
+  === CLK 337 MHz (cap 300 W) ===
+    prefill b=8 S=512   |     1666 tok/s |    70W | sm 337/337 | 23.9 tok/J
+  === CLK 495 MHz (cap 300 W) ===
+    prefill b=8 S=512   |     3574 tok/s |   104W | sm 495/495 | 34.2 tok/J
+  === CLK 630 MHz (cap 300 W) ===
+    prefill b=8 S=512   |     4375 tok/s |   121W | sm 630/630 | 36.2 tok/J
+  === CLK 757 MHz (cap 300 W) ===
+    prefill b=8 S=512   |     4970 tok/s |   134W | sm 757/757 | 37.1 tok/J
+  === CLK 877 MHz (cap 300 W) ===
+    prefill b=8 S=512   |     6146 tok/s |   155W | sm 877/877 | 39.7 tok/J
+  === CLK 997 MHz (cap 300 W) ===
+    prefill b=8 S=512   |     6922 tok/s |   171W | sm 997/997 | 40.4 tok/J
+  === CLK 1110 MHz (cap 300 W) ===
+    prefill b=8 S=512   |     7605 tok/s |   204W | sm 1110/1110 | 37.3 tok/J
+  === CLK 1215 MHz (cap 300 W) ===
+    prefill b=8 S=512   |     8139 tok/s |   238W | sm 1215/1215 | 34.2 tok/J
+  === CLK 1320 MHz (cap 300 W) ===
+    prefill b=8 S=512   |     8426 tok/s |   261W | sm 1320/1320 | 32.3 tok/J
+  === CLK 1425 MHz (cap 300 W) ===
+    prefill b=8 S=512   |     8577 tok/s |   275W | sm 1425/1425 | 31.2 tok/J
+  === CLK 1530 MHz (cap 300 W) ===
+    prefill b=8 S=512   |     8595 tok/s |   276W | sm 1471/1530 | 31.1 tok/J  [power-limited]
+  wrote /home/markliu/Desktop/powerchar/pt_cap_gpu1/portfolio/data_v100_v4_validate/chat-phi3_prefill.csv (12 points)
+  === CAP 100 W ===
+    decode  b=64 C=256   |      482 tok/s |   100W | sm 759 | 32 steps/4.3s | spread 0.6% (2 runs)
+  === CAP 110 W ===
+    decode  b=64 C=256   |      565 tok/s |   111W | sm 837 | 32 steps/3.6s | spread 0.1% (2 runs)
+  === CAP 126 W ===
+    decode  b=64 C=256   |      658 tok/s |   127W | sm 1027 | 32 steps/3.1s | spread 1.0% (2 runs)
+  === CAP 145 W ===
+    decode  b=64 C=256   |      722 tok/s |   145W | sm 1144 | 32 steps/2.8s | spread 0.1% (2 runs)
+  === CAP 167 W ===
+    decode  b=64 C=256   |      762 tok/s |   169W | sm 1263 | 32 steps/2.7s | spread 1.1% (2 runs)
+  === CAP 190 W ===
+    decode  b=64 C=256   |      806 tok/s |   191W | sm 1360 | 33 steps/2.6s | spread 0.9% (2 runs)
+  === CAP 216 W ===
+    decode  b=64 C=256   |      822 tok/s |   217W | sm 1435 | 33 steps/2.6s | spread 0.1% (2 runs)
+  === CAP 242 W ===
+    decode  b=64 C=256   |      838 tok/s |   235W | sm 1508 | 34 steps/2.6s | spread 0.8% (2 runs)
+  === CAP 271 W ===
+    decode  b=64 C=256   |      847 tok/s |   243W | sm 1520 | 34 steps/2.6s | spread 0.2% (2 runs)
+  === CAP 300 W ===
+    decode  b=64 C=256   |      849 tok/s |   244W | sm 1526 | 35 steps/2.6s | spread 0.3% (2 runs)
+  wrote /home/markliu/Desktop/powerchar/pt_cap_gpu1/portfolio/data_v100_v4_validate/chat-phi3_decode.csv (10 points)
+
+[reset] -rgc; -pl 250W
+== 3/3 fits & figures ==
+F_MAX = 1530 MHz  (from /home/markliu/Desktop/powerchar/pt_cap_gpu1/portfolio/data_v100_v4_validate/meta.json)
+chat-phi3          old R2=+0.943 rmse=4.0% loo=5.4%  ->  additive R2=+0.991 rmse=1.6% loo=2.7%   [T_mem=75.8ms Cc=11.99ms p=2.46 | stages P1=98 P2=195W]
+wrote /home/markliu/Desktop/powerchar/pt_cap_gpu1/portfolio/data_v100_v4_validate/fig_decode_models.png
+wrote /home/markliu/Desktop/powerchar/pt_cap_gpu1/portfolio/data_v100_v4_validate/decode_model_compare.csv
+F_MAX = 1530 MHz  (from /home/markliu/Desktop/powerchar/pt_cap_gpu1/portfolio/data_v100_v4_validate/meta.json)
+chat-phi3          V2f R2=+0.978 rmse=6.7% loo=7.6%  ->  unified R2=+0.963 rmse=8.6% loo=9.7%   [p=1.03 th=1.44 p/th=0.72 P_s=46 T_fmax=10069]
+wrote /home/markliu/Desktop/powerchar/pt_cap_gpu1/portfolio/data_v100_v4_validate/fig_prefill_models.png
+wrote /home/markliu/Desktop/powerchar/pt_cap_gpu1/portfolio/data_v100_v4_validate/prefill_model_compare.csv
+F_MAX = 1530 MHz  (from /home/markliu/Desktop/powerchar/pt_cap_gpu1/portfolio/data_v100_v4_validate/meta.json)
+per-model effective BW (GB/s): {'Phi-3-mini-4k-instruct': 191}
+wrote /home/markliu/Desktop/powerchar/pt_cap_gpu1/portfolio/data_v100_v4_validate/fig_portfolio_grid.png
+wrote /home/markliu/Desktop/powerchar/pt_cap_gpu1/portfolio/data_v100_v4_validate/fig_tmax_validation.png
+wrote /home/markliu/Desktop/powerchar/pt_cap_gpu1/portfolio/data_v100_v4_validate/portfolio_fits.csv
+== DONE. Everything to bring back is inside: data_v100_v4_validate/ (CSVs, meta.json, figures, log) ==
+final power limit: 250.00 W

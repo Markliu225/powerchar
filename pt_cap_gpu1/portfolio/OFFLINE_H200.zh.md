@@ -1,12 +1,14 @@
 # 离线 H200 一键测量 —— 搬运与运行手册
 
-把 portfolio 功率-cap 实验（10 个 workload × prefill+decode，**方法学 v3**）搬到一台**离线**的
-H200 主机上跑。测量规范已内建在脚本里：能量累加器读窗口功率、降频原因门控、约束落盘 meta.json。
-代码全部 GPU 无关：cap 网格从本机 `-pl` 约束自动生成，f_max 写进 meta.json 供拟合使用。
+把 portfolio 实验（10 个 workload × prefill+decode，**扫描方法学 v4，单点测量规范沿用 v3**）搬到
+一台**离线**的 H200 主机上跑。测量规范已内建在脚本里：能量累加器读窗口功率、降频原因门控、
+约束落盘 meta.json。代码全部 GPU 无关：decode 的 cap 网格从本机 `-pl` 约束自动生成，prefill 的
+锁频网格从本机支持频率表自动生成，f_max 写进 meta.json 供拟合使用。
 
 ## 一、在线机器上备料（两样东西）
 
-**1. 代码**：整个仓库（或最小集：`code/` + `pt_cap_gpu1/portfolio/`）。
+**1. 代码**：整个仓库（或最小集：`code/` + `pt_cap_gpu1/portfolio/` + 根目录 `requirements.txt`，
+保持相对目录结构不变——run_all.sh 依赖 `../../code` 的相对布局）。
 
 **2. 模型权重（~44 GB）**：
 ```bash
