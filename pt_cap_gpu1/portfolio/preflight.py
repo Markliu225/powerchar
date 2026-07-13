@@ -4,8 +4,10 @@ Verifies, without downloading anything (HF_HUB_OFFLINE-safe):
   1. python deps + versions (torch/CUDA build, transformers, pynvml, numpy; matplotlib optional)
   2. the target GPU is visible to torch AND NVML, and reports its power-limit constraints
   3. `nvidia-smi -pl` privilege actually works (benign: re-sets the current enforced limit)
-  4. every portfolio model is FULLY present in the local HF cache (snapshot with weights)
-  5. capability probes: energy counter (window-power method), throttle-reason telemetry
+  4. `nvidia-smi -lgc/-rgc` privilege works (prefill clock sweep; benign: full-range lock + reset)
+     and the supported SM clock range is listed
+  5. every portfolio model is FULLY present in the local HF cache (snapshot with weights)
+  6. capability probes: energy counter (window-power method), throttle-reason telemetry
 Exit code 0 = ready to run; 1 = something is missing (each failure printed with the fix).
 
   CUDA_VISIBLE_DEVICES=0 [SUDO_PASS=...] python3 preflight.py
@@ -88,19 +90,42 @@ def main():
             check("energy counter (window-power method)", True)
         except Exception:
             print("  [WARN] no energy counter -- falls back to sampled power average")
-        # benign privilege test: set the cap to its current value
+        # benign privilege tests (same sudo dance the sweep uses)
         pw = os.environ.get("SUDO_PASS", "")
-        cmd = ["nvidia-smi", "-i", GPU, "-pl", str(int(round(cur)))]
-        if hasattr(os, "geteuid") and os.geteuid() == 0:
-            r = subprocess.run(cmd, text=True, capture_output=True)
-        elif pw:
-            r = subprocess.run(["sudo", "-S", "-p", ""] + cmd, input=pw + "\n",
-                               text=True, capture_output=True)
-        else:
-            r = subprocess.run(["sudo", "-n"] + cmd, text=True, capture_output=True)
+
+        def sudo_smi(args_):
+            cmd = ["nvidia-smi", "-i", GPU] + args_
+            if hasattr(os, "geteuid") and os.geteuid() == 0:
+                return subprocess.run(cmd, text=True, capture_output=True)
+            if pw:
+                return subprocess.run(["sudo", "-S", "-p", ""] + cmd, input=pw + "\n",
+                                      text=True, capture_output=True)
+            return subprocess.run(["sudo", "-n"] + cmd, text=True, capture_output=True)
+
+        # -pl: re-set the current enforced limit (a no-op for the hardware)
+        r = sudo_smi(["-pl", str(int(round(cur)))])
         check("nvidia-smi -pl privilege", r.returncode == 0,
               (r.stderr or r.stdout).strip().splitlines()[-1][:70] if (r.stderr or r.stdout) else "",
               "run as root, or add a NOPASSWD sudoers rule for nvidia-smi, or export SUDO_PASS")
+        # -lgc/-rgc: lock to the FULL supported range (behaviorally unlocked), then reset.
+        # The v4 prefill sweep locks clocks point by point; without this privilege it cannot run.
+        try:
+            mems = sorted(pynvml.nvmlDeviceGetSupportedMemoryClocks(h))
+            sms = sorted(set(pynvml.nvmlDeviceGetSupportedGraphicsClocks(h, mems[-1])))
+            det = f"SM clocks {sms[0]}-{sms[-1]} MHz ({len(sms)} supported steps)"
+        except pynvml.NVMLError as e:
+            sms, det = [], f"cannot list supported clocks: {str(e)[:50]}"
+        if sms:
+            r1 = sudo_smi(["-lgc", f"{sms[0]},{sms[-1]}"])
+            r2 = sudo_smi(["-rgc"])
+            check("nvidia-smi -lgc/-rgc privilege (prefill clock sweep)",
+                  r1.returncode == 0 and r2.returncode == 0,
+                  det if (r1.returncode == 0 and r2.returncode == 0) else
+                  ((r1.stderr or r1.stdout or r2.stderr or r2.stdout).strip().splitlines()[-1][:70]),
+                  "same privilege as -pl; if the driver rejects -lgc, run the sweep with --phase decode")
+        else:
+            check("nvidia-smi -lgc/-rgc privilege (prefill clock sweep)", False, det,
+                  "driver cannot enumerate supported clocks -- pass an explicit --clocks list")
     except Exception as e:
         check("nvml", False, str(e), "driver/NVML mismatch? reboot after driver update")
 

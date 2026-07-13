@@ -1,0 +1,33 @@
+{
+ "gpu_name": "NVIDIA H200",
+ "driver": "580.95.05",
+ "torch": "2.13.0+cu130",
+ "cuda": "13.0",
+ "pl_min_w": 200.0,
+ "pl_max_w": 700.0,
+ "pl_default_w": 700.0,
+ "pl_enforced_at_start_w": 700.0,
+ "timestamp": "2026-07-12 15:51:49",
+ "methodology": "v3: seed_chunk=ctx, expandable_segments, step-targeted windows, repeats+median, ctx_eff, energy-window power, throttle gating",
+ "supported_mem_clocks_mhz": [
+  2201,
+  3201
+ ],
+ "sm_clk_min_mhz": 345,
+ "f_max_mhz": 1980,
+ "temp_slowdown_c": 89,
+ "temp_shutdown_c": 95,
+ "temp_gpu_max_c": 87,
+ "cap_grid_w": [
+  200,
+  226,
+  266,
+  313,
+  367,
+  426,
+  489,
+  556,
+  626,
+  700
+ ]
+}

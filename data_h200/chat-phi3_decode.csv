@@ -1,0 +1,5 @@
+phase,cap_w,throughput_tok_s,power_avg_w,power_sample_avg_w,sm_clk_avg,mem_clk_avg,util_gpu_avg,util_mem_avg,tok_per_joule,temp_avg,throttle_mask,thermal_frac,mem_temp_avg,ctx,batch,ctx_eff,steps,window_s,spread_pct,n_runs
+decode,200,669.7,252.0,271.4,345,3201,99,8,2.66,42.3,0x4,0.0,41.8,256,64,272.0,32,3.06,0.05,2
+decode,313,958.3,307.6,316.7,540,3201,99,12,3.12,44.0,0x4,0.0,43.0,256,64,275.5,39,2.6,0.05,2
+decode,489,1844.9,480.4,483.8,1315,3201,98,23,3.84,47.9,0x4,0.0,46.1,256,64,292.5,73,2.53,0.18,2
+decode,700,2282.3,692.0,677.1,1707,3201,98,30,3.3,54.2,0x4,0.0,50.6,256,64,301.0,90,2.52,0.24,2
