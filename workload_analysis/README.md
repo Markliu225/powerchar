@@ -26,6 +26,21 @@
 
 - `analyze.py` —— 拉数据 + 分词 → `workload_ratios.csv`
 - `plot.py` —— → `fig_workload_pd.png`
+- `plot_power_curves.py` —— 每类的 V100 功率曲线,**prefill / decode 两相分开画**(映射同
+  `fig_workload_pd.png` 右栏;两相吞吐差 1–2 个数量级,对数轴;与 disaggregated 规划口径一致) →
+  `fig_workload_power_throughput.png`(power vs 吞吐)·`fig_workload_power_tokj.png`
+  (power vs tok/J,含每相能效甜点环)·`workload_power_curves.csv`(每类两相的甜点
+  cap / tok/J、250 W 吞吐、decode 饱和 cap)
+- `solve_rack_capping.py` —— 加上机架物理约束(5 kW / ≤32 槽 / cap∈[100,250] W),对每类求
+  OPT(cap 浮动)vs TDP(全 250 W)配方,优化内核直接 import 自
+  `../rack_power_capping/v100/solve_workloads.py` → `fig_workload_rack_capping.png`
+  (吞吐提升 + GPU 数量/劈分变化)·`workload_rack_capping.csv`
+- `h200/` —— 同一流程跑在 H200 数据(`../data_h200`,cap 200–700 W;机架场景等比缩放为
+  14 kW / 32 槽 / TDP 700 W),脚本复用本目录与求解器模块,见 [h200/README.md](h200/README.md)
+- `plot_composite_economics.py` —— 综合 workload(10 类按真实比例 `n` 共存)的**非线性经济
+  收益曲线**,V100 & H200:利润随 cap(收入固定,成本 = CapEx↓ + 电价·瓦特↑ → 内部最优随电价滑)
+  与随电价的敏感性(uniform vs disaggregated vs TDP) → `fig_composite_economics.png` ·
+  `fig_composite_elec_sensitivity.png` · `composite_economics.csv`;详见 [ECONOMICS.md](ECONOMICS.md)
 - `data/` —— 缓存的生产 trace 样本(Azure conv/code、BurstGPT)
 - `REFERENCES.zh.md` —— 分类法依据 + 数据集 + 引用链接 + caveat
 
@@ -34,4 +49,7 @@
 ```bash
 python3 workload_analysis/analyze.py
 python3 workload_analysis/plot.py
+python3 workload_analysis/plot_power_curves.py
+python3 workload_analysis/solve_rack_capping.py
+python3 workload_analysis/plot_composite_economics.py
 ```

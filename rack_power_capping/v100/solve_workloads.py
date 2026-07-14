@@ -70,8 +70,12 @@ ORDERED_IDS = [m for c in WORKLOAD_CLASSES for m in c["members"]]
 
 # ---- per-workload curves from the portfolio data ------------------------------------------------
 def _read(path):
+    """Power axis = the ENFORCED cap when swept (V100, decode); when the cap is held fixed and the
+    SM CLOCK is swept instead (H200 prefill, v-next), fall back to the MEASURED draw power_avg_w."""
     rows = [r for r in csv.DictReader(open(path)) if float(r["throughput_tok_s"]) > 0]
-    return (np.array([float(r["cap_w"]) for r in rows]),
+    cap = np.array([float(r["cap_w"]) for r in rows])
+    pwr = np.array([float(r["power_avg_w"]) for r in rows])
+    return (cap if np.ptp(cap) > 1e-6 else pwr,
             np.array([float(r["throughput_tok_s"]) for r in rows]),
             np.array([float(r["sm_clk_avg"]) for r in rows]),
             rows)

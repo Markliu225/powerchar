@@ -11,46 +11,99 @@
   [OK] matplotlib (optional, for plots) -- 3.9.2
 == preflight: NVML / power-cap privilege ==
   [OK] nvml -- NVIDIA H200 | -pl range [200,700]W, enforced 700W
-  [WARN] persistence mode OFF -- run `sudo nvidia-smi -pm 1` for stable clocks and a monotonic energy counter
   [OK] energy counter (window-power method)
   [OK] nvidia-smi -pl privilege -- All done.
+  [OK] nvidia-smi -lgc/-rgc privilege (prefill clock sweep) -- SM clocks 345-1980 MHz (110 supported steps)
 == preflight: models in local HF cache ==
-  [FAIL] /data1/meteor/models/Phi-3-mini-4k-instruct -- Repo id must be in the form 'repo_name' or 'namespace/repo_name': '/data1/meteor
-         fix: copy ~/.cache/huggingface/hub/models--... from the online machine
-  [FAIL] /data1/meteor/models/Qwen2.5-3B-Instruct -- Repo id must be in the form 'repo_name' or 'namespace/repo_name': '/data1/meteor
-         fix: copy ~/.cache/huggingface/hub/models--... from the online machine
-  [FAIL] /data1/meteor/models/Qwen2.5-7B-Instruct -- Repo id must be in the form 'repo_name' or 'namespace/repo_name': '/data1/meteor
-         fix: copy ~/.cache/huggingface/hub/models--... from the online machine
-  [FAIL] /data1/meteor/models/Qwen3-4B -- Repo id must be in the form 'repo_name' or 'namespace/repo_name': '/data1/meteor
-         fix: copy ~/.cache/huggingface/hub/models--... from the online machine
+  [OK] Qwen/Qwen2.5-1.5B-Instruct -- /data1/meteor/models/Qwen2.5-1.5B-Instruct
+  [OK] Qwen/Qwen2.5-3B-Instruct -- /home/meteor/.cache/huggingface/hub/models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1
+  [OK] Qwen/Qwen2.5-7B-Instruct -- /home/meteor/.cache/huggingface/hub/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28
+  [OK] Qwen/Qwen3-4B-Instruct-2507 -- /home/meteor/.cache/huggingface/hub/models--Qwen--Qwen3-4B-Instruct-2507/snapshots/1cfa9a7208912126459214e8b04321603b3df60c
+  [OK] microsoft/Phi-3-mini-4k-instruct -- /home/meteor/.cache/huggingface/hub/models--microsoft--Phi-3-mini-4k-instruct/snapshots/f39ac1d28e925b323eae81227eaba4464caced4e
 
-preflight: 4 FAILURES: /data1/meteor/models/Phi-3-mini-4k-instruct, /data1/meteor/models/Qwen2.5-3B-Instruct, /data1/meteor/models/Qwen2.5-7B-Instruct, /data1/meteor/models/Qwen3-4B
-preflight FAILED -- fix the items above, then re-run.
-== 1/3 preflight ==
+preflight: READY
+== 2/3 sweep (methodology v4: prefill locked-clock + decode power-cap) ==
 /home/meteor/anaconda3/lib/python3.12/site-packages/torch/cuda/__init__.py:64: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
   import pynvml  # type: ignore[import]
-== preflight: deps ==
-  [OK] torch -- 2.13.0+cu130 cuda=13.0
-  [OK] torch.cuda -- devices=1
-  [OK] gpu -- NVIDIA H200 sm_90
-  [OK] cuda kernel executes
-  [OK] transformers -- 5.13.0
-  [OK] numpy -- 1.26.4
-  [OK] matplotlib (optional, for plots) -- 3.9.2
-== preflight: NVML / power-cap privilege ==
-  [OK] nvml -- NVIDIA H200 | -pl range [200,700]W, enforced 700W
-  [WARN] persistence mode OFF -- run `sudo nvidia-smi -pm 1` for stable clocks and a monotonic energy counter
-  [OK] energy counter (window-power method)
-  [OK] nvidia-smi -pl privilege -- All done.
-== preflight: models in local HF cache / local paths ==
+GPU0 NVIDIA H200 | cap range [200,700] restore-to 700W
+decode caps [200, 226, 266, 313, 367, 426, 489, 556, 626, 700]
+prefill locked clocks [345, 585, 765, 930, 1080, 1215, 1350, 1485, 1605, 1740, 1860, 1980] (cap pinned at 700W)
+energy-window power: True | throttle telemetry: True | cool at >69C -> 57C
+workloads: ['chat-phi3', 'rag-phi3', 'code-phi3', 'longform-phi3', 'summarize-qwen7b', 'translate-qwen3b', 'fastchat-qwen15b', 'classify-qwen7b', 'qwen3chat-4b', 'qwen3think-4b']
+
+########## chat-phi3  (Chat (short-context assistant))  model=microsoft/Phi-3-mini-4k-instruct ##########
+Loading weights:   0%|          | 0/195 [00:00<?, ?it/s]Loading weights:   1%|          | 1/195 [00:00<00:20,  9.66it/s]Loading weights:   7%|▋         | 14/195 [00:00<00:02, 74.27it/s]Loading weights:  21%|██        | 41/195 [00:00<00:01, 151.65it/s]Loading weights:  33%|███▎      | 65/195 [00:00<00:00, 182.07it/s]Loading weights:  46%|████▌     | 90/195 [00:00<00:00, 205.32it/s]Loading weights:  57%|█████▋    | 111/195 [00:00<00:00, 201.99it/s]Loading weights:  68%|██████▊   | 132/195 [00:00<00:00, 199.49it/s]Loading weights:  78%|███████▊  | 152/195 [00:00<00:00, 193.09it/s]Loading weights:  89%|████████▊ | 173/195 [00:00<00:00, 196.97it/s]Loading weights: 100%|██████████| 195/195 [00:01<00:00, 186.50it/s]
+  loaded  VRAM=7.64 GB
+  === CLK 345 MHz (cap 700 W) ===
+
+[reset] -rgc; -pl 700W
 Traceback (most recent call last):
-  File "/data1/meteor/powerchar/pt_cap_gpu1/portfolio/preflight.py", line 199, in <module>
+  File "/data1/meteor/powerchar/pt_cap_gpu1/portfolio/run_portfolio.py", line 502, in <module>
     main()
-  File "/data1/meteor/powerchar/pt_cap_gpu1/portfolio/preflight.py", line 113, in main
-    mp = Path(mid)
-         ^^^^
-NameError: name 'Path' is not defined
-preflight FAILED -- fix the items above, then re-run.
+  File "/data1/meteor/powerchar/pt_cap_gpu1/portfolio/run_portfolio.py", line 483, in main
+    run_workload(w, sampler, caps, clks, pre_cap_w, outdir, phase=args.phase)
+  File "/data1/meteor/powerchar/pt_cap_gpu1/portfolio/run_portfolio.py", line 192, in run_workload
+    r = run_prefill_point(model, sampler, pb, ps, vocab)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/data1/meteor/powerchar/code/measure.py", line 54, in run_prefill_point
+    out = model(input_ids=ids, use_cache=False, logits_to_keep=1)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/transformers/utils/generic.py", line 911, in wrapper
+    output = func(self, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/transformers/models/phi3/modeling_phi3.py", line 478, in forward
+    outputs: BaseModelOutputWithPast = self.model(
+                                       ^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/transformers/utils/generic.py", line 1040, in wrapper
+    output = func(self, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/transformers/utils/output_capturing.py", line 252, in wrapper
+    outputs = func(self, *args, **kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/transformers/models/phi3/modeling_phi3.py", line 416, in forward
+    hidden_states = decoder_layer(
+                    ^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/transformers/modeling_layers.py", line 93, in __call__
+    return super().__call__(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/transformers/models/phi3/modeling_phi3.py", line 320, in forward
+    hidden_states, self_attn_weights = self.self_attn(
+                                       ^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/transformers/models/phi3/modeling_phi3.py", line 257, in forward
+    attn_output, attn_weights = attention_interface(
+                                ^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/transformers/integrations/sdpa_attention.py", line 93, in sdpa_attention_forward
+    attn_output = torch.nn.functional.scaled_dot_product_attention(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: cuDNN Frontend error: CUDNN_BACKEND_TENSOR_DESCRIPTOR cudnnFinalize failedptrDesc->finalize() cudnn_status: CUDNN_STATUS_SUBLIBRARY_VERSION_MISMATCH
+sweep exited rc=1 -- re-run to resume from where it stopped.
 == 1/3 preflight ==
 /home/meteor/anaconda3/lib/python3.12/site-packages/torch/cuda/__init__.py:64: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
   import pynvml  # type: ignore[import]
@@ -64,57 +117,99 @@ preflight FAILED -- fix the items above, then re-run.
   [OK] matplotlib (optional, for plots) -- 3.9.2
 == preflight: NVML / power-cap privilege ==
   [OK] nvml -- NVIDIA H200 | -pl range [200,700]W, enforced 700W
-  [WARN] persistence mode OFF -- run `sudo nvidia-smi -pm 1` for stable clocks and a monotonic energy counter
   [OK] energy counter (window-power method)
   [OK] nvidia-smi -pl privilege -- All done.
-== preflight: models in local HF cache / local paths ==
-  [OK] /data1/meteor/models/Phi-3-mini-4k-instruct -- config=True, tokenizer=True, weights=4, path=/data1/meteor/models/Phi-3-mini-4k-instruct
-  [OK] /data1/meteor/models/Qwen2.5-3B-Instruct -- config=True, tokenizer=True, weights=4, path=/data1/meteor/models/Qwen2.5-3B-Instruct
-  [OK] /data1/meteor/models/Qwen2.5-7B-Instruct -- config=True, tokenizer=True, weights=8, path=/data1/meteor/models/Qwen2.5-7B-Instruct
-  [OK] /data1/meteor/models/Qwen3-4B -- config=True, tokenizer=True, weights=6, path=/data1/meteor/models/Qwen3-4B
+  [OK] nvidia-smi -lgc/-rgc privilege (prefill clock sweep) -- SM clocks 345-1980 MHz (110 supported steps)
+== preflight: models in local HF cache ==
+  [OK] Qwen/Qwen2.5-1.5B-Instruct -- /data1/meteor/models/Qwen2.5-1.5B-Instruct
+  [OK] Qwen/Qwen2.5-3B-Instruct -- /home/meteor/.cache/huggingface/hub/models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1
+  [OK] Qwen/Qwen2.5-7B-Instruct -- /home/meteor/.cache/huggingface/hub/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28
+  [OK] Qwen/Qwen3-4B-Instruct-2507 -- /home/meteor/.cache/huggingface/hub/models--Qwen--Qwen3-4B-Instruct-2507/snapshots/1cfa9a7208912126459214e8b04321603b3df60c
+  [OK] microsoft/Phi-3-mini-4k-instruct -- /home/meteor/.cache/huggingface/hub/models--microsoft--Phi-3-mini-4k-instruct/snapshots/f39ac1d28e925b323eae81227eaba4464caced4e
 
 preflight: READY
-== 2/3 power-cap sweep (methodology v3) ==
-(smoke mode: chat-phi3 only, 4 caps)
+== 2/3 sweep (methodology v4: prefill locked-clock + decode power-cap) ==
 /home/meteor/anaconda3/lib/python3.12/site-packages/torch/cuda/__init__.py:64: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
   import pynvml  # type: ignore[import]
 GPU0 NVIDIA H200 | cap range [200,700] restore-to 700W
-caps [200, 313, 489, 700]
+decode caps [200, 226, 266, 313, 367, 426, 489, 556, 626, 700]
+prefill locked clocks [345, 585, 765, 930, 1080, 1215, 1350, 1485, 1605, 1740, 1860, 1980] (cap pinned at 700W)
 energy-window power: True | throttle telemetry: True | cool at >69C -> 57C
-workloads: ['chat-phi3']
+workloads: ['chat-phi3', 'rag-phi3', 'code-phi3', 'longform-phi3', 'summarize-qwen7b', 'translate-qwen3b', 'fastchat-qwen15b', 'classify-qwen7b', 'qwen3chat-4b', 'qwen3think-4b']
 
-########## chat-phi3  (Chat (short-context assistant))  model=/data1/meteor/models/Phi-3-mini-4k-instruct ##########
-Loading weights:   0%|          | 0/195 [00:00<?, ?it/s]Loading weights:   1%|          | 2/195 [00:00<00:14, 13.73it/s]Loading weights:   9%|▊         | 17/195 [00:00<00:02, 73.39it/s]Loading weights:  15%|█▍        | 29/195 [00:00<00:01, 88.58it/s]Loading weights:  21%|██        | 41/195 [00:00<00:01, 95.98it/s]Loading weights:  27%|██▋       | 53/195 [00:00<00:01, 97.44it/s]Loading weights:  33%|███▎      | 65/195 [00:00<00:01, 102.61it/s]Loading weights:  39%|███▉      | 77/195 [00:00<00:01, 100.29it/s]Loading weights:  45%|████▌     | 88/195 [00:01<00:01, 80.37it/s] Loading weights:  51%|█████▏    | 100/195 [00:01<00:01, 84.78it/s]Loading weights:  56%|█████▋    | 110/195 [00:01<00:00, 85.54it/s]Loading weights:  63%|██████▎   | 122/195 [00:01<00:00, 92.16it/s]Loading weights:  68%|██████▊   | 132/195 [00:01<00:00, 86.64it/s]Loading weights:  73%|███████▎  | 143/195 [00:01<00:00, 85.77it/s]Loading weights:  79%|███████▉  | 155/195 [00:01<00:00, 89.56it/s]Loading weights:  86%|████████▌ | 167/195 [00:01<00:00, 93.93it/s]Loading weights:  92%|█████████▏| 179/195 [00:02<00:00, 96.22it/s]Loading weights:  98%|█████████▊| 191/195 [00:02<00:00, 100.77it/s]Loading weights: 100%|██████████| 195/195 [00:02<00:00, 92.41it/s] 
+########## chat-phi3  (Chat (short-context assistant))  model=microsoft/Phi-3-mini-4k-instruct ##########
+Loading weights:   0%|          | 0/195 [00:00<?, ?it/s]Loading weights:   1%|          | 1/195 [00:00<00:25,  7.73it/s]Loading weights:  15%|█▍        | 29/195 [00:00<00:01, 138.77it/s]Loading weights:  27%|██▋       | 53/195 [00:00<00:00, 171.46it/s]Loading weights:  39%|███▉      | 76/195 [00:00<00:00, 189.00it/s]Loading weights:  49%|████▉     | 96/195 [00:00<00:00, 189.23it/s]Loading weights:  61%|██████    | 118/195 [00:00<00:00, 195.89it/s]Loading weights:  71%|███████   | 138/195 [00:00<00:00, 188.56it/s]Loading weights:  83%|████████▎ | 161/195 [00:00<00:00, 192.96it/s]Loading weights:  95%|█████████▌| 186/195 [00:01<00:00, 209.44it/s]Loading weights: 100%|██████████| 195/195 [00:01<00:00, 189.03it/s]
   loaded  VRAM=7.64 GB
-  === CAP 200 W ===
-    prefill b=8 S=512   |     9412 tok/s |   354W | sm 389 | 26.6 tok/J
-    decode  b=64 C=256   |      670 tok/s |   252W | sm 345 | 32 steps/3.1s | spread 0.0% (2 runs)
-  === CAP 313 W ===
-    prefill b=8 S=512   |     9844 tok/s |   364W | sm 412 | 27.1 tok/J
-    decode  b=64 C=256   |      958 tok/s |   308W | sm 540 | 39 steps/2.6s | spread 0.0% (2 runs)
-  === CAP 489 W ===
-    prefill b=8 S=512   |    15756 tok/s |   491W | sm 599 | 32.1 tok/J
-    decode  b=64 C=256   |     1845 tok/s |   480W | sm 1315 | 73 steps/2.5s | spread 0.2% (2 runs)
-  === CAP 700 W ===
-    prefill b=8 S=512   |    25344 tok/s |   694W | sm 1046 | 36.5 tok/J
-    decode  b=64 C=256   |     2282 tok/s |   692W | sm 1707 | 90 steps/2.5s | spread 0.2% (2 runs)
-  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200/chat-phi3_prefill.csv (4 caps)
-  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200/chat-phi3_decode.csv (4 caps)
+  === CLK 345 MHz (cap 700 W) ===
 
-[reset] -pl 700W
-== 3/3 fits & figures ==
-F_MAX = 1980 MHz  (from /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200/meta.json)
-    [warn] exponent railed (p=10.00, theta=2.95) -- weakly identified
-    [warn] exponent railed (p=10.00, theta=2.42) -- weakly identified
-chat-phi3          old R2=+0.508 rmse=31.8% loo=49.9%  ->  additive R2=+0.575 rmse=29.5% loo=54.8%   [T_mem=37.8ms Cc=3.13ms p=1.71 | stages P1=270 P2=577W]
-wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200/fig_decode_models.png
-wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200/decode_model_compare.csv
-F_MAX = 1980 MHz  (from /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200/meta.json)
-per-model effective BW (GB/s): {}
-wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200/fig_portfolio_grid.png
-wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200/portfolio_fits.csv
-== DONE. Everything to bring back is inside: data_h200/ (CSVs, meta.json, figures, log) ==
-final power limit: 700.00 W
+[reset] -rgc; -pl 700W
+Traceback (most recent call last):
+  File "/data1/meteor/powerchar/pt_cap_gpu1/portfolio/run_portfolio.py", line 502, in <module>
+    main()
+  File "/data1/meteor/powerchar/pt_cap_gpu1/portfolio/run_portfolio.py", line 483, in main
+    run_workload(w, sampler, caps, clks, pre_cap_w, outdir, phase=args.phase)
+  File "/data1/meteor/powerchar/pt_cap_gpu1/portfolio/run_portfolio.py", line 192, in run_workload
+    r = run_prefill_point(model, sampler, pb, ps, vocab)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/data1/meteor/powerchar/code/measure.py", line 54, in run_prefill_point
+    out = model(input_ids=ids, use_cache=False, logits_to_keep=1)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/transformers/utils/generic.py", line 911, in wrapper
+    output = func(self, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/transformers/models/phi3/modeling_phi3.py", line 478, in forward
+    outputs: BaseModelOutputWithPast = self.model(
+                                       ^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/transformers/utils/generic.py", line 1040, in wrapper
+    output = func(self, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/transformers/utils/output_capturing.py", line 252, in wrapper
+    outputs = func(self, *args, **kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/transformers/models/phi3/modeling_phi3.py", line 416, in forward
+    hidden_states = decoder_layer(
+                    ^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/transformers/modeling_layers.py", line 93, in __call__
+    return super().__call__(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/transformers/models/phi3/modeling_phi3.py", line 320, in forward
+    hidden_states, self_attn_weights = self.self_attn(
+                                       ^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/transformers/models/phi3/modeling_phi3.py", line 257, in forward
+    attn_output, attn_weights = attention_interface(
+                                ^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/transformers/integrations/sdpa_attention.py", line 93, in sdpa_attention_forward
+    attn_output = torch.nn.functional.scaled_dot_product_attention(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: cuDNN Frontend error: CUDNN_BACKEND_TENSOR_DESCRIPTOR cudnnFinalize failedptrDesc->finalize() cudnn_status: CUDNN_STATUS_SUBLIBRARY_VERSION_MISMATCH
+sweep exited rc=1 -- re-run to resume from where it stopped.
 == 1/3 preflight ==
 /home/meteor/anaconda3/lib/python3.12/site-packages/torch/cuda/__init__.py:64: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
   import pynvml  # type: ignore[import]
@@ -128,369 +223,428 @@ final power limit: 700.00 W
   [OK] matplotlib (optional, for plots) -- 3.9.2
 == preflight: NVML / power-cap privilege ==
   [OK] nvml -- NVIDIA H200 | -pl range [200,700]W, enforced 700W
-  [WARN] persistence mode OFF -- run `sudo nvidia-smi -pm 1` for stable clocks and a monotonic energy counter
   [OK] energy counter (window-power method)
   [OK] nvidia-smi -pl privilege -- All done.
-== preflight: models in local HF cache / local paths ==
-  [OK] /data1/meteor/models/Phi-3-mini-4k-instruct -- config=True, tokenizer=True, weights=4, path=/data1/meteor/models/Phi-3-mini-4k-instruct
-  [OK] /data1/meteor/models/Qwen2.5-3B-Instruct -- config=True, tokenizer=True, weights=4, path=/data1/meteor/models/Qwen2.5-3B-Instruct
-  [OK] /data1/meteor/models/Qwen2.5-7B-Instruct -- config=True, tokenizer=True, weights=8, path=/data1/meteor/models/Qwen2.5-7B-Instruct
-  [OK] /data1/meteor/models/Qwen3-4B -- config=True, tokenizer=True, weights=6, path=/data1/meteor/models/Qwen3-4B
+  [OK] nvidia-smi -lgc/-rgc privilege (prefill clock sweep) -- SM clocks 345-1980 MHz (110 supported steps)
+== preflight: models in local HF cache ==
+  [OK] Qwen/Qwen2.5-1.5B-Instruct -- /data1/meteor/models/Qwen2.5-1.5B-Instruct
+  [OK] Qwen/Qwen2.5-3B-Instruct -- /home/meteor/.cache/huggingface/hub/models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1
+  [OK] Qwen/Qwen2.5-7B-Instruct -- /home/meteor/.cache/huggingface/hub/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28
+  [OK] Qwen/Qwen3-4B-Instruct-2507 -- /home/meteor/.cache/huggingface/hub/models--Qwen--Qwen3-4B-Instruct-2507/snapshots/1cfa9a7208912126459214e8b04321603b3df60c
+  [OK] microsoft/Phi-3-mini-4k-instruct -- /home/meteor/.cache/huggingface/hub/models--microsoft--Phi-3-mini-4k-instruct/snapshots/f39ac1d28e925b323eae81227eaba4464caced4e
 
 preflight: READY
-== 2/3 power-cap sweep (methodology v3) ==
+== 2/3 sweep (methodology v4: prefill locked-clock + decode power-cap) ==
 /home/meteor/anaconda3/lib/python3.12/site-packages/torch/cuda/__init__.py:64: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
   import pynvml  # type: ignore[import]
-[resume] skipping already-done: ['chat-phi3']
 GPU0 NVIDIA H200 | cap range [200,700] restore-to 700W
-caps [200, 226, 266, 313, 367, 426, 489, 556, 626, 700]
+decode caps [200, 226, 266, 313, 367, 426, 489, 556, 626, 700]
+prefill locked clocks [345, 585, 765, 930, 1080, 1215, 1350, 1485, 1605, 1740, 1860, 1980] (cap pinned at 700W)
 energy-window power: True | throttle telemetry: True | cool at >69C -> 57C
-workloads: ['rag-phi3', 'code-phi3', 'longform-phi3', 'summarize-qwen7b', 'translate-qwen3b', 'fastchat-qwen15b', 'classify-qwen7b', 'qwen3chat-4b', 'qwen3think-4b']
+workloads: ['chat-phi3', 'rag-phi3', 'code-phi3', 'longform-phi3', 'summarize-qwen7b', 'translate-qwen3b', 'fastchat-qwen15b', 'classify-qwen7b', 'qwen3chat-4b', 'qwen3think-4b']
 
-########## rag-phi3  (RAG / ClosedQA (long retrieved prompt))  model=/data1/meteor/models/Phi-3-mini-4k-instruct ##########
-Loading weights:   0%|          | 0/195 [00:00<?, ?it/s]Loading weights:   1%|          | 1/195 [00:00<00:34,  5.65it/s]Loading weights:  14%|█▍        | 28/195 [00:00<00:01, 122.63it/s]Loading weights:  24%|██▍       | 47/195 [00:00<00:01, 139.08it/s]Loading weights:  36%|███▋      | 71/195 [00:00<00:00, 165.79it/s]Loading weights:  49%|████▊     | 95/195 [00:00<00:00, 179.17it/s]Loading weights:  61%|██████    | 119/195 [00:00<00:00, 186.89it/s]Loading weights:  72%|███████▏  | 140/195 [00:00<00:00, 190.51it/s]Loading weights:  83%|████████▎ | 161/195 [00:00<00:00, 189.91it/s]Loading weights:  93%|█████████▎| 181/195 [00:01<00:00, 189.27it/s]Loading weights: 100%|██████████| 195/195 [00:01<00:00, 168.21it/s]
+########## chat-phi3  (Chat (short-context assistant))  model=microsoft/Phi-3-mini-4k-instruct ##########
+Loading weights:   0%|          | 0/195 [00:00<?, ?it/s]Loading weights:   1%|          | 1/195 [00:00<00:28,  6.86it/s]Loading weights:  12%|█▏        | 23/195 [00:00<00:01, 109.99it/s]Loading weights:  24%|██▍       | 47/195 [00:00<00:00, 155.23it/s]Loading weights:  36%|███▌      | 70/195 [00:00<00:00, 178.34it/s]Loading weights:  48%|████▊     | 94/195 [00:00<00:00, 195.82it/s]Loading weights:  59%|█████▉    | 115/195 [00:00<00:00, 196.79it/s]Loading weights:  70%|██████▉   | 136/195 [00:00<00:00, 198.38it/s]Loading weights:  81%|████████  | 158/195 [00:00<00:00, 202.68it/s]Loading weights:  92%|█████████▏| 179/195 [00:00<00:00, 200.40it/s]Loading weights: 100%|██████████| 195/195 [00:01<00:00, 185.19it/s]
   loaded  VRAM=7.64 GB
+  === CLK 345 MHz (cap 700 W) ===
+    prefill b=8 S=512   |     9375 tok/s |   329W | sm 345/345 | 28.5 tok/J
+  === CLK 585 MHz (cap 700 W) ===
+    prefill b=8 S=512   |    14118 tok/s |   440W | sm 585/585 | 32.1 tok/J
+  === CLK 765 MHz (cap 700 W) ===
+    prefill b=8 S=512   |    17118 tok/s |   496W | sm 765/765 | 34.5 tok/J
+  === CLK 930 MHz (cap 700 W) ===
+    prefill b=8 S=512   |    21502 tok/s |   602W | sm 930/930 | 35.7 tok/J
+  === CLK 1080 MHz (cap 700 W) ===
+    prefill b=8 S=512   |    24887 tok/s |   669W | sm 1039/1080 | 37.2 tok/J  [power-limited]
+  === CLK 1215 MHz (cap 700 W) ===
+    prefill b=8 S=512   |    25102 tok/s |   692W | sm 1026/1215 | 36.3 tok/J  [power-limited]
+    [stop] effective clock saturated ~1026 MHz at the 700 W wall -- the efficiency peak (if any) lies outside this card's power envelope
+  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/chat-phi3_prefill.csv (6 points)
   === CAP 200 W ===
-    prefill b=2 S=4096  |     3528 tok/s |   326W | sm 362 | 10.8 tok/J
-    decode  b=32 C=1024  |      198 tok/s |   255W | sm 345 | 32 steps/5.2s | spread 0.0% (2 runs)
+    decode  b=64 C=256   |      673 tok/s |   253W | sm 345 | 32 steps/3.0s | spread 0.1% (2 runs)
   === CAP 226 W ===
-    prefill b=2 S=4096  |     3531 tok/s |   329W | sm 374 | 10.7 tok/J
-    decode  b=32 C=1024  |      198 tok/s |   252W | sm 345 | 32 steps/5.2s | spread 0.1% (2 runs)
+    decode  b=64 C=256   |      673 tok/s |   253W | sm 345 | 32 steps/3.0s | spread 0.0% (2 runs)
   === CAP 266 W ===
-    prefill b=2 S=4096  |     3557 tok/s |   331W | sm 387 | 10.8 tok/J
-    decode  b=32 C=1024  |      220 tok/s |   262W | sm 386 | 32 steps/4.7s | spread 0.3% (2 runs)
+    decode  b=64 C=256   |      730 tok/s |   266W | sm 379 | 32 steps/2.8s | spread 0.7% (2 runs)
   === CAP 313 W ===
-    prefill b=2 S=4096  |     3752 tok/s |   337W | sm 376 | 11.1 tok/J
-    decode  b=32 C=1024  |      297 tok/s |   307W | sm 542 | 32 steps/3.4s | spread 0.1% (2 runs)
+    decode  b=64 C=256   |      976 tok/s |   302W | sm 524 | 39 steps/2.6s | spread 0.7% (2 runs)
   === CAP 367 W ===
-    prefill b=2 S=4096  |     4382 tok/s |   365W | sm 495 | 12.0 tok/J
-    decode  b=32 C=1024  |      404 tok/s |   366W | sm 760 | 33 steps/2.6s | spread 1.9% (2 runs)
+    decode  b=64 C=256   |     1295 tok/s |   370W | sm 768 | 52 steps/2.6s | spread 0.7% (2 runs)
   === CAP 426 W ===
-    prefill b=2 S=4096  |     5450 tok/s |   427W | sm 549 | 12.8 tok/J
-    decode  b=32 C=1024  |      502 tok/s |   416W | sm 1024 | 40 steps/2.5s | spread 0.6% (2 runs)
+    decode  b=64 C=256   |     1629 tok/s |   421W | sm 1085 | 65 steps/2.6s | spread 0.4% (2 runs)
   === CAP 489 W ===
-    prefill b=2 S=4096  |     6616 tok/s |   476W | sm 688 | 13.9 tok/J
-    decode  b=32 C=1024  |      591 tok/s |   484W | sm 1263 | 47 steps/2.5s | spread 0.5% (2 runs)
+    decode  b=64 C=256   |     1851 tok/s |   487W | sm 1298 | 73 steps/2.5s | spread 0.1% (2 runs)
   === CAP 556 W ===
-    prefill b=2 S=4096  |     8067 tok/s |   548W | sm 807 | 14.7 tok/J
-    decode  b=32 C=1024  |      648 tok/s |   555W | sm 1405 | 52 steps/2.6s | spread 0.1% (2 runs)
+    decode  b=64 C=256   |     1987 tok/s |   545W | sm 1397 | 79 steps/2.5s | spread 0.1% (2 runs)
   === CAP 626 W ===
-    prefill b=2 S=4096  |     9509 tok/s |   629W | sm 964 | 15.1 tok/J
-    decode  b=32 C=1024  |      687 tok/s |   635W | sm 1522 | 55 steps/2.6s | spread 0.1% (2 runs)
+    decode  b=64 C=256   |     2128 tok/s |   611W | sm 1525 | 84 steps/2.5s | spread 0.5% (2 runs)
   === CAP 700 W ===
-    prefill b=2 S=4096  |    11059 tok/s |   699W | sm 1186 | 15.8 tok/J
-    decode  b=32 C=1024  |      742 tok/s |   685W | sm 1691 | 59 steps/2.5s | spread 0.1% (2 runs)
-  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200/rag-phi3_prefill.csv (10 caps)
-  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200/rag-phi3_decode.csv (10 caps)
+    decode  b=64 C=256   |     2291 tok/s |   665W | sm 1687 | 90 steps/2.5s | spread 0.2% (2 runs)
+  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/chat-phi3_decode.csv (10 points)
 
-########## code-phi3  (Code completion (interactive, long file))  model=/data1/meteor/models/Phi-3-mini-4k-instruct ##########
-Loading weights:   0%|          | 0/195 [00:00<?, ?it/s]Loading weights:   1%|          | 1/195 [00:00<00:28,  6.76it/s]Loading weights:  15%|█▍        | 29/195 [00:00<00:01, 137.68it/s]Loading weights:  27%|██▋       | 52/195 [00:00<00:00, 169.30it/s]Loading weights:  36%|███▋      | 71/195 [00:00<00:00, 168.85it/s]Loading weights:  49%|████▊     | 95/195 [00:00<00:00, 185.77it/s]Loading weights:  59%|█████▉    | 115/195 [00:00<00:00, 178.19it/s]Loading weights:  69%|██████▊   | 134/195 [00:00<00:00, 168.93it/s]Loading weights:  79%|███████▉  | 154/195 [00:00<00:00, 177.43it/s]Loading weights:  89%|████████▊ | 173/195 [00:01<00:00, 179.33it/s]Loading weights: 100%|██████████| 195/195 [00:01<00:00, 173.58it/s]
+########## rag-phi3  (RAG / ClosedQA (long retrieved prompt))  model=microsoft/Phi-3-mini-4k-instruct ##########
+Loading weights:   0%|          | 0/195 [00:00<?, ?it/s]Loading weights:   1%|          | 1/195 [00:00<00:22,  8.51it/s]Loading weights:  12%|█▏        | 23/195 [00:00<00:01, 114.37it/s]Loading weights:  21%|██        | 41/195 [00:00<00:01, 140.95it/s]Loading weights:  30%|███       | 59/195 [00:00<00:00, 145.70it/s]Loading weights:  41%|████      | 80/195 [00:00<00:00, 165.73it/s]Loading weights:  50%|████▉     | 97/195 [00:00<00:00, 164.78it/s]Loading weights:  58%|█████▊    | 114/195 [00:00<00:00, 157.63it/s]Loading weights:  67%|██████▋   | 130/195 [00:00<00:00, 158.03it/s]Loading weights:  75%|███████▍  | 146/195 [00:00<00:00, 154.00it/s]Loading weights:  84%|████████▍ | 164/195 [00:01<00:00, 161.20it/s]Loading weights:  95%|█████████▍| 185/195 [00:01<00:00, 167.16it/s]Loading weights: 100%|██████████| 195/195 [00:01<00:00, 159.43it/s]
   loaded  VRAM=7.68 GB
+  === CLK 345 MHz (cap 700 W) ===
+    prefill b=2 S=4096  |     3631 tok/s |   320W | sm 345/345 | 11.4 tok/J
+  === CLK 585 MHz (cap 700 W) ===
+    prefill b=2 S=4096  |     5448 tok/s |   410W | sm 585/585 | 13.3 tok/J
+  === CLK 765 MHz (cap 700 W) ===
+    prefill b=2 S=4096  |     6552 tok/s |   467W | sm 765/765 | 14.0 tok/J
+  === CLK 930 MHz (cap 700 W) ===
+    prefill b=2 S=4096  |     8343 tok/s |   553W | sm 930/930 | 15.1 tok/J
+  === CLK 1080 MHz (cap 700 W) ===
+    prefill b=2 S=4096  |    10045 tok/s |   648W | sm 1080/1080 | 15.5 tok/J
+  === CLK 1215 MHz (cap 700 W) ===
+    prefill b=2 S=4096  |    10703 tok/s |   697W | sm 1149/1215 | 15.4 tok/J  [power-limited]
+  === CLK 1350 MHz (cap 700 W) ===
+    prefill b=2 S=4096  |    10725 tok/s |   688W | sm 1114/1350 | 15.6 tok/J  [power-limited]
+  === CLK 1485 MHz (cap 700 W) ===
+    prefill b=2 S=4096  |    10724 tok/s |   692W | sm 1094/1485 | 15.5 tok/J  [power-limited]
+  === CLK 1605 MHz (cap 700 W) ===
+    prefill b=2 S=4096  |    10837 tok/s |   704W | sm 1138/1605 | 15.4 tok/J  [power-limited]
+  === CLK 1740 MHz (cap 700 W) ===
+    prefill b=2 S=4096  |    10871 tok/s |   709W | sm 1148/1740 | 15.3 tok/J  [power-limited]
+    [stop] effective clock saturated ~1148 MHz at the 700 W wall -- the efficiency peak (if any) lies outside this card's power envelope
+  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/rag-phi3_prefill.csv (10 points)
   === CAP 200 W ===
-    prefill b=4 S=2048  |     4821 tok/s |   310W | sm 369 | 15.6 tok/J
-    decode  b=16 C=2048  |       64 tok/s |   226W | sm 345 | 32 steps/8.0s | spread 0.0% (2 runs)
+    decode  b=32 C=1024  |      198 tok/s |   252W | sm 345 | 32 steps/5.2s | spread 0.0% (2 runs)
   === CAP 226 W ===
-    prefill b=4 S=2048  |     4831 tok/s |   316W | sm 375 | 15.3 tok/J
-    decode  b=16 C=2048  |       64 tok/s |   226W | sm 350 | 32 steps/7.9s | spread 0.2% (2 runs)
+    decode  b=32 C=1024  |      198 tok/s |   252W | sm 345 | 32 steps/5.2s | spread 0.0% (2 runs)
   === CAP 266 W ===
-    prefill b=4 S=2048  |     4862 tok/s |   311W | sm 376 | 15.6 tok/J
-    decode  b=16 C=2048  |       91 tok/s |   264W | sm 511 | 32 steps/5.6s | spread 0.6% (2 runs)
+    decode  b=32 C=1024  |      220 tok/s |   269W | sm 388 | 32 steps/4.6s | spread 0.6% (2 runs)
   === CAP 313 W ===
-    prefill b=4 S=2048  |     5208 tok/s |   325W | sm 392 | 16.0 tok/J
-    decode  b=16 C=2048  |      127 tok/s |   311W | sm 741 | 32 steps/4.0s | spread 0.4% (2 runs)
+    decode  b=32 C=1024  |      296 tok/s |   303W | sm 543 | 32 steps/3.5s | spread 0.3% (2 runs)
   === CAP 367 W ===
-    prefill b=4 S=2048  |     6350 tok/s |   363W | sm 498 | 17.5 tok/J
-    decode  b=16 C=2048  |      166 tok/s |   359W | sm 1023 | 32 steps/3.1s | spread 0.2% (2 runs)
+    decode  b=32 C=1024  |      401 tok/s |   360W | sm 762 | 32 steps/2.6s | spread 0.2% (2 runs)
   === CAP 426 W ===
-    prefill b=4 S=2048  |     7917 tok/s |   419W | sm 627 | 18.9 tok/J
-    decode  b=16 C=2048  |      195 tok/s |   422W | sm 1269 | 32 steps/2.6s | spread 1.6% (2 runs)
+    decode  b=32 C=1024  |      504 tok/s |   420W | sm 1041 | 40 steps/2.5s | spread 0.6% (2 runs)
   === CAP 489 W ===
-    prefill b=4 S=2048  |     9858 tok/s |   489W | sm 836 | 20.2 tok/J
-    decode  b=16 C=2048  |      218 tok/s |   473W | sm 1426 | 35 steps/2.6s | spread 0.1% (2 runs)
+    decode  b=32 C=1024  |      594 tok/s |   484W | sm 1247 | 47 steps/2.5s | spread 0.2% (2 runs)
   === CAP 556 W ===
-    prefill b=4 S=2048  |    12260 tok/s |   564W | sm 1017 | 21.7 tok/J
-    decode  b=16 C=2048  |      235 tok/s |   561W | sm 1574 | 38 steps/2.6s | spread 0.4% (2 runs)
+    decode  b=32 C=1024  |      647 tok/s |   535W | sm 1405 | 52 steps/2.6s | spread 0.2% (2 runs)
   === CAP 626 W ===
-    prefill b=4 S=2048  |    13488 tok/s |   612W | sm 1074 | 22.0 tok/J
-    decode  b=16 C=2048  |      253 tok/s |   629W | sm 1720 | 41 steps/2.6s | spread 0.0% (2 runs)
+    decode  b=32 C=1024  |      688 tok/s |   608W | sm 1521 | 55 steps/2.6s | spread 0.0% (2 runs)
   === CAP 700 W ===
-    prefill b=4 S=2048  |    15504 tok/s |   688W | sm 1265 | 22.5 tok/J
-    decode  b=16 C=2048  |      267 tok/s |   703W | sm 1864 | 43 steps/2.6s | spread 0.1% (2 runs)
-  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200/code-phi3_prefill.csv (10 caps)
-  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200/code-phi3_decode.csv (10 caps)
+    decode  b=32 C=1024  |      744 tok/s |   691W | sm 1696 | 59 steps/2.5s | spread 0.2% (2 runs)
+  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/rag-phi3_decode.csv (10 points)
 
-########## longform-phi3  (Long-form / creative generation)  model=/data1/meteor/models/Phi-3-mini-4k-instruct ##########
-Loading weights:   0%|          | 0/195 [00:00<?, ?it/s]Loading weights:   1%|          | 1/195 [00:00<00:27,  7.00it/s]Loading weights:  11%|█▏        | 22/195 [00:00<00:01, 107.65it/s]Loading weights:  23%|██▎       | 44/195 [00:00<00:01, 147.06it/s]Loading weights:  31%|███       | 60/195 [00:00<00:00, 149.03it/s]Loading weights:  39%|███▉      | 77/195 [00:00<00:00, 152.54it/s]Loading weights:  48%|████▊     | 93/195 [00:00<00:00, 154.20it/s]Loading weights:  58%|█████▊    | 113/195 [00:00<00:00, 160.37it/s]Loading weights:  67%|██████▋   | 131/195 [00:00<00:00, 157.14it/s]Loading weights:  78%|███████▊  | 152/195 [00:01<00:00, 167.24it/s]Loading weights:  88%|████████▊ | 172/195 [00:01<00:00, 176.17it/s]Loading weights:  97%|█████████▋| 190/195 [00:01<00:00, 135.43it/s]Loading weights: 100%|██████████| 195/195 [00:01<00:00, 146.10it/s]
+########## code-phi3  (Code completion (interactive, long file))  model=microsoft/Phi-3-mini-4k-instruct ##########
+Loading weights:   0%|          | 0/195 [00:00<?, ?it/s]Loading weights:   1%|          | 1/195 [00:00<00:24,  7.79it/s]Loading weights:  15%|█▍        | 29/195 [00:00<00:01, 150.37it/s]Loading weights:  30%|███       | 59/195 [00:00<00:00, 214.06it/s]Loading weights:  43%|████▎     | 83/195 [00:00<00:00, 222.30it/s]Loading weights:  55%|█████▍    | 107/195 [00:00<00:00, 222.23it/s]Loading weights:  69%|██████▊   | 134/195 [00:00<00:00, 237.74it/s]Loading weights:  82%|████████▏ | 159/195 [00:00<00:00, 238.50it/s]Loading weights:  94%|█████████▍| 184/195 [00:00<00:00, 226.59it/s]Loading weights: 100%|██████████| 195/195 [00:00<00:00, 217.64it/s]
   loaded  VRAM=7.68 GB
+  === CLK 345 MHz (cap 700 W) ===
+    prefill b=4 S=2048  |     4888 tok/s |   298W | sm 345/345 | 16.4 tok/J
+  === CLK 585 MHz (cap 700 W) ===
+    prefill b=4 S=2048  |     7441 tok/s |   389W | sm 585/585 | 19.1 tok/J
+  === CLK 765 MHz (cap 700 W) ===
+    prefill b=4 S=2048  |     9029 tok/s |   446W | sm 765/765 | 20.2 tok/J
+  === CLK 930 MHz (cap 700 W) ===
+    prefill b=4 S=2048  |    11417 tok/s |   534W | sm 930/930 | 21.4 tok/J
+  === CLK 1080 MHz (cap 700 W) ===
+    prefill b=4 S=2048  |    13606 tok/s |   604W | sm 1080/1080 | 22.5 tok/J
+  === CLK 1215 MHz (cap 700 W) ===
+    prefill b=4 S=2048  |    15003 tok/s |   688W | sm 1215/1215 | 21.8 tok/J
+  === CLK 1350 MHz (cap 700 W) ===
+    prefill b=4 S=2048  |    15131 tok/s |   696W | sm 1181/1350 | 21.7 tok/J  [power-limited]
+  === CLK 1485 MHz (cap 700 W) ===
+    prefill b=4 S=2048  |    15171 tok/s |   694W | sm 1197/1485 | 21.9 tok/J  [power-limited]
+    [stop] effective clock saturated ~1197 MHz at the 700 W wall -- the efficiency peak (if any) lies outside this card's power envelope
+  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/code-phi3_prefill.csv (8 points)
   === CAP 200 W ===
-    prefill b=16 S=256   |    10411 tok/s |   350W | sm 387 | 29.8 tok/J
-    decode  b=8 C=4096  |       59 tok/s |   228W | sm 345 | 32 steps/4.3s | spread 0.0% (2 runs)
+    decode  b=16 C=2048  |       64 tok/s |   229W | sm 345 | 32 steps/8.0s | spread 0.0% (2 runs)
   === CAP 226 W ===
-    prefill b=16 S=256   |    10391 tok/s |   350W | sm 365 | 29.7 tok/J
-    decode  b=8 C=4096  |       60 tok/s |   225W | sm 350 | 32 steps/4.2s | spread 0.2% (2 runs)
+    decode  b=16 C=2048  |       64 tok/s |   225W | sm 350 | 32 steps/8.0s | spread 0.5% (2 runs)
   === CAP 266 W ===
-    prefill b=16 S=256   |    10487 tok/s |   359W | sm 382 | 29.2 tok/J
-    decode  b=8 C=4096  |       85 tok/s |   264W | sm 508 | 32 steps/3.0s | spread 0.7% (2 runs)
+    decode  b=16 C=2048  |       91 tok/s |   265W | sm 513 | 32 steps/5.6s | spread 0.1% (2 runs)
   === CAP 313 W ===
-    prefill b=16 S=256   |    10847 tok/s |   363W | sm 399 | 29.9 tok/J
-    decode  b=8 C=4096  |      118 tok/s |   306W | sm 738 | 38 steps/2.6s | spread 0.3% (2 runs)
+    decode  b=16 C=2048  |      126 tok/s |   309W | sm 723 | 32 steps/4.1s | spread 0.1% (2 runs)
   === CAP 367 W ===
-    prefill b=16 S=256   |    11365 tok/s |   370W | sm 409 | 30.7 tok/J
-    decode  b=8 C=4096  |      155 tok/s |   373W | sm 1106 | 50 steps/2.6s | spread 1.2% (2 runs)
+    decode  b=16 C=2048  |      166 tok/s |   360W | sm 1024 | 32 steps/3.1s | spread 0.2% (2 runs)
   === CAP 426 W ===
-    prefill b=16 S=256   |    14085 tok/s |   423W | sm 490 | 33.3 tok/J
-    decode  b=8 C=4096  |      182 tok/s |   424W | sm 1331 | 58 steps/2.5s | spread 0.0% (2 runs)
+    decode  b=16 C=2048  |      198 tok/s |   412W | sm 1294 | 32 steps/2.6s | spread 0.5% (2 runs)
   === CAP 489 W ===
-    prefill b=16 S=256   |    17172 tok/s |   489W | sm 623 | 35.1 tok/J
-    decode  b=8 C=4096  |      197 tok/s |   489W | sm 1461 | 62 steps/2.5s | spread 0.4% (2 runs)
+    decode  b=16 C=2048  |      218 tok/s |   493W | sm 1419 | 35 steps/2.6s | spread 0.1% (2 runs)
   === CAP 556 W ===
-    prefill b=16 S=256   |    20466 tok/s |   559W | sm 738 | 36.6 tok/J
-    decode  b=8 C=4096  |      215 tok/s |   550W | sm 1639 | 68 steps/2.5s | spread 0.3% (2 runs)
+    decode  b=16 C=2048  |      236 tok/s |   562W | sm 1579 | 38 steps/2.6s | spread 0.1% (2 runs)
   === CAP 626 W ===
-    prefill b=16 S=256   |    23905 tok/s |   639W | sm 868 | 37.4 tok/J
-    decode  b=8 C=4096  |      229 tok/s |   619W | sm 1798 | 73 steps/2.5s | spread 0.0% (2 runs)
+    decode  b=16 C=2048  |      254 tok/s |   606W | sm 1735 | 41 steps/2.6s | spread 0.2% (2 runs)
   === CAP 700 W ===
-    prefill b=16 S=256   |    27724 tok/s |   707W | sm 1046 | 39.2 tok/J
-    decode  b=8 C=4096  |      243 tok/s |   690W | sm 1919 | 77 steps/2.5s | spread 0.0% (2 runs)
-  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200/longform-phi3_prefill.csv (10 caps)
-  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200/longform-phi3_decode.csv (10 caps)
+    decode  b=16 C=2048  |      267 tok/s |   704W | sm 1861 | 43 steps/2.6s | spread 0.0% (2 runs)
+  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/code-phi3_decode.csv (10 points)
 
-########## summarize-qwen7b  (Summarization (offline 32k document))  model=/data1/meteor/models/Qwen2.5-7B-Instruct ##########
-Loading weights:   0%|          | 0/339 [00:00<?, ?it/s]Loading weights:   0%|          | 1/339 [00:00<01:19,  4.24it/s]Loading weights:   1%|          | 2/339 [00:00<01:50,  3.06it/s]Loading weights:  12%|█▏        | 40/339 [00:00<00:04, 70.94it/s]Loading weights:  15%|█▌        | 52/339 [00:00<00:03, 76.61it/s]Loading weights:  19%|█▉        | 64/339 [00:01<00:03, 81.80it/s]Loading weights:  22%|██▏       | 76/339 [00:01<00:03, 79.41it/s]Loading weights:  26%|██▌       | 88/339 [00:01<00:03, 80.21it/s]Loading weights:  30%|██▉       | 101/339 [00:01<00:02, 85.77it/s]Loading weights:  33%|███▎      | 112/339 [00:01<00:02, 90.04it/s]Loading weights:  37%|███▋      | 124/339 [00:01<00:02, 95.94it/s]Loading weights:  40%|████      | 136/339 [00:01<00:02, 94.24it/s]Loading weights:  44%|████▎     | 148/339 [00:01<00:02, 91.74it/s]Loading weights:  47%|████▋     | 161/339 [00:02<00:01, 98.48it/s]Loading weights:  54%|█████▍    | 184/339 [00:02<00:01, 119.26it/s]Loading weights:  58%|█████▊    | 196/339 [00:02<00:01, 96.13it/s] Loading weights:  61%|██████▏   | 208/339 [00:02<00:01, 99.24it/s]Loading weights:  65%|██████▍   | 219/339 [00:02<00:01, 98.27it/s]Loading weights:  68%|██████▊   | 230/339 [00:02<00:01, 94.46it/s]Loading weights:  71%|███████   | 240/339 [00:02<00:01, 91.85it/s]Loading weights:  75%|███████▌  | 255/339 [00:03<00:00, 101.46it/s]Loading weights:  78%|███████▊  | 266/339 [00:03<00:00, 78.65it/s] Loading weights:  83%|████████▎ | 280/339 [00:03<00:00, 74.61it/s]Loading weights:  86%|████████▌ | 292/339 [00:03<00:00, 81.63it/s]Loading weights:  90%|████████▉ | 304/339 [00:03<00:00, 84.49it/s]Loading weights:  94%|█████████▎| 317/339 [00:03<00:00, 87.87it/s]Loading weights:  97%|█████████▋| 329/339 [00:03<00:00, 93.74it/s]Loading weights: 100%|██████████| 339/339 [00:03<00:00, 86.46it/s]
+########## longform-phi3  (Long-form / creative generation)  model=microsoft/Phi-3-mini-4k-instruct ##########
+Loading weights:   0%|          | 0/195 [00:00<?, ?it/s]Loading weights:   1%|          | 1/195 [00:00<00:26,  7.30it/s]Loading weights:  12%|█▏        | 23/195 [00:00<00:01, 115.13it/s]Loading weights:  24%|██▍       | 47/195 [00:00<00:00, 166.47it/s]Loading weights:  35%|███▍      | 68/195 [00:00<00:00, 182.56it/s]Loading weights:  47%|████▋     | 92/195 [00:00<00:00, 200.86it/s]Loading weights:  58%|█████▊    | 113/195 [00:00<00:00, 186.26it/s]Loading weights:  68%|██████▊   | 133/195 [00:00<00:00, 189.24it/s]Loading weights:  79%|███████▉  | 155/195 [00:00<00:00, 181.07it/s]Loading weights:  91%|█████████▏| 178/195 [00:01<00:00, 193.62it/s]Loading weights: 100%|██████████| 195/195 [00:01<00:00, 181.64it/s]
+  loaded  VRAM=7.68 GB
+  === CLK 345 MHz (cap 700 W) ===
+    prefill b=16 S=256   |    10278 tok/s |   339W | sm 345/345 | 30.3 tok/J
+  === CLK 585 MHz (cap 700 W) ===
+    prefill b=16 S=256   |    15557 tok/s |   449W | sm 585/585 | 34.6 tok/J
+  === CLK 765 MHz (cap 700 W) ===
+    prefill b=16 S=256   |    18945 tok/s |   508W | sm 765/765 | 37.3 tok/J
+  === CLK 930 MHz (cap 700 W) ===
+    prefill b=16 S=256   |    23777 tok/s |   621W | sm 930/930 | 38.3 tok/J
+  === CLK 1080 MHz (cap 700 W) ===
+    prefill b=16 S=256   |    27019 tok/s |   670W | sm 1022/1080 | 40.3 tok/J  [power-limited]
+  === CLK 1215 MHz (cap 700 W) ===
+    prefill b=16 S=256   |    27369 tok/s |   696W | sm 1008/1215 | 39.3 tok/J  [power-limited]
+    [stop] effective clock saturated ~1008 MHz at the 700 W wall -- the efficiency peak (if any) lies outside this card's power envelope
+  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/longform-phi3_prefill.csv (6 points)
+  === CAP 200 W ===
+    decode  b=8 C=4096  |       59 tok/s |   229W | sm 345 | 32 steps/4.3s | spread 0.0% (2 runs)
+  === CAP 226 W ===
+    decode  b=8 C=4096  |       61 tok/s |   227W | sm 352 | 32 steps/4.2s | spread 0.7% (2 runs)
+  === CAP 266 W ===
+    decode  b=8 C=4096  |       87 tok/s |   262W | sm 527 | 32 steps/2.9s | spread 1.6% (2 runs)
+  === CAP 313 W ===
+    decode  b=8 C=4096  |      118 tok/s |   318W | sm 755 | 38 steps/2.6s | spread 0.0% (2 runs)
+  === CAP 367 W ===
+    decode  b=8 C=4096  |      155 tok/s |   363W | sm 1082 | 50 steps/2.6s | spread 0.6% (2 runs)
+  === CAP 426 W ===
+    decode  b=8 C=4096  |      183 tok/s |   420W | sm 1329 | 58 steps/2.5s | spread 0.3% (2 runs)
+  === CAP 489 W ===
+    decode  b=8 C=4096  |      197 tok/s |   480W | sm 1461 | 63 steps/2.6s | spread 0.1% (2 runs)
+  === CAP 556 W ===
+    decode  b=8 C=4096  |      215 tok/s |   549W | sm 1640 | 68 steps/2.5s | spread 0.2% (2 runs)
+  === CAP 626 W ===
+    decode  b=8 C=4096  |      230 tok/s |   613W | sm 1800 | 73 steps/2.5s | spread 0.0% (2 runs)
+  === CAP 700 W ===
+    decode  b=8 C=4096  |      243 tok/s |   690W | sm 1925 | 77 steps/2.5s | spread 0.1% (2 runs)
+  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/longform-phi3_decode.csv (10 points)
+
+########## summarize-qwen7b  (Summarization (offline 32k document))  model=Qwen/Qwen2.5-7B-Instruct ##########
+Loading weights:   0%|          | 0/339 [00:00<?, ?it/s]Loading weights:   0%|          | 1/339 [00:00<02:03,  2.73it/s]Loading weights:  12%|█▏        | 42/339 [00:00<00:02, 111.96it/s]Loading weights:  22%|██▏       | 76/339 [00:00<00:01, 168.36it/s]Loading weights:  30%|██▉       | 101/339 [00:00<00:01, 188.90it/s]Loading weights:  37%|███▋      | 126/339 [00:00<00:01, 193.29it/s]Loading weights:  47%|████▋     | 160/339 [00:00<00:00, 210.82it/s]Loading weights:  55%|█████▍    | 186/339 [00:01<00:00, 220.44it/s]Loading weights:  62%|██████▏   | 210/339 [00:01<00:00, 221.78it/s]Loading weights:  72%|███████▏  | 244/339 [00:01<00:00, 228.94it/s]Loading weights:  79%|███████▉  | 268/339 [00:01<00:00, 219.10it/s]Loading weights:  86%|████████▌ | 292/339 [00:01<00:00, 221.67it/s]Loading weights:  93%|█████████▎| 316/339 [00:01<00:00, 226.53it/s]Loading weights: 100%|██████████| 339/339 [00:01<00:00, 200.02it/s]
   loaded  VRAM=15.26 GB
+  === CLK 345 MHz (cap 700 W) ===
+    prefill b=2 S=4096  |     4000 tok/s |   346W | sm 345/345 | 11.5 tok/J
+  === CLK 585 MHz (cap 700 W) ===
+    prefill b=2 S=4096  |     6030 tok/s |   447W | sm 585/585 | 13.5 tok/J
+  === CLK 765 MHz (cap 700 W) ===
+    prefill b=2 S=4096  |     7254 tok/s |   506W | sm 765/765 | 14.3 tok/J
+  === CLK 930 MHz (cap 700 W) ===
+    prefill b=2 S=4096  |     9228 tok/s |   621W | sm 926/930 | 14.9 tok/J
+  === CLK 1080 MHz (cap 700 W) ===
+    prefill b=2 S=4096  |    10319 tok/s |   680W | sm 980/1080 | 15.2 tok/J  [power-limited]
+  === CLK 1215 MHz (cap 700 W) ===
+    prefill b=2 S=4096  |    10373 tok/s |   690W | sm 969/1215 | 15.0 tok/J  [power-limited]
+    [stop] effective clock saturated ~969 MHz at the 700 W wall -- the efficiency peak (if any) lies outside this card's power envelope
+  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/summarize-qwen7b_prefill.csv (6 points)
   === CAP 200 W ===
-    prefill b=2 S=4096  |     3827 tok/s |   347W | sm 369 | 11.0 tok/J
-    decode  b=4 C=32768 |        9 tok/s |   288W | sm 345 | 32 steps/13.6s | spread 0.0% (2 runs)
+    decode  b=4 C=32768 |        9 tok/s |   287W | sm 345 | 32 steps/13.6s | spread 0.0% (2 runs)
   === CAP 226 W ===
-    prefill b=2 S=4096  |     3817 tok/s |   351W | sm 357 | 10.9 tok/J
     decode  b=4 C=32768 |        9 tok/s |   286W | sm 345 | 32 steps/13.6s | spread 0.0% (2 runs)
   === CAP 266 W ===
-    prefill b=2 S=4096  |     3856 tok/s |   348W | sm 383 | 11.1 tok/J
     decode  b=4 C=32768 |        9 tok/s |   286W | sm 345 | 32 steps/13.6s | spread 0.0% (2 runs)
   === CAP 313 W ===
-    prefill b=2 S=4096  |     4062 tok/s |   366W | sm 385 | 11.1 tok/J
-    decode  b=4 C=32768 |       11 tok/s |   312W | sm 406 | 32 steps/11.6s | spread 0.0% (2 runs)
+    decode  b=4 C=32768 |       11 tok/s |   310W | sm 413 | 32 steps/11.5s | spread 0.3% (2 runs)
   === CAP 367 W ===
-    prefill b=2 S=4096  |     4362 tok/s |   375W | sm 409 | 11.6 tok/J
-    decode  b=4 C=32768 |       15 tok/s |   364W | sm 528 | 32 steps/8.7s | spread 0.3% (2 runs)
+    decode  b=4 C=32768 |       15 tok/s |   364W | sm 547 | 32 steps/8.7s | spread 0.3% (2 runs)
   === CAP 426 W ===
-    prefill b=2 S=4096  |     5253 tok/s |   421W | sm 503 | 12.5 tok/J
-    decode  b=4 C=32768 |       19 tok/s |   421W | sm 700 | 32 steps/6.9s | spread 0.0% (2 runs)
+    decode  b=4 C=32768 |       19 tok/s |   423W | sm 707 | 32 steps/6.8s | spread 0.2% (2 runs)
   === CAP 489 W ===
-    prefill b=2 S=4096  |     6538 tok/s |   494W | sm 617 | 13.2 tok/J
-    decode  b=4 C=32768 |       23 tok/s |   488W | sm 913 | 32 steps/5.5s | spread 0.1% (2 runs)
+    decode  b=4 C=32768 |       23 tok/s |   488W | sm 907 | 32 steps/5.5s | spread 0.3% (2 runs)
   === CAP 556 W ===
-    prefill b=2 S=4096  |     7680 tok/s |   552W | sm 682 | 13.9 tok/J
-    decode  b=4 C=32768 |       28 tok/s |   556W | sm 1116 | 32 steps/4.6s | spread 0.0% (2 runs)
+    decode  b=4 C=32768 |       28 tok/s |   555W | sm 1132 | 32 steps/4.6s | spread 0.0% (2 runs)
   === CAP 626 W ===
-    prefill b=2 S=4096  |     9142 tok/s |   629W | sm 788 | 14.5 tok/J
-    decode  b=4 C=32768 |       31 tok/s |   624W | sm 1292 | 32 steps/4.1s | spread 0.2% (2 runs)
+    decode  b=4 C=32768 |       31 tok/s |   620W | sm 1277 | 32 steps/4.1s | spread 0.6% (2 runs)
   === CAP 700 W ===
-    prefill b=2 S=4096  |    10511 tok/s |   696W | sm 965 | 15.1 tok/J
-    decode  b=4 C=32768 |       33 tok/s |   691W | sm 1400 | 32 steps/3.8s | spread 0.1% (2 runs)
-  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200/summarize-qwen7b_prefill.csv (10 caps)
-  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200/summarize-qwen7b_decode.csv (10 caps)
+    decode  b=4 C=32768 |       33 tok/s |   698W | sm 1395 | 32 steps/3.8s | spread 0.1% (2 runs)
+  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/summarize-qwen7b_decode.csv (10 points)
 
-########## translate-qwen3b  (Translation (balanced P:D))  model=/data1/meteor/models/Qwen2.5-3B-Instruct ##########
-Loading weights:   0%|          | 0/434 [00:00<?, ?it/s]Loading weights:   0%|          | 1/434 [00:00<01:20,  5.35it/s]Loading weights:  12%|█▏        | 52/434 [00:00<00:01, 216.97it/s]Loading weights:  19%|█▊        | 81/434 [00:00<00:01, 241.80it/s]Loading weights:  25%|██▌       | 110/434 [00:00<00:01, 233.92it/s]Loading weights:  31%|███▏      | 136/434 [00:00<00:01, 221.50it/s]Loading weights:  37%|███▋      | 160/434 [00:00<00:01, 219.07it/s]Loading weights:  45%|████▍     | 195/434 [00:00<00:01, 229.77it/s]Loading weights:  50%|█████     | 219/434 [00:01<00:00, 227.82it/s]Loading weights:  56%|█████▌    | 244/434 [00:01<00:00, 233.68it/s]Loading weights:  65%|██████▍   | 280/434 [00:01<00:00, 250.76it/s]Loading weights:  71%|███████▏  | 310/434 [00:01<00:00, 261.97it/s]Loading weights:  78%|███████▊  | 337/434 [00:01<00:00, 259.96it/s]Loading weights:  84%|████████▍ | 364/434 [00:01<00:00, 256.54it/s]Loading weights: 100%|██████████| 434/434 [00:01<00:00, 263.39it/s]
+########## translate-qwen3b  (Translation (balanced P:D))  model=Qwen/Qwen2.5-3B-Instruct ##########
+Loading weights:   0%|          | 0/434 [00:00<?, ?it/s]Loading weights:   0%|          | 1/434 [00:00<01:14,  5.79it/s]Loading weights:  20%|██        | 87/434 [00:00<00:00, 365.41it/s]Loading weights:  30%|███       | 131/434 [00:00<00:00, 375.15it/s]Loading weights:  40%|███▉      | 173/434 [00:00<00:00, 371.86it/s]Loading weights:  49%|████▉     | 213/434 [00:00<00:00, 350.79it/s]Loading weights:  58%|█████▊    | 250/434 [00:00<00:00, 335.20it/s]Loading weights:  66%|██████▌   | 285/434 [00:00<00:00, 331.40it/s]Loading weights:  74%|███████▎  | 319/434 [00:00<00:00, 332.18it/s]Loading weights:  81%|████████▏ | 353/434 [00:01<00:00, 327.93it/s]Loading weights:  89%|████████▉ | 387/434 [00:01<00:00, 319.82it/s]Loading weights:  97%|█████████▋| 423/434 [00:01<00:00, 330.09it/s]Loading weights: 100%|██████████| 434/434 [00:01<00:00, 334.14it/s]
   loaded  VRAM=6.21 GB
+  === CLK 345 MHz (cap 700 W) ===
+    prefill b=8 S=512   |    14246 tok/s |   338W | sm 345/345 | 42.1 tok/J
+  === CLK 585 MHz (cap 700 W) ===
+    prefill b=8 S=512   |    21538 tok/s |   446W | sm 585/585 | 48.2 tok/J
+  === CLK 765 MHz (cap 700 W) ===
+    prefill b=8 S=512   |    26037 tok/s |   527W | sm 765/765 | 49.4 tok/J
+  === CLK 930 MHz (cap 700 W) ===
+    prefill b=8 S=512   |    32526 tok/s |   611W | sm 930/930 | 53.2 tok/J
+  === CLK 1080 MHz (cap 700 W) ===
+    prefill b=8 S=512   |    36650 tok/s |   684W | sm 1010/1080 | 53.6 tok/J  [power-limited]
+  === CLK 1215 MHz (cap 700 W) ===
+    prefill b=8 S=512   |    36995 tok/s |   708W | sm 980/1215 | 52.3 tok/J  [power-limited]
+  === CLK 1350 MHz (cap 700 W) ===
+    prefill b=8 S=512   |    37071 tok/s |   692W | sm 996/1350 | 53.6 tok/J  [power-limited]
+  === CLK 1485 MHz (cap 700 W) ===
+    prefill b=8 S=512   |    37502 tok/s |   690W | sm 1014/1485 | 54.3 tok/J  [power-limited]
+  === CLK 1605 MHz (cap 700 W) ===
+    prefill b=8 S=512   |    37629 tok/s |   712W | sm 998/1605 | 52.9 tok/J  [power-limited]
+  === CLK 1740 MHz (cap 700 W) ===
+    prefill b=8 S=512   |    37665 tok/s |   710W | sm 1026/1740 | 53.0 tok/J  [power-limited]
+  === CLK 1860 MHz (cap 700 W) ===
+    prefill b=8 S=512   |    37704 tok/s |   710W | sm 1021/1860 | 53.1 tok/J  [power-limited]
+    [stop] effective clock saturated ~1021 MHz at the 700 W wall -- the efficiency peak (if any) lies outside this card's power envelope
+  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/translate-qwen3b_prefill.csv (11 points)
   === CAP 200 W ===
-    prefill b=8 S=512   |    14359 tok/s |   353W | sm 384 | 40.7 tok/J
-    decode  b=64 C=512   |      637 tok/s |   275W | sm 345 | 32 steps/3.2s | spread 0.2% (2 runs)
+    decode  b=64 C=512   |      637 tok/s |   275W | sm 345 | 32 steps/3.2s | spread 0.1% (2 runs)
   === CAP 226 W ===
-    prefill b=8 S=512   |    14405 tok/s |   360W | sm 376 | 40.0 tok/J
-    decode  b=64 C=512   |      638 tok/s |   274W | sm 345 | 32 steps/3.2s | spread 0.1% (2 runs)
+    decode  b=64 C=512   |      638 tok/s |   267W | sm 345 | 32 steps/3.2s | spread 0.1% (2 runs)
   === CAP 266 W ===
-    prefill b=8 S=512   |    14423 tok/s |   355W | sm 410 | 40.6 tok/J
-    decode  b=64 C=512   |      639 tok/s |   267W | sm 345 | 32 steps/3.2s | spread 0.1% (2 runs)
+    decode  b=64 C=512   |      638 tok/s |   276W | sm 345 | 32 steps/3.2s | spread 0.0% (2 runs)
   === CAP 313 W ===
-    prefill b=8 S=512   |    14791 tok/s |   372W | sm 389 | 39.8 tok/J
-    decode  b=64 C=512   |      801 tok/s |   315W | sm 445 | 32 steps/2.6s | spread 0.1% (2 runs)
+    decode  b=64 C=512   |      802 tok/s |   303W | sm 441 | 32 steps/2.6s | spread 0.2% (2 runs)
   === CAP 367 W ===
-    prefill b=8 S=512   |    15465 tok/s |   378W | sm 386 | 40.9 tok/J
-    decode  b=64 C=512   |     1080 tok/s |   358W | sm 630 | 43 steps/2.5s | spread 0.6% (2 runs)
+    decode  b=64 C=512   |     1073 tok/s |   354W | sm 625 | 43 steps/2.6s | spread 0.3% (2 runs)
   === CAP 426 W ===
-    prefill b=8 S=512   |    19163 tok/s |   427W | sm 501 | 44.9 tok/J
-    decode  b=64 C=512   |      805 tok/s |   417W | sm 672 | 54 steps/4.3s | spread 56.7% (3 runs)
+    decode  b=64 C=512   |     1358 tok/s |   417W | sm 837 | 54 steps/2.5s | spread 0.3% (2 runs)
   === CAP 489 W ===
-    prefill b=8 S=512   |    23578 tok/s |   500W | sm 616 | 47.2 tok/J
-    decode  b=64 C=512   |     1676 tok/s |   483W | sm 1099 | 67 steps/2.6s | spread 0.6% (2 runs)
+    decode  b=64 C=512   |     1658 tok/s |   486W | sm 1093 | 66 steps/2.5s | spread 0.3% (2 runs)
   === CAP 556 W ===
-    prefill b=8 S=512   |    28071 tok/s |   564W | sm 747 | 49.8 tok/J
-    decode  b=64 C=512   |     1930 tok/s |   558W | sm 1262 | 76 steps/2.5s | spread 0.4% (2 runs)
+    decode  b=64 C=512   |     1929 tok/s |   558W | sm 1268 | 76 steps/2.5s | spread 0.4% (2 runs)
   === CAP 626 W ===
-    prefill b=8 S=512   |    32501 tok/s |   628W | sm 878 | 51.8 tok/J
-    decode  b=64 C=512   |     2082 tok/s |   631W | sm 1357 | 82 steps/2.5s | spread 0.1% (2 runs)
+    decode  b=64 C=512   |     2094 tok/s |   621W | sm 1380 | 82 steps/2.5s | spread 0.8% (2 runs)
   === CAP 700 W ===
-    prefill b=8 S=512   |    37958 tok/s |   694W | sm 1043 | 54.7 tok/J
-    decode  b=64 C=512   |     2166 tok/s |   692W | sm 1442 | 85 steps/2.5s | spread 0.2% (2 runs)
-  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200/translate-qwen3b_prefill.csv (10 caps)
-  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200/translate-qwen3b_decode.csv (10 caps)
+    decode  b=64 C=512   |     2177 tok/s |   685W | sm 1450 | 86 steps/2.5s | spread 0.1% (2 runs)
+  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/translate-qwen3b_decode.csv (10 points)
 
-########## fastchat-qwen15b  (Lightweight chat (small GQA model))  model=/data1/meteor/models/Qwen2.5-3B-Instruct ##########
-Loading weights:   0%|          | 0/434 [00:00<?, ?it/s]Loading weights:   0%|          | 1/434 [00:00<01:37,  4.44it/s]Loading weights:  20%|██        | 87/434 [00:00<00:01, 330.69it/s]Loading weights:  31%|███▏      | 136/434 [00:00<00:00, 337.30it/s]Loading weights:  42%|████▏     | 183/434 [00:00<00:00, 375.44it/s]Loading weights:  53%|█████▎    | 229/434 [00:00<00:00, 386.66it/s]Loading weights:  64%|██████▍   | 279/434 [00:00<00:00, 399.82it/s]Loading weights:  75%|███████▌  | 327/434 [00:00<00:00, 415.92it/s]Loading weights:  86%|████████▌ | 373/434 [00:01<00:00, 423.65it/s]Loading weights:  97%|█████████▋| 419/434 [00:01<00:00, 431.74it/s]Loading weights: 100%|██████████| 434/434 [00:01<00:00, 380.26it/s]
-  loaded  VRAM=6.21 GB
-  === CAP 200 W ===
-    prefill b=16 S=512   |    14810 tok/s |   373W | sm 351 | 39.7 tok/J
-    decode  b=64 C=512   |      638 tok/s |   274W | sm 345 | 32 steps/3.2s | spread 0.0% (2 runs)
-  === CAP 226 W ===
-    prefill b=16 S=512   |    14773 tok/s |   372W | sm 371 | 39.7 tok/J
-    decode  b=64 C=512   |      638 tok/s |   274W | sm 345 | 32 steps/3.2s | spread 0.0% (2 runs)
-  === CAP 266 W ===
-    prefill b=16 S=512   |    14893 tok/s |   375W | sm 367 | 39.7 tok/J
-    decode  b=64 C=512   |      639 tok/s |   276W | sm 345 | 32 steps/3.2s | spread 0.0% (2 runs)
-  === CAP 313 W ===
-    prefill b=16 S=512   |    15376 tok/s |   382W | sm 383 | 40.3 tok/J
-    decode  b=64 C=512   |      802 tok/s |   305W | sm 443 | 32 steps/2.6s | spread 0.3% (2 runs)
-  === CAP 367 W ===
-    prefill b=16 S=512   |    15901 tok/s |   389W | sm 391 | 40.9 tok/J
-    decode  b=64 C=512   |     1079 tok/s |   360W | sm 616 | 43 steps/2.6s | spread 0.6% (2 runs)
-  === CAP 426 W ===
-    prefill b=16 S=512   |    18678 tok/s |   436W | sm 465 | 42.8 tok/J
-    decode  b=64 C=512   |      802 tok/s |   417W | sm 668 | 54 steps/4.3s | spread 56.4% (3 runs)
-  === CAP 489 W ===
-    prefill b=16 S=512   |    22435 tok/s |   492W | sm 554 | 45.6 tok/J
-    decode  b=64 C=512   |     1680 tok/s |   482W | sm 1101 | 67 steps/2.6s | spread 0.2% (2 runs)
-  === CAP 556 W ===
-    prefill b=16 S=512   |    27494 tok/s |   552W | sm 689 | 49.8 tok/J
-    decode  b=64 C=512   |     1936 tok/s |   552W | sm 1279 | 77 steps/2.5s | spread 0.7% (2 runs)
-  === CAP 626 W ===
-    prefill b=16 S=512   |    31766 tok/s |   629W | sm 798 | 50.5 tok/J
-    decode  b=64 C=512   |     2075 tok/s |   623W | sm 1359 | 82 steps/2.5s | spread 0.2% (2 runs)
-  === CAP 700 W ===
-    prefill b=16 S=512   |    37320 tok/s |   714W | sm 937 | 52.2 tok/J
-    decode  b=64 C=512   |     2174 tok/s |   684W | sm 1456 | 86 steps/2.5s | spread 0.0% (2 runs)
-  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200/fastchat-qwen15b_prefill.csv (10 caps)
-  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200/fastchat-qwen15b_decode.csv (10 caps)
+########## fastchat-qwen15b  (Lightweight chat (small GQA model))  model=Qwen/Qwen2.5-1.5B-Instruct ##########
 
-########## classify-qwen7b  (Classification / extraction (prefill-only))  model=/data1/meteor/models/Qwen2.5-7B-Instruct ##########
-Loading weights:   0%|          | 0/339 [00:00<?, ?it/s]Loading weights:   0%|          | 1/339 [00:00<01:56,  2.90it/s]Loading weights:  12%|█▏        | 42/339 [00:00<00:02, 121.01it/s]Loading weights:  22%|██▏       | 76/339 [00:00<00:01, 171.37it/s]Loading weights:  32%|███▏      | 108/339 [00:00<00:01, 207.99it/s]Loading weights:  40%|███▉      | 135/339 [00:00<00:00, 222.49it/s]Loading weights:  48%|████▊     | 162/339 [00:00<00:00, 204.58it/s]Loading weights:  55%|█████▍    | 186/339 [00:01<00:00, 207.75it/s]Loading weights:  62%|██████▏   | 209/339 [00:01<00:00, 209.56it/s]Loading weights:  68%|██████▊   | 232/339 [00:01<00:00, 164.83it/s]Loading weights:  76%|███████▌  | 256/339 [00:01<00:00, 129.82it/s]Loading weights:  83%|████████▎ | 280/339 [00:01<00:00, 140.75it/s]Loading weights:  88%|████████▊ | 297/339 [00:01<00:00, 130.02it/s]Loading weights:  93%|█████████▎| 316/339 [00:02<00:00, 137.83it/s]Loading weights:  98%|█████████▊| 332/339 [00:02<00:00, 139.83it/s]Loading weights: 100%|██████████| 339/339 [00:02<00:00, 155.78it/s]
-  loaded  VRAM=15.26 GB
-  === CAP 200 W ===
-    prefill b=4 S=2048  |     4889 tok/s |   338W | sm 348 | 14.5 tok/J
-    decode  b=8 C=256   |      257 tok/s |   278W | sm 345 | 81 steps/2.5s | spread 0.1% (2 runs)
-  === CAP 226 W ===
-    prefill b=4 S=2048  |     4865 tok/s |   336W | sm 371 | 14.5 tok/J
-    decode  b=8 C=256   |      257 tok/s |   278W | sm 345 | 81 steps/2.5s | spread 0.0% (2 runs)
-  === CAP 266 W ===
-    prefill b=4 S=2048  |     4915 tok/s |   342W | sm 384 | 14.4 tok/J
-    decode  b=8 C=256   |      258 tok/s |   281W | sm 345 | 81 steps/2.5s | spread 0.0% (2 runs)
-  === CAP 313 W ===
-    prefill b=4 S=2048  |     5173 tok/s |   355W | sm 380 | 14.6 tok/J
-    decode  b=8 C=256   |      325 tok/s |   314W | sm 499 | 103 steps/2.5s | spread 0.8% (2 runs)
-  === CAP 367 W ===
-    prefill b=4 S=2048  |     5731 tok/s |   374W | sm 409 | 15.3 tok/J
-    decode  b=8 C=256   |      388 tok/s |   354W | sm 1128 | 122 steps/2.5s | spread 0.4% (2 runs)
-  === CAP 426 W ===
-    prefill b=4 S=2048  |     6942 tok/s |   421W | sm 509 | 16.5 tok/J
-    decode  b=8 C=256   |      397 tok/s |   405W | sm 1580 | 124 steps/2.5s | spread 0.9% (2 runs)
-  === CAP 489 W ===
-    prefill b=4 S=2048  |     8362 tok/s |   484W | sm 583 | 17.3 tok/J
-    decode  b=8 C=256   |      395 tok/s |   473W | sm 1920 | 124 steps/2.5s | spread 0.1% (2 runs)
-  === CAP 556 W ===
-    prefill b=4 S=2048  |    10203 tok/s |   553W | sm 769 | 18.5 tok/J
-    decode  b=8 C=256   |      395 tok/s |   466W | sm 1922 | 124 steps/2.5s | spread 0.6% (2 runs)
-  === CAP 626 W ===
-    prefill b=4 S=2048  |    12295 tok/s |   627W | sm 934 | 19.6 tok/J
-    decode  b=8 C=256   |      387 tok/s |   479W | sm 1935 | 122 steps/2.5s | spread 1.5% (2 runs)
-  === CAP 700 W ===
-    prefill b=4 S=2048  |    13977 tok/s |   711W | sm 1102 | 19.7 tok/J
-    decode  b=8 C=256   |      392 tok/s |   486W | sm 1935 | 123 steps/2.5s | spread 0.6% (2 runs)
-  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200/classify-qwen7b_prefill.csv (10 caps)
-  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200/classify-qwen7b_decode.csv (10 caps)
+[reset] -rgc; -pl 700W
+Traceback (most recent call last):
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/transformers/utils/hub.py", line 437, in cached_files
+    hf_hub_download(
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/huggingface_hub/utils/_validators.py", line 88, in _inner_fn
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/huggingface_hub/file_download.py", line 1013, in hf_hub_download
+    return _hf_hub_download_to_cache_dir(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/huggingface_hub/file_download.py", line 1165, in _hf_hub_download_to_cache_dir
+    _raise_on_head_call_error(head_call_error, force_download, local_files_only)
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/huggingface_hub/file_download.py", line 1855, in _raise_on_head_call_error
+    raise LocalEntryNotFoundError(
+huggingface_hub.errors.LocalEntryNotFoundError: Cannot find the requested files in the disk cache and outgoing traffic has been disabled. To enable hf.co look-ups and downloads online, set 'local_files_only' to False.
 
-########## qwen3chat-4b  (Modern chat (Qwen3-4B, 2025))  model=/data1/meteor/models/Qwen3-4B ##########
-Loading weights:   0%|          | 0/398 [00:00<?, ?it/s]Loading weights:   0%|          | 1/398 [00:00<01:30,  4.37it/s]Loading weights:  20%|██        | 80/398 [00:00<00:01, 305.20it/s]Loading weights:  32%|███▏      | 127/398 [00:00<00:01, 267.97it/s]Loading weights:  41%|████      | 163/398 [00:00<00:00, 262.91it/s]Loading weights:  51%|█████     | 201/398 [00:00<00:00, 280.45it/s]Loading weights:  59%|█████▉    | 234/398 [00:00<00:00, 289.61it/s]Loading weights:  67%|██████▋   | 268/398 [00:00<00:00, 301.86it/s]Loading weights:  76%|███████▌  | 302/398 [00:01<00:00, 312.06it/s]Loading weights:  84%|████████▍ | 335/398 [00:01<00:00, 299.94it/s]Loading weights:  92%|█████████▏| 367/398 [00:01<00:00, 292.89it/s]Loading weights: 100%|██████████| 398/398 [00:01<00:00, 280.46it/s]
-  loaded  VRAM=8.08 GB
-  === CAP 200 W ===
-    prefill b=8 S=512   |     8628 tok/s |   346W | sm 375 | 24.9 tok/J
-    decode  b=32 C=1024  |      173 tok/s |   287W | sm 345 | 32 steps/5.9s | spread 0.0% (2 runs)
-  === CAP 226 W ===
-    prefill b=8 S=512   |     8643 tok/s |   349W | sm 376 | 24.8 tok/J
-    decode  b=32 C=1024  |      173 tok/s |   286W | sm 345 | 32 steps/5.9s | spread 0.0% (2 runs)
-  === CAP 266 W ===
-    prefill b=8 S=512   |     8730 tok/s |   350W | sm 385 | 24.9 tok/J
-    decode  b=32 C=1024  |      174 tok/s |   280W | sm 345 | 32 steps/5.9s | spread 0.0% (2 runs)
-  === CAP 313 W ===
-    prefill b=8 S=512   |     9017 tok/s |   359W | sm 374 | 25.1 tok/J
-    decode  b=32 C=1024  |      207 tok/s |   310W | sm 409 | 32 steps/4.9s | spread 0.8% (2 runs)
-  === CAP 367 W ===
-    prefill b=8 S=512   |     9659 tok/s |   369W | sm 420 | 26.2 tok/J
-    decode  b=32 C=1024  |      276 tok/s |   368W | sm 562 | 32 steps/3.7s | spread 0.0% (2 runs)
-  === CAP 426 W ===
-    prefill b=8 S=512   |    11948 tok/s |   428W | sm 537 | 27.9 tok/J
-    decode  b=32 C=1024  |      350 tok/s |   425W | sm 744 | 32 steps/2.9s | spread 0.7% (2 runs)
-  === CAP 489 W ===
-    prefill b=8 S=512   |    14568 tok/s |   495W | sm 610 | 29.5 tok/J
-    decode  b=32 C=1024  |      426 tok/s |   479W | sm 922 | 34 steps/2.6s | spread 1.4% (2 runs)
-  === CAP 556 W ===
-    prefill b=8 S=512   |    17539 tok/s |   563W | sm 755 | 31.1 tok/J
-    decode  b=32 C=1024  |      516 tok/s |   573W | sm 1190 | 41 steps/2.5s | spread 0.2% (2 runs)
-  === CAP 626 W ===
-    prefill b=8 S=512   |    20477 tok/s |   631W | sm 926 | 32.5 tok/J
-    decode  b=32 C=1024  |      560 tok/s |   627W | sm 1306 | 45 steps/2.6s | spread 0.1% (2 runs)
-  === CAP 700 W ===
-    prefill b=8 S=512   |    23785 tok/s |   695W | sm 1097 | 34.2 tok/J
-    decode  b=32 C=1024  |      602 tok/s |   713W | sm 1429 | 48 steps/2.6s | spread 0.2% (2 runs)
-  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200/qwen3chat-4b_prefill.csv (10 caps)
-  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200/qwen3chat-4b_decode.csv (10 caps)
+The above exception was the direct cause of the following exception:
 
-########## qwen3think-4b  (Reasoning / long chain-of-thought (Qwen3-4B))  model=/data1/meteor/models/Qwen3-4B ##########
-Loading weights:   0%|          | 0/398 [00:00<?, ?it/s]Loading weights:   0%|          | 1/398 [00:00<01:31,  4.36it/s]Loading weights:  19%|█▉        | 77/398 [00:00<00:01, 292.22it/s]Loading weights:  31%|███       | 122/398 [00:00<00:00, 299.11it/s]Loading weights:  40%|████      | 161/398 [00:00<00:00, 322.11it/s]Loading weights:  50%|█████     | 199/398 [00:00<00:00, 314.51it/s]Loading weights:  59%|█████▉    | 234/398 [00:00<00:00, 297.95it/s]Loading weights:  67%|██████▋   | 267/398 [00:00<00:00, 301.42it/s]Loading weights:  76%|███████▌  | 301/398 [00:01<00:00, 311.06it/s]Loading weights:  84%|████████▍ | 334/398 [00:01<00:00, 311.67it/s]Loading weights:  92%|█████████▏| 367/398 [00:01<00:00, 295.78it/s]Loading weights: 100%|██████████| 398/398 [00:01<00:00, 292.89it/s]
-  loaded  VRAM=8.08 GB
-  === CAP 200 W ===
-    prefill b=4 S=2048  |     4382 tok/s |   316W | sm 364 | 13.9 tok/J
-    decode  b=8 C=8192  |       24 tok/s |   289W | sm 345 | 32 steps/10.5s | spread 0.0% (2 runs)
-  === CAP 226 W ===
-    prefill b=4 S=2048  |     4389 tok/s |   314W | sm 369 | 14.0 tok/J
-    decode  b=8 C=8192  |       24 tok/s |   289W | sm 345 | 32 steps/10.5s | spread 0.0% (2 runs)
-  === CAP 266 W ===
-    prefill b=4 S=2048  |     4404 tok/s |   312W | sm 375 | 14.1 tok/J
-    decode  b=8 C=8192  |       24 tok/s |   290W | sm 345 | 32 steps/10.5s | spread 0.0% (2 runs)
-  === CAP 313 W ===
-    prefill b=4 S=2048  |     4706 tok/s |   322W | sm 399 | 14.6 tok/J
-    decode  b=8 C=8192  |       29 tok/s |   311W | sm 398 | 32 steps/9.0s | spread 0.1% (2 runs)
-  === CAP 367 W ===
-    prefill b=4 S=2048  |     5741 tok/s |   368W | sm 485 | 15.6 tok/J
-    decode  b=8 C=8192  |       38 tok/s |   367W | sm 558 | 32 steps/6.8s | spread 0.2% (2 runs)
-  === CAP 426 W ===
-    prefill b=4 S=2048  |     7153 tok/s |   420W | sm 578 | 17.0 tok/J
-    decode  b=8 C=8192  |       48 tok/s |   425W | sm 707 | 32 steps/5.3s | spread 0.1% (2 runs)
-  === CAP 489 W ===
-    prefill b=4 S=2048  |     9012 tok/s |   488W | sm 815 | 18.5 tok/J
-    decode  b=8 C=8192  |       60 tok/s |   482W | sm 915 | 32 steps/4.3s | spread 1.8% (2 runs)
-  === CAP 556 W ===
-    prefill b=4 S=2048  |    10844 tok/s |   557W | sm 956 | 19.5 tok/J
-    decode  b=8 C=8192  |       71 tok/s |   563W | sm 1132 | 32 steps/3.6s | spread 0.2% (2 runs)
-  === CAP 626 W ===
-    prefill b=4 S=2048  |    12140 tok/s |   622W | sm 1014 | 19.5 tok/J
-    decode  b=8 C=8192  |       80 tok/s |   625W | sm 1278 | 32 steps/3.2s | spread 0.2% (2 runs)
-  === CAP 700 W ===
-    prefill b=4 S=2048  |    14032 tok/s |   680W | sm 1261 | 20.6 tok/J
-    decode  b=8 C=8192  |       86 tok/s |   701W | sm 1415 | 32 steps/3.0s | spread 0.1% (2 runs)
-  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200/qwen3think-4b_prefill.csv (10 caps)
-  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200/qwen3think-4b_decode.csv (10 caps)
+Traceback (most recent call last):
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/transformers/models/auto/tokenization_auto.py", line 746, in from_pretrained
+    config = AutoConfig.from_pretrained(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/transformers/models/auto/configuration_auto.py", line 376, in from_pretrained
+    config_dict, unused_kwargs = PreTrainedConfig.get_config_dict(pretrained_model_name_or_path, **kwargs)
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/transformers/configuration_utils.py", line 705, in get_config_dict
+    config_dict, kwargs = cls._get_config_dict(pretrained_model_name_or_path, **kwargs)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/transformers/configuration_utils.py", line 760, in _get_config_dict
+    resolved_config_file = cached_file(
+                           ^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/transformers/utils/hub.py", line 293, in cached_file
+    file = cached_files(path_or_repo_id=path_or_repo_id, filenames=[filename], **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/transformers/utils/hub.py", line 513, in cached_files
+    raise OSError(
+OSError: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
 
-[reset] -pl 700W
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/transformers/utils/hub.py", line 437, in cached_files
+    hf_hub_download(
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/huggingface_hub/utils/_validators.py", line 88, in _inner_fn
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/huggingface_hub/file_download.py", line 1013, in hf_hub_download
+    return _hf_hub_download_to_cache_dir(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/huggingface_hub/file_download.py", line 1165, in _hf_hub_download_to_cache_dir
+    _raise_on_head_call_error(head_call_error, force_download, local_files_only)
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/huggingface_hub/file_download.py", line 1855, in _raise_on_head_call_error
+    raise LocalEntryNotFoundError(
+huggingface_hub.errors.LocalEntryNotFoundError: Cannot find the requested files in the disk cache and outgoing traffic has been disabled. To enable hf.co look-ups and downloads online, set 'local_files_only' to False.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/data1/meteor/powerchar/pt_cap_gpu1/portfolio/run_portfolio.py", line 502, in <module>
+    main()
+  File "/data1/meteor/powerchar/pt_cap_gpu1/portfolio/run_portfolio.py", line 483, in main
+    run_workload(w, sampler, caps, clks, pre_cap_w, outdir, phase=args.phase)
+  File "/data1/meteor/powerchar/pt_cap_gpu1/portfolio/run_portfolio.py", line 159, in run_workload
+    tok, model = load_model_for(w["model_id"])
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data1/meteor/powerchar/pt_cap_gpu1/portfolio/run_portfolio.py", line 118, in load_model_for
+    return load_model()
+           ^^^^^^^^^^^^
+  File "/data1/meteor/powerchar/code/measure.py", line 32, in load_model
+    tok = AutoTokenizer.from_pretrained(C.MODEL_ID)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/transformers/models/auto/tokenization_auto.py", line 750, in from_pretrained
+    config = PreTrainedConfig.from_pretrained(pretrained_model_name_or_path, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/transformers/configuration_utils.py", line 664, in from_pretrained
+    config_dict, kwargs = cls.get_config_dict(pretrained_model_name_or_path, **kwargs)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/transformers/configuration_utils.py", line 705, in get_config_dict
+    config_dict, kwargs = cls._get_config_dict(pretrained_model_name_or_path, **kwargs)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/transformers/configuration_utils.py", line 760, in _get_config_dict
+    resolved_config_file = cached_file(
+                           ^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/transformers/utils/hub.py", line 293, in cached_file
+    file = cached_files(path_or_repo_id=path_or_repo_id, filenames=[filename], **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/transformers/utils/hub.py", line 513, in cached_files
+    raise OSError(
+OSError: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+sweep exited rc=1 -- re-run to resume from where it stopped.
+== 1/3 preflight ==
+/home/meteor/anaconda3/lib/python3.12/site-packages/torch/cuda/__init__.py:64: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+== preflight: deps ==
+  [OK] torch -- 2.13.0+cu130 cuda=13.0
+  [OK] torch.cuda -- devices=1
+  [OK] gpu -- NVIDIA H200 sm_90
+  [OK] cuda kernel executes
+  [OK] transformers -- 5.13.0
+  [OK] numpy -- 1.26.4
+  [OK] matplotlib (optional, for plots) -- 3.9.2
+== preflight: NVML / power-cap privilege ==
+  [OK] nvml -- NVIDIA H200 | -pl range [200,700]W, enforced 700W
+  [OK] energy counter (window-power method)
+  [OK] nvidia-smi -pl privilege -- All done.
+  [OK] nvidia-smi -lgc/-rgc privilege (prefill clock sweep) -- SM clocks 345-1980 MHz (110 supported steps)
+== preflight: models in local HF cache ==
+  [OK] Qwen/Qwen2.5-1.5B-Instruct -- /data1/meteor/models/Qwen2.5-1.5B-Instruct
+  [OK] Qwen/Qwen2.5-3B-Instruct -- /home/meteor/.cache/huggingface/hub/models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1
+  [OK] Qwen/Qwen2.5-7B-Instruct -- /home/meteor/.cache/huggingface/hub/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28
+  [OK] Qwen/Qwen3-4B-Instruct-2507 -- /home/meteor/.cache/huggingface/hub/models--Qwen--Qwen3-4B-Instruct-2507/snapshots/1cfa9a7208912126459214e8b04321603b3df60c
+  [OK] microsoft/Phi-3-mini-4k-instruct -- /home/meteor/.cache/huggingface/hub/models--microsoft--Phi-3-mini-4k-instruct/snapshots/f39ac1d28e925b323eae81227eaba4464caced4e
+
+preflight: READY
+== 2/3 sweep (methodology v4: prefill locked-clock + decode power-cap) ==
+/home/meteor/anaconda3/lib/python3.12/site-packages/torch/cuda/__init__.py:64: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+[resume] skipping already-done: ['chat-phi3', 'rag-phi3', 'code-phi3', 'longform-phi3', 'summarize-qwen7b', 'translate-qwen3b']
+nothing to run (all done or no match for --ids chat-phi3,code-phi3,longform-phi3,rag-phi3,summarize-qwen7b,translate-qwen3b); known: ['chat-phi3', 'rag-phi3', 'code-phi3', 'longform-phi3', 'summarize-qwen7b', 'translate-qwen3b', 'fastchat-qwen15b', 'classify-qwen7b', 'qwen3chat-4b', 'qwen3think-4b']
 == 3/3 fits & figures ==
-F_MAX = 1980 MHz  (from /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200/meta.json)
-    [warn] exponent railed (p=10.00, theta=2.95) -- weakly identified
-    [warn] exponent railed (p=10.00, theta=2.42) -- weakly identified
-chat-phi3          old R2=+0.508 rmse=31.8% loo=49.9%  ->  additive R2=+0.575 rmse=29.5% loo=54.8%   [T_mem=37.8ms Cc=3.13ms p=1.71 | stages P1=270 P2=577W]
-rag-phi3           old R2=+0.988 rmse=5.0% loo=8.9%  ->  additive R2=+0.950 rmse=10.0% loo=13.9%   [T_mem=46.2ms Cc=12.21ms p=1.35 | stages P1=311 P2=712W]
-code-phi3          old R2=+0.955 rmse=9.2% loo=17.6%  ->  additive R2=+0.917 rmse=12.6% loo=15.3%   [T_mem=63.6ms Cc=29.15ms p=1.15 | stages P1=285 P2=671W]
-longform-phi3      old R2=+0.977 rmse=6.5% loo=12.9%  ->  additive R2=+0.935 rmse=10.9% loo=16.1%   [T_mem=34.9ms Cc=16.50ms p=1.12 | stages P1=285 P2=629W]
-summarize-qwen7b   old R2=+0.990 rmse=4.8% loo=11.5%  ->  additive R2=+0.934 rmse=12.3% loo=16.9%   [T_mem=130.4ms Cc=15.86ms p=1.71 | stages P1=357 P2=762W]
-translate-qwen3b   old R2=+0.843 rmse=19.4% loo=28.5%  ->  additive R2=+0.806 rmse=21.6% loo=28.1%   [T_mem=31.1ms Cc=16.23ms p=0.95 | stages P1=360 P2=839W]
-fastchat-qwen15b   old R2=+0.845 rmse=19.3% loo=32.6%  ->  additive R2=+0.815 rmse=21.1% loo=27.7%   [T_mem=31.0ms Cc=16.19ms p=0.95 | stages P1=364 P2=800W]
-classify-qwen7b    old R2=+0.886 rmse=6.0% loo=6.8%  ->  additive R2=-0.743 rmse=23.3% loo=26.6%   [T_mem=20.2ms Cc=0.16ms p=2.43 | stages P1=281 P2=324W]
-qwen3chat-4b       old R2=+0.989 rmse=4.9% loo=10.9%  ->  additive R2=+0.935 rmse=11.9% loo=16.4%   [T_mem=57.2ms Cc=7.73ms p=1.64 | stages P1=348 P2=787W]
-qwen3think-4b      old R2=+0.989 rmse=4.9% loo=11.5%  ->  additive R2=+0.929 rmse=12.6% loo=17.4%   [T_mem=101.4ms Cc=13.72ms p=1.64 | stages P1=356 P2=784W]
-wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200/fig_decode_models.png
-wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200/decode_model_compare.csv
-F_MAX = 1980 MHz  (from /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200/meta.json)
-per-model effective BW (GB/s): {}
-wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200/fig_portfolio_grid.png
-wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200/portfolio_fits.csv
-== DONE. Everything to bring back is inside: data_h200/ (CSVs, meta.json, figures, log) ==
+F_MAX = 1980 MHz  (from /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/meta.json)
+chat-phi3          old R2=+0.989 rmse=4.4% loo=8.3%  ->  additive R2=+0.945 rmse=9.9% loo=13.7%   [T_mem=30.0ms Cc=7.33ms p=1.31 | stages P1=301 P2=678W]
+rag-phi3           old R2=+0.983 rmse=5.9% loo=10.7%  ->  additive R2=+0.938 rmse=11.3% loo=15.3%   [T_mem=46.2ms Cc=13.00ms p=1.31 | stages P1=310 P2=708W]
+code-phi3          old R2=+0.963 rmse=8.4% loo=15.4%  ->  additive R2=+0.929 rmse=11.6% loo=16.7%   [T_mem=63.5ms Cc=27.40ms p=1.18 | stages P1=286 P2=660W]
+longform-phi3      old R2=+0.959 rmse=8.6% loo=16.7%  ->  additive R2=+0.929 rmse=11.4% loo=14.7%   [T_mem=34.9ms Cc=17.66ms p=1.08 | stages P1=285 P2=627W]
+summarize-qwen7b   old R2=+0.989 rmse=5.1% loo=11.5%  ->  additive R2=+0.926 rmse=12.9% loo=17.5%   [T_mem=130.6ms Cc=17.96ms p=1.64 | stages P1=356 P2=779W]
+translate-qwen3b   old R2=+0.993 rmse=3.8% loo=8.7%  ->  additive R2=+0.928 rmse=12.3% loo=16.4%   [T_mem=31.0ms Cc=6.08ms p=1.45 | stages P1=324 P2=794W]
+wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/fig_decode_models.png
+wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/decode_model_compare.csv
+F_MAX = 1980 MHz  (from /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/meta.json)
+chat-phi3          V2f R2=+0.998 rmse=1.5% loo=3.4%  ->  unified R2=+0.976 rmse=4.7% loo=21.2%   [p=0.89 th=1.85 p/th=0.48 P_s=284 T_fmax=42848]
+rag-phi3           V2f R2=+0.999 rmse=0.9% loo=2.4%  ->  unified R2=+0.982 rmse=3.9% loo=13.7%   [p=0.95 th=2.01 p/th=0.47 P_s=287 T_fmax=17875]
+code-phi3          V2f R2=+0.998 rmse=1.6% loo=5.0%  ->  unified R2=+0.988 rmse=3.6% loo=15.5%   [p=0.92 th=1.75 p/th=0.53 P_s=252 T_fmax=23509]
+longform-phi3      V2f R2=+0.997 rmse=1.7% loo=2.4%  ->  unified R2=+0.980 rmse=4.3% loo=21.2%   [p=0.90 th=1.79 p/th=0.50 P_s=287 T_fmax=47546]
+summarize-qwen7b   V2f R2=+1.000 rmse=0.6% loo=1.2%  ->  unified R2=+0.960 rmse=5.9% loo=20.9%   [p=0.90 th=2.48 p/th=0.36 P_s=327 T_fmax=18651]
+translate-qwen3b   V2f R2=+0.996 rmse=1.5% loo=2.6%  ->  unified R2=+0.984 rmse=3.0% loo=13.7%   [p=0.92 th=1.88 p/th=0.49 P_s=287 T_fmax=68377]
+wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/fig_prefill_models.png
+wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/prefill_model_compare.csv
+F_MAX = 1980 MHz  (from /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/meta.json)
+per-model effective BW (GB/s): {'Phi-3-mini-4k-instruct': 485, 'Qwen2.5-7B-Instruct': 174, 'Qwen2.5-3B-Instruct': 240}
+wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/fig_portfolio_grid.png
+wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/fig_tmax_validation.png
+wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/portfolio_fits.csv
+== DONE. Everything to bring back is inside: data_h200_v4/ (CSVs, meta.json, figures, log) ==
 final power limit: 700.00 W

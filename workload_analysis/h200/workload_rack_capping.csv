@@ -1,0 +1,10 @@
+klass,band,ratio_agg,via_workload,mapping_caveat,opt_tok_s,tdp_tok_s,gain_pct,opt_N_prefill,opt_N_decode,opt_cap_prefill_w,opt_cap_decode_w,opt_w_used,tdp_N_prefill,tdp_N_decode,opt_rack_tok_per_j,tdp_rack_tok_per_j,opt_pct_of_cont_bound,constraint_binds
+Generation 创作生成,decode-heavy,0.09,longform-phi3,,6043.9,4716.9,28.1,1,31,288,442,14000,1,19,0.432,0.337,93.1,N_max=32+Np=1
+General QA 常识问答,decode-heavy,0.12,longform-phi3,,6210.3,4846.7,28.1,1,31,288,442,14000,1,19,0.444,0.346,93.1,N_max=32+Np=1
+Brainstorming 头脑风暴,decode-heavy,0.15,longform-phi3,,6376.6,4976.6,28.1,1,31,288,442,14000,1,19,0.455,0.355,93.1,N_max=32+Np=1
+Open QA 开放问答,decode-heavy,0.16,longform-phi3,,6432.0,5019.8,28.1,1,31,288,442,14000,1,19,0.459,0.359,93.1,N_max=32+Np=1
+Classification 分类,balanced,0.84,translate-qwen3b,,80561.8,66607.4,21.0,1,31,700,429,14000,1,19,5.754,4.758,98.7,N_max=32+Np=1
+Summarization 摘要,prefill-heavy,2.3,summarize-qwen7b,Dolly short-doc 2.3:1 on 32k production-scale curves,2128.2,1747.4,21.8,1,31,329,441,14000,1,19,0.152,0.125,98.0,N_max=32
+Chat 多轮对话,prefill-heavy,4.93,chat-phi3,trace accounting (full history re-prefilled per turn); serving shape with KV reuse ~1:2,210430.3,168756.5,24.7,8,24,607,381,14000,6,14,15.031,12.054,99.3,N_max=32
+Closed QA 闭卷问答,prefill-heavy,6.18,rag-phi3,Dolly 6.2:1 on ~4k RAG-scale curves (class shape 10:1),80453.0,65937.1,22.0,8,24,557,398,14000,6,14,5.747,4.71,99.7,N_max=32
+Code 代码补全,prefill-heavy,73.45,code-phi3,2023 completion-trace 73.5:1; the rack doc plans with a conservative 10:1,188925.8,164907.3,14.6,16,16,531,344,14000,11,9,13.495,11.779,99.9,N_max=32
