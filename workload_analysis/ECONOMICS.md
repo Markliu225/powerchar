@@ -12,6 +12,10 @@
 > [`fig_composite_economics.png`](fig_composite_economics.png)(利润 vs cap)·
 > [`fig_composite_elec_sensitivity.png`](fig_composite_elec_sensitivity.png)(利润/收益 vs 电价)·
 > [`composite_economics.csv`](composite_economics.csv)
+>
+> **另有**利润 vs **时间**图(cap vs TDP,两条累计利润曲线,V100/H200 各一):
+> [`plot_profit_over_time.py`](plot_profit_over_time.py) →
+> [`fig_profit_over_time.png`](fig_profit_over_time.png) · [`profit_over_time.csv`](profit_over_time.csv)——见下节。
 
 ## 与仓库既有经济分析的区别
 
@@ -71,6 +75,26 @@ classify-qwen7b 缺席在 H200 侧剔除,mix 在 9 类上重新归一——V100 
 **跨设备结论**:capping 的经济价值取决于 **电价 : 卡价** 之比。便宜/已折旧的卡 + 贵电 → capping
 显著回本(V100);贵的新卡 + 便宜电 → 开满更划算(H200),capping 红利小到可忽略。
 
+## 利润 vs 时间(cap vs TDP,两条累计利润曲线)
+
+[`plot_profit_over_time.py`](plot_profit_over_time.py) → [`fig_profit_over_time.png`](fig_profit_over_time.png):
+横轴时间、纵轴累计净利润,对比 **power cap 与 TDP 两个机队**服务同一综合 workload,V100 / H200 各一张。
+与上面"利润 vs cap"互补——这里固定策略(全 cap / 全 TDP),看利润**随运营时间**如何积累。
+
+- **框架 = 同功率预算(弹性需求)**:两机队抽同样的机架功率;cap 把每相压到 **max-tok/J** 点,
+  同瓦特多产 **+40%(V100)/ +19%(H200)** token → 每天多卖 token(**前提是卖得掉**)。cap 机队卡更多
+  (CapEx 高)、日收入更高,故起点更低、爬升更陡,早早反超 TDP。
+- **曲线为什么弯**:两个随时间变化的真实因素——**token 价随时间衰减**(LLM 推理价约每 ~18 个月腰斩,
+  收入速率递减→累计利润凹、变平)+ **电价凸性上涨**(AI 电网压力,二次抬升能耗账,较小的第二重下弯)。
+  两者都非线性,故利润-时间曲线**不是直线**,是弯的。
+- **token 起价拉高 → 回本更快**:起价 \$0.30/\$1.20 per Mtok 时,V100 回本 ~1.2 个月、cap 反超 TDP ~1.8 个月;
+  H200 回本 ~7.7 个月、反超 ~30 个月(比旧线性模型的 ~106 个月大幅提前——高起价把 cap 的多卖 token 优势
+  前置到价格还高的早期)。回本周期 ∝ 1/token 价。
+- **⚠️ 决定性假设 = 弹性需求**:cap 的全部优势是把多产的 token **按市价卖掉**。若需求固定(卖不掉多余
+  产出),加卡多产就是浪费,结论可能翻号——此时应按上文"利润 vs cap / 固定需求"口径,H200 甚至 V100
+  在便宜电价下都该 TDP 满跑。图底脚注已标注此假设及其它(CapEx 只含 GPU 裸价、单次采购不含换代/贴现、
+  未建模延迟/SLO)。
+
 ## 经济旋钮(全部可改,脚本顶部)
 
 GPU 价 $2.5k(V100)/$30k(H200) · 3 年直线摊销 · PUE 1.3 · token 价 $0.05/$0.20 per Mtok
@@ -94,5 +118,6 @@ GPU 价 $2.5k(V100)/$30k(H200) · 3 年直线摊销 · PUE 1.3 · token 价 $0.0
 ## 复现
 
 ```bash
-python3 workload_analysis/plot_composite_economics.py
+python3 workload_analysis/plot_composite_economics.py   # 利润 vs cap / vs 电价
+python3 workload_analysis/plot_profit_over_time.py       # 利润 vs 时间(cap vs TDP)
 ```

@@ -8,7 +8,9 @@ matching the repo's disaggregated-serving methodology: the rack solver caps each
 own curve, so the per-phase curves (not a blended one) are the planning primitives.
 
     throughput:  T_pre(P), T_dec(P)   fitlib unified-model fits, x = enforced cap in [100,250] W
-    efficiency:  T_phase(P) / P       per PROVISIONED joule; ring = per-phase sweet spot
+    efficiency:  T_phase / MEASURED draw (power_avg_w)   tok/J computed from throughput & measured
+                 power — NOT the set cap, NOT the CSV tok_per_joule column (energy-counter, unreliable);
+                 decode's cap under-enforces at low cap so the two differ.  ring = per-phase sweet spot
 
 The two phases differ by 1-2 orders of magnitude -> log throughput/efficiency axis.
 Dots = the raw measured grid (portfolio v3 dataset). The class's aggregate P:D ratio labels
@@ -91,23 +93,29 @@ def _read(path):
     cap = np.array([float(r["cap_w"]) for r in rows])
     thr = np.array([float(r["throughput_tok_s"]) for r in rows])
     clk = np.array([float(r["sm_clk_avg"]) for r in rows])
-    pwr = np.array([float(r["power_avg_w"]) for r in rows])
+    pwr = np.array([float(r["power_avg_w"]) for r in rows])   # MEASURED draw (energy-window avg)
     P = cap if np.ptp(cap) > 1e-6 else pwr
-    return P, thr, clk, rows
+    return P, thr, clk, pwr, rows
 
 
 def load_curves(wid):
     """fitlib fits + raw per-phase points for one measured workload (same recipe as the rack solver).
     Prefill and decode may sweep different power axes (see _read), so their raw points and valid
     power ranges are kept SEPARATE — never assume a shared cap grid."""
-    Pp, Tp, Fp, prow = _read(os.path.join(DATA, f"{wid}_prefill.csv"))
-    Pd, Td, Fd, drow = _read(os.path.join(DATA, f"{wid}_decode.csv"))
+    Pp, Tp, Fp, Wp, prow = _read(os.path.join(DATA, f"{wid}_prefill.csv"))
+    Pd, Td, Fd, Wd, drow = _read(os.path.join(DATA, f"{wid}_decode.csv"))
     B = float(drow[0]["batch"])
     preT, pre = fitlib.fit_prefill_unified(Pp, Tp, Fp, F_MAX)
     decT, dec = fitlib.fit_decode_additive(Pd, Td, Fd, B, F_MAX)
+
+    def _pwr_of(x, w):                                          # MEASURED draw as a fn of the fit's power axis
+        o = np.argsort(x)                                      # (prefill: axis IS measured draw -> identity;
+        return lambda q: np.interp(np.asarray(q, float), x[o], w[o])   # decode: cap axis -> map cap to draw)
     return dict(Tpre=lambda q: np.maximum(preT(np.clip(np.asarray(q, float), CAP_LO, CAP_HI)), 1e-9),
                 Tdec=lambda q: np.maximum(decT(np.clip(np.asarray(q, float), CAP_LO, CAP_HI)), 1e-9),
                 pre_x=Pp, pre_y=Tp, dec_x=Pd, dec_y=Td,           # raw points, each on its own axis
+                pre_pwr=Wp, dec_pwr=Wd,                           # MEASURED draw (power_avg_w) per raw point
+                pre_pwr_of=_pwr_of(Pp, Wp), dec_pwr_of=_pwr_of(Pd, Wd),   # tok/J denominator = measured draw
                 pre_rng=(float(Pp.min()), float(Pp.max())),       # measured power span per phase
                 dec_rng=(float(Pd.min()), float(Pd.max())),
                 pre=pre, dec=dec, ctx=drow[0]["ctx"], b_dec=drow[0]["batch"])
@@ -188,11 +196,12 @@ def main():
 
     def draw_E(ax, cl, cv):
         effs = []
-        for rng, fn, x, y, c in ((cv["pre_rng"], cv["Tpre"], cv["pre_x"], cv["pre_y"], PRE_C),
-                                 (cv["dec_rng"], cv["Tdec"], cv["dec_x"], cv["dec_y"], DEC_C)):
+        for rng, fn, x, y, w, wof, c in (
+                (cv["pre_rng"], cv["Tpre"], cv["pre_x"], cv["pre_y"], cv["pre_pwr"], cv["pre_pwr_of"], PRE_C),
+                (cv["dec_rng"], cv["Tdec"], cv["dec_x"], cv["dec_y"], cv["dec_pwr"], cv["dec_pwr_of"], DEC_C)):
             gg = g[(g >= rng[0]) & (g <= rng[1])]
-            E = fn(gg) / gg
-            m = y / x                              # measured efficiency at each raw point
+            E = fn(gg) / wof(gg)                    # tok/J = fitted T / MEASURED draw (not the set cap, not CSV)
+            m = y / w                               # measured tok/J = raw throughput / raw measured power_avg_w
             ax.plot(gg, E, color=c, lw=2, zorder=3)
             ax.plot(x, m, "o", ms=4.5, color=c, mec="white", mew=0.9, zorder=4)
             i = int(np.argmax(E))
@@ -209,10 +218,10 @@ def main():
     for ax in axes2[5:]:
         ax.set_xlabel("power cap (W)", fontsize=8.5, color=INK2)
     for ax in (axes2[0], axes2[5]):
-        ax.set_ylabel("efficiency (tok/J at cap, log)", fontsize=8.5, color=INK2)
+        ax.set_ylabel("efficiency (tok/J on measured draw, log)", fontsize=8.5, color=INK2)
     fig2.suptitle("Power vs energy efficiency (tok/J) on V100 — prefill vs decode, per use-case class\n"
-                  r"tok/J $= T_{phase}(P)\,/\,P$ per PROVISIONED joule (x = enforced cap);"
-                  "  rings = per-phase sweet spots — the caps the rack recipes float between",
+                  r"tok/J $= T_{phase}\,/\,$MEASURED draw (power_avg_w, not the set cap, not the CSV column);"
+                  "  rings = per-phase sweet spots",
                   fontsize=12.5, color=INK)
     phase_legend(fig2)
     fig2.text(0.5, 0.012, FOOT, ha="center", fontsize=7.2, color=INK2)
@@ -228,7 +237,7 @@ def main():
         gp = g[(g >= cv["pre_rng"][0]) & (g <= cv["pre_rng"][1])]
         gd = g[(g >= cv["dec_rng"][0]) & (g <= cv["dec_rng"][1])]
         Tp, Td = cv["Tpre"](gp), cv["Tdec"](gd)
-        Ep, Ed = Tp / gp, Td / gd
+        Ep, Ed = Tp / cv["pre_pwr_of"](gp), Td / cv["dec_pwr_of"](gd)   # tok/J on MEASURED draw, not set cap
         ip, id_ = int(np.argmax(Ep)), int(np.argmax(Ed))
         d_sat = float(gd[int(np.argmax(Td >= 0.995 * Td[-1]))])  # decode saturation cap
         out.append({"klass": cl["klass"], "band": band_of(cl["r"])[0],

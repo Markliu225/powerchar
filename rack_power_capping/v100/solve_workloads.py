@@ -74,23 +74,27 @@ def _read(path):
     SM CLOCK is swept instead (H200 prefill, v-next), fall back to the MEASURED draw power_avg_w."""
     rows = [r for r in csv.DictReader(open(path)) if float(r["throughput_tok_s"]) > 0]
     cap = np.array([float(r["cap_w"]) for r in rows])
-    pwr = np.array([float(r["power_avg_w"]) for r in rows])
+    pwr = np.array([float(r["power_avg_w"]) for r in rows])   # MEASURED draw (energy-window avg)
     return (cap if np.ptp(cap) > 1e-6 else pwr,
             np.array([float(r["throughput_tok_s"]) for r in rows]),
             np.array([float(r["sm_clk_avg"]) for r in rows]),
-            rows)
+            pwr, rows)
 
 
 def load_workload(w):
     """Fit both phases of one workload in CAP space; return curve functions + fit metadata."""
-    Pp, Tp, Fp, _ = _read(os.path.join(DATA, f"{w['id']}_prefill.csv"))
-    Pd, Td, Fd, rows = _read(os.path.join(DATA, f"{w['id']}_decode.csv"))
+    Pp, Tp, Fp, Wp, _ = _read(os.path.join(DATA, f"{w['id']}_prefill.csv"))
+    Pd, Td, Fd, Wd, rows = _read(os.path.join(DATA, f"{w['id']}_decode.csv"))
     B = float(rows[0]["batch"])
     preT, pre = fitlib.fit_prefill_unified(Pp, Tp, Fp, F_MAX)
     decT, dec = fitlib.fit_decode_additive(Pd, Td, Fd, B, F_MAX)
 
     def Tpre(q):  return np.maximum(preT(np.clip(np.asarray(q, float), CAP_LO, CAP_HI)), 0.0)
     def Tdec(q):  return np.maximum(decT(np.clip(np.asarray(q, float), CAP_LO, CAP_HI)), 0.0)
+
+    def _pwr_of(x, wv):                                    # MEASURED draw as a fn of the fit's power axis
+        o = np.argsort(x)                                 # (prefill axis IS measured draw -> ~identity;
+        return lambda q: np.interp(np.asarray(q, float), x[o], wv[o])   # decode cap axis -> cap->draw map)
 
     # decode saturation cap: smallest cap giving 99.5% of the throughput at CAP_HI — beyond it,
     # extra watts buy no tokens (stage III), so the optimizer never caps decode above this.
@@ -99,13 +103,16 @@ def load_workload(w):
     p_dec_hi = float(g[int(np.argmax(td >= 0.995 * td[-1]))])
     cls = CLASS_OF[w["id"]]
     return dict(w=w, cls=cls, Tpre=Tpre, Tdec=Tdec, pre=pre, dec=dec, p_dec_hi=p_dec_hi,
+                pre_pwr_of=_pwr_of(Pp, Wp), dec_pwr_of=_pwr_of(Pd, Wd),   # tok/J denominator = measured draw
                 Lp=float(cls["pd"][0]), Ld=float(cls["pd"][1]))
 
 
-def sweet_spot(Tfun, hi=CAP_HI):
-    """Efficiency sweet spot in cap space: argmax_P T(P)/P over the measured range."""
+def sweet_spot(Tfun, pwr_of, hi=CAP_HI):
+    """Efficiency sweet spot in cap space: argmax_P T(P)/MEASURED-draw(P) over the measured range.
+    tok/J is on the ACTUAL power drawn (power_avg_w), not the set cap — the cap under-enforces at
+    low settings, so T/cap would overstate efficiency there. Never uses the CSV tok_per_joule column."""
     g = np.linspace(CAP_LO, hi, 1501)
-    eff = Tfun(g) / g
+    eff = Tfun(g) / pwr_of(g)
     i = int(np.argmax(eff))
     return float(g[i]), float(Tfun(g[i])), float(eff[i])
 
@@ -164,7 +171,7 @@ def solve_tdp(c, W=W_RACK, n_max=N_GPU_MAX):
 
 def cont_bound(c, W=W_RACK):
     """Continuous (fractional-GPU, no slot wall) ceiling: every watt at its phase's sweet spot."""
-    ep, ed = sweet_spot(c["Tpre"])[2], sweet_spot(c["Tdec"], c["p_dec_hi"])[2]
+    ep, ed = sweet_spot(c["Tpre"], c["pre_pwr_of"])[2], sweet_spot(c["Tdec"], c["dec_pwr_of"], c["p_dec_hi"])[2]
     fp, fd = c["Lp"] / (c["Lp"] + c["Ld"]), c["Ld"] / (c["Lp"] + c["Ld"])
     return W / (fp / ep + fd / ed)
 
@@ -192,8 +199,8 @@ def main():
         if o["Nd"] == 1 and c["Ld"] < c["Lp"]:
             binds.append("Nd=1")
         bind = "+".join(binds)
-        pP, tP, eP = sweet_spot(c["Tpre"])
-        pD, tD, eD = sweet_spot(c["Tdec"], c["p_dec_hi"])
+        pP, tP, eP = sweet_spot(c["Tpre"], c["pre_pwr_of"])
+        pD, tD, eD = sweet_spot(c["Tdec"], c["dec_pwr_of"], c["p_dec_hi"])
         print(f"{c['cls']['en']:<22}{w['id']:<18} |{o['tot']/1e3:>8.2f}{o['Np']:>3d}{o['Nd']:>3d}"
               f"{o['p_p']:>5.0f}{o['p_d']:>5.0f}{o['w_used']:>6.0f}{pct:>6.1f}% |{t['tot']/1e3:>8.2f}"
               f"{t['Np']:>3d}{t['Nd']:>3d} |{gain:>6.1f}%  {bind}")

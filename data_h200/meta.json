@@ -7,7 +7,7 @@
  "pl_max_w": 700.0,
  "pl_default_w": 700.0,
  "pl_enforced_at_start_w": 700.0,
- "timestamp": "2026-07-13 18:18:49",
+ "timestamp": "2026-07-14 19:35:16",
  "methodology": "v4: prefill locked-clock sweep at max cap (-lgc, power_limited flag, saturation stop) + decode cap sweep; per-point measurement v3 (seed_chunk=ctx, expandable_segments, step-targeted windows, repeats+median, ctx_eff, energy-window power, throttle gating)",
  "supported_mem_clocks_mhz": [
   2201,

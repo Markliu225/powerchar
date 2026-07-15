@@ -70,6 +70,10 @@ def main():
             binds.append("Np=1")
         if o["Nd"] == 1 and c["Ld"] < c["Lp"]:
             binds.append("Nd=1")
+        # rack tok/J on the MEASURED draw (Σ per-GPU power_avg_w at the chosen caps), not the
+        # provisioned cap sum — consistent with the tok/J efficiency curves (power, not the set cap)
+        mw = lambda r: r["Np"] * float(c["pre_pwr_of"](r["p_p"])) + r["Nd"] * float(c["dec_pwr_of"](r["p_d"]))
+        o_mw, t_mw = mw(o), mw(t)
         recs.append(dict(cl=cl, o=o, t=t))
         cav = CAVEAT.get(cl["klass"], "")
         if cl["klass"] == "Chat 多轮对话":     # trace accounting nearly inverts the recipe
@@ -81,10 +85,10 @@ def main():
                     "gain_pct": round(100 * (o["tot"] / t["tot"] - 1), 1),
                     "opt_N_prefill": o["Np"], "opt_N_decode": o["Nd"],
                     "opt_cap_prefill_w": round(o["p_p"]), "opt_cap_decode_w": round(o["p_d"]),
-                    "opt_w_used": round(o["w_used"]),
+                    "opt_w_provisioned": round(o["w_used"]), "opt_w_measured": round(o_mw),
                     "tdp_N_prefill": t["Np"], "tdp_N_decode": t["Nd"],
-                    "opt_rack_tok_per_j": round(o["tot"] / o["w_used"], 3),
-                    "tdp_rack_tok_per_j": round(t["tot"] / t["w_used"], 3),
+                    "opt_rack_tok_per_j": round(o["tot"] / o_mw, 3),
+                    "tdp_rack_tok_per_j": round(t["tot"] / t_mw, 3),
                     "opt_pct_of_cont_bound": round(100 * o["tot"] / ceil, 1),
                     "constraint_binds": "+".join(binds)})
 

@@ -12,9 +12,13 @@ SCENARIO (H200-scaled from the V100 5 kW / 32-slot experiment, disclosed on the 
   decode never above its saturation cap (0.995 of T at 700 W), integer GPUs, >=1 per phase
 
 With the v-next H200 data (prefill clock-swept, so its efficiency sweet spot lands ~530-575 W
-in range), the 32-slot wall binds for all 9 classes here — prefill no longer needs ~650-700 W,
-so even Code fills the slots (16+16) rather than being budget-bound. Extract is omitted:
-classify-qwen7b was dropped from this data revision (9 of 10 classes).
+in range), the 32-slot wall binds for all classes present — prefill no longer needs ~650-700 W,
+so even Code fills the slots (16+16) rather than being budget-bound. Classes whose mapped workload
+has no H200 data are skipped automatically (the subtitle names any that were). As of 2026-07-15 all
+10 use-case classes are present (classify-qwen7b re-measured -> Extract back). NOTE: classify-qwen7b
+prefill is still v3 cap-swept (under-enforces <367 W) and its decode is near-flat (fit R^2<0), so
+Extract's curves are the shakiest of the 10 — see h200/README.md; its recipe operates in the
+enforced region so the +59% gain (decode-bottleneck packing) is structural, not an artifact.
 
 python3 solve_rack_capping.py -> fig_workload_rack_capping.png + workload_rack_capping.csv
 """
@@ -76,6 +80,10 @@ def main():
             binds.append("Np=1")
         if o["Nd"] == 1 and c["Ld"] < c["Lp"]:
             binds.append("Nd=1")
+        # rack tok/J on the MEASURED draw (Σ per-GPU power_avg_w at the chosen caps), not the
+        # provisioned cap sum — consistent with the tok/J efficiency curves (power, not the set cap)
+        mw = lambda r: r["Np"] * float(c["pre_pwr_of"](r["p_p"])) + r["Nd"] * float(c["dec_pwr_of"](r["p_d"]))
+        o_mw, t_mw = mw(o), mw(t)
         recs.append(dict(cl=cl, o=o, t=t))
         out.append({"klass": cl["klass"], "band": band_of(cl["r"])[0], "ratio_agg": cl["r"],
                     "via_workload": MAP[cl["klass"]],
@@ -84,10 +92,10 @@ def main():
                     "gain_pct": round(100 * (o["tot"] / t["tot"] - 1), 1),
                     "opt_N_prefill": o["Np"], "opt_N_decode": o["Nd"],
                     "opt_cap_prefill_w": round(o["p_p"]), "opt_cap_decode_w": round(o["p_d"]),
-                    "opt_w_used": round(o["w_used"]),
+                    "opt_w_provisioned": round(o["w_used"]), "opt_w_measured": round(o_mw),
                     "tdp_N_prefill": t["Np"], "tdp_N_decode": t["Nd"],
-                    "opt_rack_tok_per_j": round(o["tot"] / o["w_used"], 3),
-                    "tdp_rack_tok_per_j": round(t["tot"] / t["w_used"], 3),
+                    "opt_rack_tok_per_j": round(o["tot"] / o_mw, 3),
+                    "tdp_rack_tok_per_j": round(t["tot"] / t_mw, 3),
                     "opt_pct_of_cont_bound": round(100 * o["tot"] / ceil, 1),
                     "constraint_binds": "+".join(binds)})
 
@@ -163,10 +171,14 @@ def main():
     a.set_ylabel(f"GPUs in the {W_RACK/1e3:.0f} kW rack")
     n_wall = sum(1 for r in recs if r["o"]["Np"] + r["o"]["Nd"] >= N_GPU_MAX)
     n_min = min(r["o"]["Np"] + r["o"]["Nd"] for r in recs)
+    present = {r["cl"]["klass"] for r in recs}
+    dropped = [NAME[r["klass"]] for r in rows if r["klass"] not in present]
+    drop_note = f"  ·  {', '.join(dropped)} omitted (no H200 data)" if dropped else \
+                f"  ·  all {len(recs)}/10 use-case classes present"
     a.set_title("GPU count & phase split per class — left bar TDP (every GPU @700 W), right bar "
                 f"OPT (Np+Nd @pre/dec cap W)\nsame 14 kW: TDP affords 20 GPUs; OPT hits the "
                 f"32-slot wall in {n_wall}/{len(recs)} classes (min fleet {n_min}); "
-                "split follows the TOKEN-COST ratio  ·  Extract omitted (classify-qwen7b absent)")
+                f"split follows the TOKEN-COST ratio{drop_note}")
     a.legend(handles=[Patch(fc=BLUE, label="prefill GPUs (OPT)"),
                       Patch(fc=ORANGE, label="decode GPUs (OPT)"),
                       Patch(fc=BLUE_LT, label="prefill GPUs (TDP)"),

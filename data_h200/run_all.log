@@ -648,3 +648,210 @@ wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/fig_tmax_valida
 wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/portfolio_fits.csv
 == DONE. Everything to bring back is inside: data_h200_v4/ (CSVs, meta.json, figures, log) ==
 final power limit: 700.00 W
+== 1/3 preflight ==
+/home/meteor/anaconda3/lib/python3.12/site-packages/torch/cuda/__init__.py:64: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+== preflight: deps ==
+  [OK] torch -- 2.13.0+cu130 cuda=13.0
+  [OK] torch.cuda -- devices=1
+  [OK] gpu -- NVIDIA H200 sm_90
+  [OK] cuda kernel executes
+  [OK] transformers -- 5.13.0
+  [OK] numpy -- 1.26.4
+  [OK] matplotlib (optional, for plots) -- 3.9.2
+== preflight: NVML / power-cap privilege ==
+  [OK] nvml -- NVIDIA H200 | -pl range [200,700]W, enforced 700W
+  [OK] energy counter (window-power method)
+  [OK] nvidia-smi -pl privilege -- All done.
+  [OK] nvidia-smi -lgc/-rgc privilege (prefill clock sweep) -- SM clocks 345-1980 MHz (110 supported steps)
+== preflight: models in local HF cache ==
+  [FAIL] /data1/meteor/models/Qwen2.5-1.5B-Instruct -- Repo id must be in the form 'repo_name' or 'namespace/repo_name': '/data1/meteor
+         fix: copy ~/.cache/huggingface/hub/models--... from the online machine or use a local path
+  [OK] Qwen/Qwen2.5-3B-Instruct -- /home/meteor/.cache/huggingface/hub/models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1
+  [OK] Qwen/Qwen2.5-7B-Instruct -- /home/meteor/.cache/huggingface/hub/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28
+  [OK] Qwen/Qwen3-4B-Instruct-2507 -- /home/meteor/.cache/huggingface/hub/models--Qwen--Qwen3-4B-Instruct-2507/snapshots/1cfa9a7208912126459214e8b04321603b3df60c
+  [OK] microsoft/Phi-3-mini-4k-instruct -- /home/meteor/.cache/huggingface/hub/models--microsoft--Phi-3-mini-4k-instruct/snapshots/f39ac1d28e925b323eae81227eaba4464caced4e
+
+preflight: 1 FAILURES: /data1/meteor/models/Qwen2.5-1.5B-Instruct
+preflight FAILED -- fix the items above, then re-run.
+== 1/3 preflight ==
+/home/meteor/anaconda3/lib/python3.12/site-packages/torch/cuda/__init__.py:64: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+== preflight: deps ==
+  [OK] torch -- 2.13.0+cu130 cuda=13.0
+  [OK] torch.cuda -- devices=1
+  [OK] gpu -- NVIDIA H200 sm_90
+  [OK] cuda kernel executes
+  [OK] transformers -- 5.13.0
+  [OK] numpy -- 1.26.4
+  [OK] matplotlib (optional, for plots) -- 3.9.2
+== preflight: NVML / power-cap privilege ==
+  [OK] nvml -- NVIDIA H200 | -pl range [200,700]W, enforced 700W
+  [OK] energy counter (window-power method)
+  [OK] nvidia-smi -pl privilege -- All done.
+  [OK] nvidia-smi -lgc/-rgc privilege (prefill clock sweep) -- SM clocks 345-1980 MHz (110 supported steps)
+== preflight: models in local HF cache ==
+  [OK] /data1/meteor/models/Qwen2.5-1.5B-Instruct -- /data1/meteor/models/Qwen2.5-1.5B-Instruct
+  [OK] Qwen/Qwen2.5-3B-Instruct -- /home/meteor/.cache/huggingface/hub/models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1
+  [OK] Qwen/Qwen2.5-7B-Instruct -- /home/meteor/.cache/huggingface/hub/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28
+  [OK] Qwen/Qwen3-4B-Instruct-2507 -- /home/meteor/.cache/huggingface/hub/models--Qwen--Qwen3-4B-Instruct-2507/snapshots/1cfa9a7208912126459214e8b04321603b3df60c
+  [OK] microsoft/Phi-3-mini-4k-instruct -- /home/meteor/.cache/huggingface/hub/models--microsoft--Phi-3-mini-4k-instruct/snapshots/f39ac1d28e925b323eae81227eaba4464caced4e
+
+preflight: READY
+== 2/3 sweep (methodology v4: prefill locked-clock + decode power-cap) ==
+/home/meteor/anaconda3/lib/python3.12/site-packages/torch/cuda/__init__.py:64: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+GPU0 NVIDIA H200 | cap range [200,700] restore-to 700W
+decode caps [200, 226, 266, 313, 367, 426, 489, 556, 626, 700]
+prefill locked clocks [345, 585, 765, 930, 1080, 1215, 1350, 1485, 1605, 1740, 1860, 1980] (cap pinned at 700W)
+energy-window power: True | throttle telemetry: True | cool at >69C -> 57C
+workloads: ['fastchat-qwen15b']
+
+########## fastchat-qwen15b  (Lightweight chat (small GQA model))  model=/data1/meteor/models/Qwen2.5-1.5B-Instruct ##########
+Loading weights:   0%|          | 0/338 [00:00<?, ?it/s]Loading weights:   0%|          | 1/338 [00:00<01:22,  4.09it/s]Loading weights:  47%|████▋     | 159/338 [00:00<00:00, 551.13it/s]Loading weights:  71%|███████   | 239/338 [00:00<00:00, 485.10it/s]Loading weights: 100%|██████████| 338/338 [00:00<00:00, 527.62it/s]
+[W714 02:34:09.856479667 CUDACachingAllocator.cpp:508] expandable_segments: memory mapping failed with OOM on device 0 while trying to map 20971520 bytes (free: 16449536, total: 150110011392).
+[W714 02:34:09.856619449 CUDACachingAllocator.cpp:508] expandable_segments: memory mapping failed with OOM on device 0 while trying to map 20971520 bytes (free: 16449536, total: 150110011392).
+
+[reset] -rgc; -pl 700W
+Traceback (most recent call last):
+  File "/data1/meteor/powerchar/pt_cap_gpu1/portfolio/run_portfolio.py", line 502, in <module>
+    main()
+  File "/data1/meteor/powerchar/pt_cap_gpu1/portfolio/run_portfolio.py", line 483, in main
+    run_workload(w, sampler, caps, clks, pre_cap_w, outdir, phase=args.phase)
+  File "/data1/meteor/powerchar/pt_cap_gpu1/portfolio/run_portfolio.py", line 159, in run_workload
+    tok, model = load_model_for(w["model_id"])
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data1/meteor/powerchar/pt_cap_gpu1/portfolio/run_portfolio.py", line 118, in load_model_for
+    return load_model()
+           ^^^^^^^^^^^^
+  File "/data1/meteor/powerchar/code/measure.py", line 44, in load_model
+    model = model.to(C.DEVICE).eval()
+            ^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/transformers/modeling_utils.py", line 3761, in to
+    return super().to(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1383, in to
+    return self._apply(convert)
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 933, in _apply
+    module._apply(fn)
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 933, in _apply
+    module._apply(fn)
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 933, in _apply
+    module._apply(fn)
+  [Previous line repeated 2 more times]
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 964, in _apply
+    param_applied = fn(param)
+                    ^^^^^^^^^
+  File "/home/meteor/anaconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1369, in convert
+    return t.to(
+           ^^^^^
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 20.00 MiB. GPU 0 has a total capacity of 139.80 GiB of which 15.69 MiB is free. Process 1917751 has 137.35 GiB memory in use. Including non-PyTorch memory, this process has 2.43 GiB memory in use. Of the allocated memory 1.92 GiB is allocated by PyTorch, and 3.46 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://docs.pytorch.org/docs/stable/notes/cuda.html#optimizing-memory-usage-with-pytorch-cuda-alloc-conf)
+sweep exited rc=1 -- re-run to resume from where it stopped.
+== 1/3 preflight ==
+/home/meteor/anaconda3/lib/python3.12/site-packages/torch/cuda/__init__.py:64: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+== preflight: deps ==
+  [OK] torch -- 2.13.0+cu130 cuda=13.0
+  [OK] torch.cuda -- devices=1
+  [OK] gpu -- NVIDIA H200 sm_90
+  [OK] cuda kernel executes
+  [OK] transformers -- 5.13.0
+  [OK] numpy -- 1.26.4
+  [OK] matplotlib (optional, for plots) -- 3.9.2
+== preflight: NVML / power-cap privilege ==
+  [OK] nvml -- NVIDIA H200 | -pl range [200,700]W, enforced 700W
+  [OK] energy counter (window-power method)
+  [OK] nvidia-smi -pl privilege -- All done.
+  [OK] nvidia-smi -lgc/-rgc privilege (prefill clock sweep) -- SM clocks 345-1980 MHz (110 supported steps)
+== preflight: models in local HF cache ==
+  [OK] /data1/meteor/models/Qwen2.5-1.5B-Instruct -- /data1/meteor/models/Qwen2.5-1.5B-Instruct
+  [OK] Qwen/Qwen2.5-3B-Instruct -- /home/meteor/.cache/huggingface/hub/models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1
+  [OK] Qwen/Qwen2.5-7B-Instruct -- /home/meteor/.cache/huggingface/hub/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28
+  [OK] Qwen/Qwen3-4B-Instruct-2507 -- /home/meteor/.cache/huggingface/hub/models--Qwen--Qwen3-4B-Instruct-2507/snapshots/1cfa9a7208912126459214e8b04321603b3df60c
+  [OK] microsoft/Phi-3-mini-4k-instruct -- /home/meteor/.cache/huggingface/hub/models--microsoft--Phi-3-mini-4k-instruct/snapshots/f39ac1d28e925b323eae81227eaba4464caced4e
+
+preflight: READY
+== 2/3 sweep (methodology v4: prefill locked-clock + decode power-cap) ==
+/home/meteor/anaconda3/lib/python3.12/site-packages/torch/cuda/__init__.py:64: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+GPU0 NVIDIA H200 | cap range [200,700] restore-to 700W
+decode caps [200, 226, 266, 313, 367, 426, 489, 556, 626, 700]
+prefill locked clocks [345, 585, 765, 930, 1080, 1215, 1350, 1485, 1605, 1740, 1860, 1980] (cap pinned at 700W)
+energy-window power: True | throttle telemetry: True | cool at >69C -> 57C
+workloads: ['fastchat-qwen15b']
+
+########## fastchat-qwen15b  (Lightweight chat (small GQA model))  model=/data1/meteor/models/Qwen2.5-1.5B-Instruct ##########
+Loading weights:   0%|          | 0/338 [00:00<?, ?it/s]Loading weights:   0%|          | 1/338 [00:00<01:03,  5.28it/s]Loading weights:  29%|██▉       | 99/338 [00:00<00:00, 417.48it/s]Loading weights:  46%|████▌     | 155/338 [00:00<00:00, 463.04it/s]Loading weights:  62%|██████▏   | 210/338 [00:00<00:00, 469.02it/s]Loading weights:  79%|███████▉  | 267/338 [00:00<00:00, 486.76it/s]Loading weights:  97%|█████████▋| 327/338 [00:00<00:00, 516.20it/s]Loading weights: 100%|██████████| 338/338 [00:00<00:00, 464.31it/s]
+  loaded  VRAM=3.09 GB
+  === CLK 345 MHz (cap 700 W) ===
+    prefill b=16 S=512   |    26689 tok/s |   262W | sm 345/345 | 101.8 tok/J
+  === CLK 585 MHz (cap 700 W) ===
+    prefill b=16 S=512   |    40032 tok/s |   334W | sm 585/585 | 119.9 tok/J
+  === CLK 765 MHz (cap 700 W) ===
+    prefill b=16 S=512   |    48475 tok/s |   381W | sm 765/765 | 127.1 tok/J
+  === CLK 930 MHz (cap 700 W) ===
+    prefill b=16 S=512   |    61485 tok/s |   452W | sm 930/930 | 136.1 tok/J
+  === CLK 1080 MHz (cap 700 W) ===
+    prefill b=16 S=512   |    74406 tok/s |   511W | sm 1080/1080 | 145.6 tok/J
+  === CLK 1215 MHz (cap 700 W) ===
+    prefill b=16 S=512   |    84229 tok/s |   592W | sm 1215/1215 | 142.3 tok/J
+  === CLK 1350 MHz (cap 700 W) ===
+    prefill b=16 S=512   |    93853 tok/s |   678W | sm 1350/1350 | 138.5 tok/J
+  === CLK 1485 MHz (cap 700 W) ===
+    prefill b=16 S=512   |    95280 tok/s |   705W | sm 1359/1485 | 135.2 tok/J  [power-limited]
+  === CLK 1605 MHz (cap 700 W) ===
+    prefill b=16 S=512   |    95341 tok/s |   693W | sm 1361/1605 | 137.7 tok/J  [power-limited]
+    [stop] effective clock saturated ~1361 MHz at the 700 W wall -- the efficiency peak (if any) lies outside this card's power envelope
+  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/fastchat-qwen15b_prefill.csv (9 points)
+  === CAP 200 W ===
+    decode  b=64 C=512   |     1029 tok/s |   257W | sm 345 | 41 steps/2.6s | spread 0.1% (2 runs)
+  === CAP 226 W ===
+    decode  b=64 C=512   |     1028 tok/s |   244W | sm 345 | 41 steps/2.6s | spread 0.1% (2 runs)
+  === CAP 266 W ===
+    decode  b=64 C=512   |     1180 tok/s |   271W | sm 410 | 47 steps/2.5s | spread 0.2% (2 runs)
+  === CAP 313 W ===
+    decode  b=64 C=512   |     1648 tok/s |   312W | sm 590 | 65 steps/2.5s | spread 33.1% (3 runs)
+  === CAP 367 W ===
+    decode  b=64 C=512   |     2120 tok/s |   360W | sm 817 | 84 steps/2.5s | spread 0.1% (2 runs)
+  === CAP 426 W ===
+    decode  b=64 C=512   |     2625 tok/s |   406W | sm 1089 | 103 steps/2.5s | spread 0.3% (2 runs)
+  === CAP 489 W ===
+    decode  b=64 C=512   |     2963 tok/s |   488W | sm 1292 | 117 steps/2.5s | spread 0.8% (2 runs)
+  === CAP 556 W ===
+    decode  b=64 C=512   |     3162 tok/s |   560W | sm 1500 | 124 steps/2.5s | spread 0.2% (2 runs)
+  === CAP 626 W ===
+    decode  b=64 C=512   |     3244 tok/s |   631W | sm 1732 | 127 steps/2.5s | spread 0.5% (2 runs)
+  === CAP 700 W ===
+    decode  b=64 C=512   |     3249 tok/s |   699W | sm 1923 | 127 steps/2.5s | spread 0.4% (2 runs)
+  wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/fastchat-qwen15b_decode.csv (10 points)
+
+[reset] -rgc; -pl 700W
+== 3/3 fits & figures ==
+F_MAX = 1980 MHz  (from /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/meta.json)
+chat-phi3          old R2=+0.989 rmse=4.4% loo=8.3%  ->  additive R2=+0.945 rmse=9.9% loo=13.7%   [T_mem=30.0ms Cc=7.33ms p=1.31 | stages P1=301 P2=678W]
+rag-phi3           old R2=+0.983 rmse=5.9% loo=10.7%  ->  additive R2=+0.938 rmse=11.3% loo=15.3%   [T_mem=46.2ms Cc=13.00ms p=1.31 | stages P1=310 P2=708W]
+code-phi3          old R2=+0.963 rmse=8.4% loo=15.4%  ->  additive R2=+0.929 rmse=11.6% loo=16.7%   [T_mem=63.5ms Cc=27.40ms p=1.18 | stages P1=286 P2=660W]
+longform-phi3      old R2=+0.959 rmse=8.6% loo=16.7%  ->  additive R2=+0.929 rmse=11.4% loo=14.7%   [T_mem=34.9ms Cc=17.66ms p=1.08 | stages P1=285 P2=627W]
+summarize-qwen7b   old R2=+0.989 rmse=5.1% loo=11.5%  ->  additive R2=+0.926 rmse=12.9% loo=17.5%   [T_mem=130.6ms Cc=17.96ms p=1.64 | stages P1=356 P2=779W]
+translate-qwen3b   old R2=+0.993 rmse=3.8% loo=8.7%  ->  additive R2=+0.928 rmse=12.3% loo=16.4%   [T_mem=31.0ms Cc=6.08ms p=1.45 | stages P1=324 P2=794W]
+fastchat-qwen15b   old R2=+0.965 rmse=7.5% loo=12.6%  ->  additive R2=+0.969 rmse=7.1% loo=9.7%   [T_mem=19.9ms Cc=4.23ms p=1.38 | stages P1=294 P2=620W]
+wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/fig_decode_models.png
+wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/decode_model_compare.csv
+F_MAX = 1980 MHz  (from /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/meta.json)
+chat-phi3          V2f R2=+0.998 rmse=1.5% loo=3.4%  ->  unified R2=+0.976 rmse=4.7% loo=21.2%   [p=0.89 th=1.85 p/th=0.48 P_s=284 T_fmax=42848]
+rag-phi3           V2f R2=+0.999 rmse=0.9% loo=2.4%  ->  unified R2=+0.982 rmse=3.9% loo=13.7%   [p=0.95 th=2.01 p/th=0.47 P_s=287 T_fmax=17875]
+code-phi3          V2f R2=+0.998 rmse=1.6% loo=5.0%  ->  unified R2=+0.988 rmse=3.6% loo=15.5%   [p=0.92 th=1.75 p/th=0.53 P_s=252 T_fmax=23509]
+longform-phi3      V2f R2=+0.997 rmse=1.7% loo=2.4%  ->  unified R2=+0.980 rmse=4.3% loo=21.2%   [p=0.90 th=1.79 p/th=0.50 P_s=287 T_fmax=47546]
+summarize-qwen7b   V2f R2=+1.000 rmse=0.6% loo=1.2%  ->  unified R2=+0.960 rmse=5.9% loo=20.9%   [p=0.90 th=2.48 p/th=0.36 P_s=327 T_fmax=18651]
+translate-qwen3b   V2f R2=+0.996 rmse=1.5% loo=2.6%  ->  unified R2=+0.984 rmse=3.0% loo=13.7%   [p=0.92 th=1.88 p/th=0.49 P_s=287 T_fmax=68377]
+fastchat-qwen15b   V2f R2=+0.994 rmse=2.7% loo=10.1%  ->  unified R2=+0.980 rmse=5.0% loo=13.9%   [p=0.96 th=2.07 p/th=0.46 P_s=243 T_fmax=132393]
+wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/fig_prefill_models.png
+wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/prefill_model_compare.csv
+F_MAX = 1980 MHz  (from /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/meta.json)
+per-model effective BW (GB/s): {'Phi-3-mini-4k-instruct': 485, 'Qwen2.5-7B-Instruct': 174, 'Qwen2.5-3B-Instruct': 240}
+wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/fig_portfolio_grid.png
+wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/fig_tmax_validation.png
+wrote /data1/meteor/powerchar/pt_cap_gpu1/portfolio/data_h200_v4/portfolio_fits.csv
+== DONE. Everything to bring back is inside: data_h200_v4/ (CSVs, meta.json, figures, log) ==
+final power limit: 700.00 W

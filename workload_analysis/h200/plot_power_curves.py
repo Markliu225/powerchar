@@ -7,8 +7,10 @@ not copied), on a log throughput axis.
 H200 data revision (2026-07-13): PREFILL is now a CLOCK sweep at a fixed 700 W cap, so its power
 axis is the MEASURED draw (power_avg_w, ~300-710 W) — this cleanly fixes the earlier low-cap
 cap-under-enforcement artifact. DECODE is still a cap sweep (200-700 W). The shared loader
-(../plot_power_curves.py) auto-detects the axis per phase. `classify-qwen7b` (the Extract mapping)
-was dropped from this data revision, so the Extract class is omitted here (9 of 10 classes).
+(../plot_power_curves.py) auto-detects the axis per phase. As of 2026-07-15 all 10 use-case classes
+are present (classify-qwen7b re-measured -> Extract back); classify prefill is the lone v3 cap-swept
+one (under-enforces <367 W) with near-flat decode (fit R²<0) — its curve is the shakiest. Any class
+whose mapped workload has no H200 data is skipped automatically.
 
 python3 plot_power_curves.py -> fig_workload_power_throughput.png
                                 fig_workload_power_tokj.png
@@ -38,12 +40,13 @@ band_of, ratio_str, fmt = V.band_of, V.ratio_str, V.fmt
 PRE_C, DEC_C = V.PRE_C, V.DEC_C
 INK, INK2, MUTE, GRID = V.INK, V.INK2, V.MUTE, V.GRID
 
-FOOT = ("prefill: CLOCK-swept at a fixed 700 W cap → x = MEASURED draw power_avg_w (this revision fixes the "
-        "earlier low-cap under-enforcement)  ·  decode: cap-swept → x = enforced cap  ·  dots = raw measured grid  ·  "
+FOOT = ("prefill: CLOCK-swept at a fixed 700 W cap → x = MEASURED draw power_avg_w (fixes the earlier low-cap "
+        "under-enforcement)  ·  decode: cap-swept → x = enforced cap  ·  dots = raw measured grid  ·  "
         "P:D = the class's aggregate ratio from workload_ratios.csv (labels the class; enters no curve)\n"
         "* = the class-to-workload mapping carries an accounting/scale caveat (Chat: trace accounting — serving "
         "shape with KV reuse ~1:2;  Summarization / Closed QA / Code: Dolly- or 2023-trace ratios on production-scale "
-        "curves), see rack_power_capping/v100/WORKLOADS.zh.md §2  ·  Extract omitted: classify-qwen7b not in this data revision")
+        "curves), see rack_power_capping/v100/WORKLOADS.zh.md §2  ·  Extract (classify-qwen7b) is the lone v3 cap-swept "
+        "prefill (under-enforces <367 W) with near-flat decode (fit R²<0) — read its dots")
 
 
 def _avail(wid):
@@ -126,11 +129,12 @@ def main():
 
     def draw_E(ax, cl, cv):
         effs = []
-        for rng, fn, x, y, c in ((cv["pre_rng"], cv["Tpre"], cv["pre_x"], cv["pre_y"], PRE_C),
-                                 (cv["dec_rng"], cv["Tdec"], cv["dec_x"], cv["dec_y"], DEC_C)):
+        for rng, fn, x, y, w, wof, c in (
+                (cv["pre_rng"], cv["Tpre"], cv["pre_x"], cv["pre_y"], cv["pre_pwr"], cv["pre_pwr_of"], PRE_C),
+                (cv["dec_rng"], cv["Tdec"], cv["dec_x"], cv["dec_y"], cv["dec_pwr"], cv["dec_pwr_of"], DEC_C)):
             gg = g[(g >= rng[0]) & (g <= rng[1])]
-            E = fn(gg) / gg
-            m = y / x
+            E = fn(gg) / wof(gg)                    # tok/J = fitted T / MEASURED draw (not the set cap, not CSV)
+            m = y / w                               # measured tok/J = raw throughput / raw measured power_avg_w
             ax.plot(gg, E, color=c, lw=2, zorder=3)
             ax.plot(x, m, "o", ms=4.5, color=c, mec="white", mew=0.9, zorder=4)
             i = int(np.argmax(E))
@@ -147,10 +151,10 @@ def main():
     for ax in axes2[5:]:
         ax.set_xlabel("GPU power (W)", fontsize=8.5, color=INK2)
     for ax in (axes2[0], axes2[5]):
-        ax.set_ylabel("efficiency (tok/J), log", fontsize=8.5, color=INK2)
+        ax.set_ylabel("efficiency (tok/J on measured draw, log)", fontsize=8.5, color=INK2)
     fig2.suptitle("Power vs energy efficiency (tok/J) on H200 — prefill vs decode, per use-case class\n"
-                  r"tok/J $= T_{phase}(P)\,/\,P$;  rings = per-phase efficiency sweet spots — "
-                  "the caps the rack recipes float between", fontsize=12.5, color=INK)
+                  r"tok/J $= T_{phase}\,/\,$MEASURED draw (power_avg_w, not the set cap, not the CSV column);"
+                  "  rings = per-phase sweet spots", fontsize=12.5, color=INK)
     phase_legend(fig2)
     fig2.text(0.5, 0.012, FOOT, ha="center", fontsize=7.2, color=INK2)
     fig2.tight_layout(rect=(0, 0.065, 1, 0.90))
@@ -164,7 +168,7 @@ def main():
         gp = g[(g >= cv["pre_rng"][0]) & (g <= cv["pre_rng"][1])]
         gd = g[(g >= cv["dec_rng"][0]) & (g <= cv["dec_rng"][1])]
         Tp, Td = cv["Tpre"](gp), cv["Tdec"](gd)
-        Ep, Ed = Tp / gp, Td / gd
+        Ep, Ed = Tp / cv["pre_pwr_of"](gp), Td / cv["dec_pwr_of"](gd)   # tok/J on MEASURED draw, not set cap
         ip, id_ = int(np.argmax(Ep)), int(np.argmax(Ed))
         d_sat = float(gd[int(np.argmax(Td >= 0.995 * Td[-1]))])
         out.append({"klass": cl["klass"], "band": band_of(cl["r"])[0],

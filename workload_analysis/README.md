@@ -41,6 +41,9 @@
   收益曲线**,V100 & H200:利润随 cap(收入固定,成本 = CapEx↓ + 电价·瓦特↑ → 内部最优随电价滑)
   与随电价的敏感性(uniform vs disaggregated vs TDP) → `fig_composite_economics.png` ·
   `fig_composite_elec_sensitivity.png` · `composite_economics.csv`;详见 [ECONOMICS.md](ECONOMICS.md)
+- `plot_profit_over_time.py` —— 综合 workload 的**利润 vs 时间**图(cap vs TDP 两条累计利润曲线,
+  V100/H200 各一):同功率预算、弹性需求;曲线因 **token 价随时间衰减 + 电价凸升**而**非线性弯曲**,
+  token 起价越高回本越快 → `fig_profit_over_time.png` · `profit_over_time.csv`;详见 [ECONOMICS.md](ECONOMICS.md)
 - `data/` —— 缓存的生产 trace 样本(Azure conv/code、BurstGPT)
 - `REFERENCES.zh.md` —— 分类法依据 + 数据集 + 引用链接 + caveat
 
@@ -52,4 +55,5 @@ python3 workload_analysis/plot.py
 python3 workload_analysis/plot_power_curves.py
 python3 workload_analysis/solve_rack_capping.py
 python3 workload_analysis/plot_composite_economics.py
+python3 workload_analysis/plot_profit_over_time.py
 ```
