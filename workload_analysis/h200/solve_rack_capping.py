@@ -2,7 +2,7 @@
 
 Same pipeline as ../solve_rack_capping.py (V100), retargeted at the H200 dataset and an
 H200-scaled rack scenario. Solver AND curve construction are imported from the canonical
-rack_power_capping/v100/solve_workloads.py; this file only retargets its scenario globals
+rack_power_capping/solve_workloads.py; this file only retargets its scenario globals
 (the functions read them at call time) and overrides Lp/Ld with each class's measured ratio.
 
 SCENARIO (H200-scaled from the V100 5 kW / 32-slot experiment, disclosed on the figure):
@@ -33,10 +33,10 @@ from matplotlib.patches import Patch
 HERE = os.path.dirname(os.path.abspath(__file__))
 PARENT = os.path.dirname(HERE)                  # workload_analysis/
 ROOT = os.path.dirname(PARENT)
-sys.path.insert(0, os.path.join(ROOT, "rack_power_capping", "v100"))
+sys.path.insert(0, os.path.join(ROOT, "rack_power_capping"))
 sys.path.insert(0, PARENT)
 import solve_workloads as SW                    # noqa: E402  THE rack solver (also adds fitlib)
-import plot_power_curves as V                   # noqa: E402  shared taxonomy / mapping / caveats
+import curves_lib as V                   # noqa: E402  shared taxonomy / mapping / caveats
 
 # ---- retarget the canonical solver at the H200 dataset + scenario ------------------------------
 # SW's functions read DATA / F_MAX / P_TDP / CAP_LO / CAP_HI as module globals at call time;
@@ -194,7 +194,7 @@ def main():
              "gray balanced / blue prefill-heavy, as in fig_workload_pd.png); P:D = aggregate ratio from "
              "workload_ratios.csv\nscenario scaled from the V100 experiment by the TDP ratio 700/250 "
              "(5 kW -> 14 kW, same 32 slots); curves data_h200, optimizer identical to "
-             "rack_power_capping/v100 (solve_workloads.py)  ·  * = mapping caveat, see WORKLOADS.zh.md §2",
+             "rack_power_capping/solve_workloads.py  ·  * = mapping caveat, see ../PLANNING.zh.md §2",
              ha="center", fontsize=7.4, color=INK2)
     fig.tight_layout(rect=(0, 0.015, 1, 1))
     outp = os.path.join(HERE, "fig_workload_rack_capping.png")

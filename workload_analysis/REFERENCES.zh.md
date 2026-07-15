@@ -46,7 +46,7 @@
 
 ## 与功率规划的衔接
 
-在 [../rack_power_capping/v100/WORKLOADS.zh.md](../rack_power_capping/v100/WORKLOADS.zh.md) 的 router 假设下,**每一类使用类型的聚合 P:D 就是一个专供该类的机架该喂给 `solve_workloads.py` 的类别形状假设**;再配上该类的上下文长度(≈prefill 中位)去定 decode 天花板 `T_max(C)`、用其 SLO 定功率 cap 下界,即可为每类算出专属机架配方。
+在 [PLANNING.zh.md](PLANNING.zh.md) 的 router 假设下,**每一类使用类型的聚合 P:D 就是一个专供该类的机架该喂给 `solve_workloads.py` 的类别形状假设**;再配上该类的上下文长度(≈prefill 中位)去定 decode 天花板 `T_max(C)`、用其 SLO 定功率 cap 下界,即可为每类算出专属机架配方。
 
 ## 参考文献
 

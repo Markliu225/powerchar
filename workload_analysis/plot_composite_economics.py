@@ -1,8 +1,8 @@
 """Composite-workload power-capping economics — the NONLINEAR return curve, V100 & H200.
 
-The repo's per-class economics (rack_power_capping/v100/economics.py) fixes the rack power
-budget so ENERGY CANCELS between the capped and uncapped fleets — its payback is linear and
-electricity-independent. This asks the opposite, real question: for the COMPOSITE workload (all
+The marginal "extra-GPU payback" view (same rack power both fleets, so ENERGY CANCELS) is linear
+and electricity-independent — see plot_profit_over_time.py. This asks the opposite, real question:
+for the COMPOSITE workload (all
 10 use-case classes, dataset-size-weighted as a proxy for real proportions — dominated by the
 Chat+Code production traces), what does profit look like as you choose the operating power cap,
 once electricity is a real cost?
@@ -21,7 +21,7 @@ Cost per request has two terms pulling opposite ways in p:
 NOT MODELLED — latency/SLO.  Revenue is held cap-independent, i.e. capping is assumed free of
 service-quality cost. But ~92% of this mix is interactive (Chat 68% + Code 24%), whose TTFT /
 inter-token latency degrades as caps drop. So the profit-optimal cap here is an UPPER BOUND on how
-far to cap interactive traffic, not a target (the rack doc punts on the same, WORKLOADS.zh.md §7).
+far to cap interactive traffic, not a target (the rack doc punts on the same, PLANNING.zh.md §7).
 Revenue is fixed by the demand (tokens sold), so
         profit/Mtok(p) = revenue/Mtok - 1e6·(PUE·elec·p/3.6e6 + GPU$/life)·g(p) / tok
 is NONLINEAR with an interior optimum whose location moves with the elec:capex balance — cheap
@@ -49,7 +49,7 @@ PORT = os.path.join(ROOT, "pt_cap_gpu1", "portfolio")
 sys.path.insert(0, PORT)
 sys.path.insert(0, HERE)
 import fitlib                                            # noqa: E402
-import plot_power_curves as V                            # noqa: E402  NAME/MAP (pure data)
+import curves_lib as V                            # noqa: E402  NAME/MAP (pure data)
 
 # ---- economic knobs (documented, all parameterizable) ----------------------------------------
 PRICE_IN_PER_MTOK = 0.05          # $ per 1e6 prefill (input) tokens   (repo economics.py)
@@ -295,7 +295,7 @@ FOOT1 = ("mix weight φ = dataset SIZE (n from workload_ratios.csv), a proxy for
          "per-phase throughput & MEASURED power from the mapped workload's fits/data (V100 portfolio / data_h200)\n"
          "energy billed on measured draw, not set cap  ·  UNIFORM cap = one knob for both phases (low-cap tail off-scale)  ·  "
          "NOT modelled: latency/SLO — 92% of the mix is interactive, so a lower cap costs service quality not priced here; "
-         "token-count vs mapped-curve context scales differ (WORKLOADS.zh.md §2) → biases profit optimistic")
+         "token-count vs mapped-curve context scales differ (PLANNING.zh.md §2) → biases profit optimistic")
 FOOT2 = ("profit/Mtok = revenue - amortized GPU CapEx (GPU-time) - PUE·elec·MEASURED-watts, at the profit-optimal cap  ·  "
          "DISAGGREGATED caps each class-phase on its own curve (what the rack recipes do); on H200 decode saturates below TDP "
          "so it can be capped down  ·  knobs: GPU $2.5k(V100)/$30k(H200), 3-yr amort, PUE 1.3, $0.05/$0.20 per Mtok in/out  ·  "

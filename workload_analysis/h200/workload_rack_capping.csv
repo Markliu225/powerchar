@@ -5,7 +5,7 @@ Brainstorming 头脑风暴,decode-heavy,0.15,longform-phi3,,7333.9,4999.2,46.7,1
 Open QA 开放问答,decode-heavy,0.16,longform-phi3,,7397.7,5042.6,46.7,1,31,288,442,14000,13847,1,19,0.534,0.365,88.8,N_max=32+Np=1
 Classification 分类,balanced,0.84,translate-qwen3b,,80561.8,66607.4,21.0,1,31,700,429,14000,13715,1,19,5.874,4.859,95.6,N_max=32+Np=1
 Summarization 摘要,prefill-heavy,2.3,summarize-qwen7b,Dolly short-doc 2.3:1 on 32k production-scale curves,2128.2,1747.4,21.8,1,31,329,441,14000,13940,1,19,0.153,0.125,97.4,N_max=32
-Extract 信息抽取,prefill-heavy,3.06,classify-qwen7b,"Dolly 3.1:1 on production-scale curves (class shape 100:1); decode fit poor on H200 (R2<0, relRMSE ~23%) - read the dots",46366.3,28922.6,60.3,3,29,577,358,12124,11816,2,18,3.924,2.843,75.0,N_max=32
+Extract 信息抽取,prefill-heavy,3.06,classify-qwen7b,"Dolly 3.1:1 on production-scale curves (class shape 100:1); decode fit poor on H200 (R2<0, relRMSE ~23%) - read the dots",46366.3,28922.6,60.3,3,29,573,358,12111,11802,2,18,3.929,2.843,74.3,N_max=32
 Chat 多轮对话,prefill-heavy,4.93,chat-phi3,trace accounting (full history re-prefilled per turn); serving shape with KV reuse ~1:2,267284.4,177195.5,50.8,9,23,700,335,14000,13808,6,14,19.358,13.16,95.0,N_max=32
 Closed QA 闭卷问答,prefill-heavy,6.18,rag-phi3,Dolly 6.2:1 on ~4k RAG-scale curves (class shape 10:1),91435.0,68645.1,33.2,9,23,563,388,14000,13853,6,14,6.6,4.946,98.5,N_max=32
 Code 代码补全,prefill-heavy,73.45,code-phi3,2023 completion-trace 73.5:1; the rack doc plans with a conservative 10:1,236367.1,166750.3,41.7,19,13,560,259,14000,13985,11,9,16.901,11.911,99.8,N_max=32

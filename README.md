@@ -63,8 +63,8 @@ figures/              regenerated locally by the pipeline (not committed)
 | dir | what it is | doc |
 |---|---|---|
 | [pt_cap_gpu1/](pt_cap_gpu1/) | decode power-capping `P(T)`: additive `T_mem+T_comp` three-stage model, fitted to a V100 clock/power sweep | [decode_model_theory.md](pt_cap_gpu1/decode_model_theory.md) |
-| [rack_power_capping/](rack_power_capping/) | rack-level planning on the measured curves, organised **per hardware** (`v100/` now, `h200/` planned): workloads classified into 6 application classes, one rack recipe per class (physical GPU-slot constraint), per-class economics/payback | [README.zh.md](rack_power_capping/README.zh.md) · [v100/WORKLOADS.zh.md](rack_power_capping/v100/WORKLOADS.zh.md) |
-| [workload_analysis/](workload_analysis/) | prefill:decode token ratios by use-case, from real production traces (Azure, BurstGPT) + Dolly-15k | [README](workload_analysis/README.md) · [REFERENCES.zh.md](workload_analysis/REFERENCES.zh.md) |
+| [workload_analysis/](workload_analysis/) | **the rack-level story, end to end**: LLM workloads classified by use-case (InstructGPT taxonomy on real Azure/BurstGPT + Dolly traces), per-class power/tok-J curves, per-class rack power-capping recipes (V100 + H200, physical GPU-slot constraint), and composite economics (profit vs cap, vs time) | [README](workload_analysis/README.md) · [PLANNING.zh.md](workload_analysis/PLANNING.zh.md) · [ECONOMICS.md](workload_analysis/ECONOMICS.md) · [REFERENCES.zh.md](workload_analysis/REFERENCES.zh.md) |
+| [rack_power_capping/](rack_power_capping/) | the shared rack-solver **engine** only (imported by workload_analysis); analysis/figures live in workload_analysis/ | [README.zh.md](rack_power_capping/README.zh.md) |
 | [schedule_lab/](schedule_lab/) | interactive tool to hand-schedule a GPU workload and watch temperature/clock/power; includes a thermal-throttle probe | [README](schedule_lab/README.md) · [thermal_throttle](schedule_lab/thermal_throttle/README.md) |
 
 ## How to run

@@ -1,9 +1,9 @@
 """THE workload-classification figure: use-case classes sorted by aggregate prefill:decode.
 
-One panel: each class as a horizontal bar (aggregate P:D, log x), grouped into three bands
-(decode-heavy / balanced / prefill-heavy). Right margin: the measured powerchar workload each
-class maps onto (with the scale/accounting caveat where the mapping is not literal — details in
-rack_power_capping/v100/WORKLOADS.zh.md §2).
+One panel: each class as a horizontal bar (aggregate P:D, log x — the ratio spans ~800×, 1:11→73:1),
+grouped into three bands (decode-heavy / balanced / prefill-heavy). Right margin: the measured
+powerchar workload each class maps onto (with the scale/accounting caveat where the mapping is not
+literal — details in PLANNING.zh.md §2).
 
 Taxonomy (VERIFIED): InstructGPT Table 1 (Ouyang et al. 2022) defines 10 prompt classes —
 Generation, Open QA, Brainstorming, Chat, Rewrite, Summarization, Classification, Other,
@@ -34,7 +34,7 @@ BANDS = [("decode-heavy", 0.0, 0.5, "#d62728"),
          ("prefill-heavy", 2.0, np.inf, "#1f77b4")]
 # which measured powerchar workload each class maps onto (verification of the correspondence;
 # caveats — KV-reuse accounting for chat, production-scale prompts, 2025-style code gens —
-# are spelled out in rack_power_capping/v100/WORKLOADS.zh.md §2)
+# are spelled out in PLANNING.zh.md §2)
 MAPPED = {"Generation": "↔ long-gen/CoT class (longform-phi3, qwen3think-4b)",
           "General QA †": "band ↔ long-gen/CoT class",
           "Brainstorming": "band ↔ long-gen/CoT class",
@@ -69,7 +69,7 @@ for name, lo, hi, c in BANDS:                  # band shading + header with clas
            ha="center", fontsize=9, color=c, weight="bold")
 
 a.barh(y, vals, color=cols, alpha=.88, log=True, height=0.62)
-a.axvline(1, color="k", ls="--", lw=1)
+a.axvline(1, color="k", ls="--", lw=1)         # 1:1
 for i, r in enumerate(sr):
     v = g(r, "ratio_agg")
     a.text(v * 1.25, i, ratio_str(v), va="center", ha="left", fontsize=9, color=cols[i],

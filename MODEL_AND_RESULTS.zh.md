@@ -1,383 +1,99 @@
-# LLM 推理的功率↔吞吐模型与全部实验结果 —— 总纲
+# LLM 推理的功率—吞吐解析模型
 
-> **本文件是唯一权威入口，自成体系**：完整给出 prefill 与 decode 两个阶段的理论模型
->（统一构建、完整推导、标定数值），并汇总全部实验结果（V100 上 10 类 workload × 5 个模型）。
-> 子文档：[pt_cap_gpu1/prefill_model_theory.md](pt_cap_gpu1/prefill_model_theory.md) /
-> [pt_cap_gpu1/decode_model_theory.md](pt_cap_gpu1/decode_model_theory.md)（单阶段独立成篇）、
-> [pt_cap_gpu1/portfolio/DATA_QUALITY.zh.md](pt_cap_gpu1/portfolio/DATA_QUALITY.zh.md)（测量方法学）、
-> [H200_操作手册.md](H200_操作手册.md)（跨硬件验证的执行手册）。
+本文以 GPU 功率上限 $P$（单位 W，即通过驱动设置的 power cap）为自变量，以 token 吞吐（tok/s）为因变量，给定 GPU 规格与稠密 decoder-only 模型的结构参数及负载 $(B,s,n_o)$（批大小、prompt 长度、生成长度），建立 prefill 与 decode 两阶段的解析吞吐模型，并在时延约束下将其推广为 goodput。建模粒度为 roofline：将一次前向拆为若干部分，每个部分的耗时取其计算时间与访存时间的较大者，kernel 启动与调度等固定开销以加性常数吸收。
 
----
+## 1 功率如何决定算力
 
-## 0. 一页速览
+功率上限通过 DVFS（动态电压频率调节）决定 GPU 的核心运行频率，进而决定有效算力。CMOS 电路的动态功耗正比于 $CV^2f$，而在工作区间内电压随频率近似线性上升，两者合并后功耗可写成频率的幂律。记峰值频率为 $f_{\max}$、静态功率（空闲时的漏电、显存刷新、风扇等功耗）为 $P_{\mathrm{stat}}$、额定功率上限为 $P_{\max}$，则
 
-**建模对象是 `P ↔ T`**（功率 ↔ token 吞吐）。旋钮 = **功率上限**（`nvidia-smi -pl`）：设定后 GPU 自选
-能维持的核心频率，功率与吞吐同时移动；频率只是中间机制，不出现在最终模型里。
+$$P(f)=P_{\mathrm{stat}}+(P_{\max}-P_{\mathrm{stat}})\left(\frac{f}{f_{\max}}\right)^{\gamma},\qquad \gamma\in[2,3],\tag{1}$$
 
-| 阶段 | 瓶颈（roofline） | 显式模型 `Throughput(P)` | 形状 |
-|---|---|---|---|
-| **prefill** | 计算受限（`I ≫ I*`） | $T_{f_{max}}\left(\frac{P-P_{static}}{\chi}\right)^{p/\theta}$ | **单段**幂律、凹，量程内无平台 |
-| **decode** | 访存受限（`I ≪ I*`） | $\dfrac{B}{T_{mem}+C\left[\left(\frac{P-P_{static}}{\chi}\right)^{-p/\theta}-1\right]}$ | **三阶段**：幂律升 → 边际递减 → 带宽平台 $B/T_{mem}$ |
+其中指数 $\gamma$ 由硬件的电压—频率曲线决定，需实测标定。反解得到功率上限所允许的相对频率
 
-两式来自**同一条每 token 耗时定律 + 同一个 DVFS 功率模型**（§2）；唯一差别是 decode 有
-与频率无关的访存地板 $T_{mem}$，prefill 没有——**阶段结构完全由这个地板的有无决定**。
+$$\phi(P)=\frac{f(P)}{f_{\max}}=\left(\frac{P-P_{\mathrm{stat}}}{P_{\max}-P_{\mathrm{stat}}}\right)^{1/\gamma},\tag{2}$$
 
-**验证结论（V100，10 类 workload × 5 模型，功率 cap 扫描）**：
-- prefill：9/10 R² ≥0.92，且 **10 个 workload 全部拟出 `p≈1`**（吞吐∝频率的计算受限机制指数，
-  与锁频 DVFS 直测 `T∝f^0.90` 一致）；
-- decode 三阶段：9/10 R² = **0.90–0.997**（相对 RMSE 0.6–3.2%），全面优于旧的完美重叠
-  近似 `min(V²f, T_max)`（R² −0.21–0.93）；
-- 平台量级 `T_max = B·BW_eff/(权重 + B·C_eff·kv/tok)` 跨 **~140×**（6.4→900 tok/s）成立。
+取值截断在 $[\phi_{\min},1]$ 之间（$\phi_{\min}$ 为硬件最低时钟对应的相对频率）。有效算力正比于频率，而 HBM 带宽通常不随功率上限调节，可近似视为常数：
 
-**能效直觉**：同功率下 prefill 每焦耳产出 ≈ **10×** decode（权重复用 vs 每步重读全部权重）；
-prefill 能效峰在中低功率（V100 ≈40 tok/J @ ~155 W），decode 过拐点后能效单调降——这是功率
-封顶对 decode 几乎免费、对 prefill 昂贵的根源，也是机架级规划的物理基础。
+$$F(P)=\eta_CF_{\mathrm{peak}}\phi(P),\qquad W=\eta_MW_{\mathrm{peak}},\tag{3}$$
 
----
+其中 $F_{\mathrm{peak}}$ 与 $W_{\mathrm{peak}}$ 分别为给定精度下的峰值算力与峰值带宽，$\eta_C$、$\eta_M$ 为计算与带宽的达成效率（前者即通常所说的 MFU，因 GEMM 形状不同，prefill 与 decode 可取不同的值）。
 
-## 1. 物理基础：两条功率原语 + roofline
+## 2 每个 token 的计算量与访存量
 
-### 1.1 两条功率原语（一切的来源）
+设模型层数为 $L$、隐维为 $d$、查询头数为 $h$、KV 头数为 $h_{kv}$、头维为 $d_h=d/h$，则 KV 的有效维度为 $d_{kv}=h_{kv}d_h$，GQA 比为 $g=h/h_{kv}$；FFN 中间维为 $d_{ff}$、其矩阵个数为 $n_{ff}$（标准 FFN 取 2，SwiGLU 取 3），词表大小为 $V$。参与矩阵乘的参数总量按层累加，包含末端的 lm_head 而不含查表式的 embedding：
 
-**(a) 逻辑/计算动态功率**。开关的 CMOS 阵列耗散 `P_logic = α·C·V²·f`。可靠翻转要求电压随频率上升
-（活跃区 `V ≈ V₀ + γf`），故**每操作能量 `E_op ∝ V²` 随速度上升**——算得越快、每次运算越贵。
+$$N=L\left(2d^{2}+2dd_{kv}+n_{ff},d,d_{ff}\right)+dV,\tag{5}$$
 
-**(b) 访存/搬运功率**。搬 1 bit 耗散近似**固定**能量 `E_bit`（充放固定的线与单元电容；HBM 的数据
-时钟不随核心 DVFS 调压），故 `P_mem = E_bit·BW`，**每 bit 能量与速度无关**。
+其中 $2d^2$ 来自 Q、O 投影，$2dd_{kv}$ 来自 K、V 投影，$n_{ff}dd_{ff}$ 来自 FFN，$dV$ 来自 lm_head。
 
-> **一切不对称的根源**：计算的单位能量随速度涨（∝V²），访存的单位能量不涨。
+在此基础上，计算量与访存量遵循三条计数规则（约定一次乘加为 2 FLOP）。其一，线性层每个 token 每个参数需 2 FLOP，故一个 token 通过全部线性层的计算量为 $2N$，且其权重访存量为 $b_wN$（$b_w$ 为权重字节宽度），与该 token 是否与其他 token 共享读取有关。其二，注意力打分部分与上下文长度成正比：当上下文长度为 $n$ 时，一个 token 的 $QK^{\top}$ 与 $AV$ 各需 $2Ldn$ FLOP，合计 $4Ldn$，这一计算量与 GQA 无关，因为查询侧仍保有全部 $h$ 个头。其三，KV cache 每 token 每层写入 K、V 各 $d_{kv}$ 个元素，即 $2Ld_{kv}b_{kv}$ 字节（$b_{kv}$ 为 KV 字节宽度），读取时其访存量随上下文长度线性放大，GQA 的收益正体现在此处按 $d_{kv}$ 而非 $d$ 计量。此外，每层每 token 还需从 HBM 读写约 $k_{\mathrm{act}},d,b_a$ 字节的激活（$b_a$ 为激活字节宽度，$k_{\mathrm{act}}$ 约为 8 至 20，取决于 kernel 融合程度），而 softmax、归一化等 $O(hn)$ 量级的小项相对主项可忽略，其代价一并归入效率系数。采用 FlashAttention 时注意力的访存量不含 $s^2$ 项。
 
-### 1.2 roofline：两个阶段各卡在哪
+## 3 Prefill 模型
 
-每 token 两阶段 FLOPs 几乎相同，决定性差异在**权重复用**（算术强度 `I` 相对脊点 `I* = Φ/β`）：
+一次 prefill 并行处理 $Bs$ 个 token。折合到每个 prompt token，其计算量为线性部分与注意力部分之和。注意力部分因因果掩码而只对在先位置打分，整条序列的注意力计算量为 $\sum_{i\le s}4Ldi\approx 2Lds^2$，摊到每 token 即 $2Lds$，故
 
-| | FLOPs/步 | 字节/步 | 算术强度 | 判定 |
-|---|---|---|---|---|
-| prefill | `≈2N·(B·S)` | 每个权重 tile 读一次、被全部 `B·S` 个位置复用 | `I ≫ I*` | **计算受限** → `T ∝ f_sm` |
-| decode | `≈2N·B` | `D_mem = W + B·C·kv`（每步重读全部权重 + B 条序列的 KV） | `I ≪ I*` | **访存受限** → `T ∝ BW` |
+$$C_{\mathrm{pre}}=2N+2Lds.\tag{6}$$
 
-（`W`=权重字节，`kv`=每 token KV 字节 `2L·n_kv·h·b`，`C`=上下文长，`B`=batch，`S`=prompt 长。）
+访存量方面，由于 $Bs$ 个 token 共享同一份权重、每个权重只需从 HBM 读取一次并由所有 token 均摊，权重访存摊薄为 $b_wN/(Bs)$；再加上激活读写与 KV 写入，得
 
-### 1.3 理想极限（第一性原理的"渐近律"）
+$$M_{\mathrm{pre}}=\frac{b_wN}{Bs}+k_{\mathrm{act}}Ldb_a+2Ld_{kv}b_{kv}.\tag{7}$$
 
-在 `V ∝ f` 的理想区（无功率墙、无热限）：prefill `P ≈ P₀ + k_c·T³`（立方，每 token 能量∝T²）；
-decode `P ≈ P₀ + k_m·T`（线性，每 token 能量≈常数）。
-**实测校验（V100 锁频 DVFS 510→1530 MHz）**：机制成立——prefill `T∝f^0.90`（R²=0.99）、
-decode `T∝f^0.26`（频率×3 只换 ×1.37 吞吐）；但立方指数不干净（V100 中段 V-f 平坦，指数对
-P₀ 简并：P₀=44 W 时 γ≈1.5，90 W 时 γ≈3.0）；decode 线性律经 batch 旋钮确认
-（`P=111+0.190T`，R²=0.996）。⇒ 理想律是渐近极限；**§2–4 的实测形式才是用于拟合与预测的模型**。
+于是 prefill 的耗时与吞吐为
 
----
+$$T_{\mathrm{pre}}(P)=Bs\cdot\max\left\lbrace \frac{C_{\mathrm{pre}}}{F(P)},\ \frac{M_{\mathrm{pre}}}{W}\right\rbrace ,\qquad X_{\mathrm{pre}}(P)=\frac{Bs}{T_{\mathrm{pre}}(P)}.\tag{8}$$
 
-## 2. 统一构建：一条耗时定律 + 一个 DVFS 功率模型
+关键在于，prefill 在整个可行功率区间内始终计算受限，因而无需分段。这可由算术强度逐项验证：权重项对应的强度为 $2Bs/b_w$，只要 $Bs$ 达到几百个 token 量级（FP16 下即 $Bs\ge b_wR_{\max}/2$，实际服务几乎总能满足）便超过 $R_{\max}$；激活项对应的强度约为 $2N/(k_{\mathrm{act}}Ldb_a)$，量级为 $O(d)\sim 10^3$ FLOP/B；两者都远大于 $R_{\max}\ge R(P)$，且降低功率只会使 $R(P)$ 更小、工况更偏计算受限。因此式 (8) 中的较大者恒为计算项，prefill 吞吐化简为
 
-### 2.1 每 token 耗时定律
+$$X_{\mathrm{pre}}(P)=\frac{\eta_C^{\mathrm{pre}},F_{\mathrm{peak}}}{2N+2Lds}\ \phi(P).\tag{9}$$
 
-单 token（步）耗时由**访存**与**计算**两部分**相加**（不是取 max）：
+该式表明 $X_{\mathrm{pre}}\propto(P-P_{\mathrm{stat}})^{1/\gamma}$，随功率单调上升且上凸，边际收益递减；首 token 时延即 $\mathrm{TTFT}=Bs/X_{\mathrm{pre}}$。prompt 长度 $s$ 只改变式 (9) 的系数，不改变吞吐对功率的函数形状。
 
-$$
-\text{Time per Token} = T_{mem} + T_{comp}
-= \frac{D_{mem}}{BW(f_{mem})} + \frac{O_{comp}}{OPS(f_{sm})}
-$$
+## 4 Decode 模型
 
-| 符号 | 含义 |
-|---|---|
-| $D_{mem}$ | 搬运的数据量（模型权重 + KV Cache / 激活） |
-| $BW(f_{mem})$ | 显存带宽，取决于显存控制器频率 $f_{mem}$ |
-| $O_{comp}$ | 单步计算量（FLOPs） |
-| $OPS(f_{sm})$ | 实际算力，$OPS \propto f_{sm}^{\,p}$（$p$ 为有效指数，含低频占用率塌缩） |
+在 decode 阶段，每一步生成 $B$ 个 token，第 $t$ 步的上下文长度为 $n=s+t$。将一步折合到每个生成 token，并按物理性质拆为两个部分。线性部分涵盖 QKVO 投影、FFN 与 lm_head，其计算量为 $C_{\mathrm{lin}}=2N$；由于同一步的 $B$ 个 token 共享权重、只需读取一遍并按 $B$ 均摊，其访存量为 $M_{\mathrm{lin}}=b_wN/B+k_{\mathrm{act}}Ldb_a$——批大小对 decode 的全部影响都集中于这一项。注意力部分涵盖 KV 读取与打分，其计算量为 $C_{\mathrm{attn}}=4Ldn$，访存量为 $M_{\mathrm{attn}}=2Ld_{kv}b_{kv}n$；由于每条序列必须读取自己的整段 KV、无法跨批均摊，这一项随上下文长度线性增长，当步的 KV 写入仅为读取量的 $1/n$ 而略去。两部分在层内串行执行，故每 token 的耗时为二者各自 roofline 之和，加上每步的固定开销 $T_0$：
 
-**关键约束**：DVFS/功率 cap 调的是 **SM 频率 $f_{sm}$**，而**显存控制器频率 $f_{mem}$ 基本固定**
-（V100 焊死 877 MHz；Hopper 运行内固定）。于是：
+$$\tau(P)=\max\left\lbrace \frac{2N}{F(P)},\ \frac{M_{\mathrm{lin}}}{W}\right\rbrace +\max\left\lbrace \frac{4Ld\bar n}{F(P)},\ \frac{2Ld_{kv}b_{kv}\bar n}{W}\right\rbrace +\frac{T_0}{B},\tag{10}$$
 
-$$
-\boxed{\,BW(f_{mem})=\text{const}\;\Rightarrow\;T_{mem}=\text{const}\,}
-$$
+其中对整段生成取平均上下文 $\bar n=s+n_o/2$，系统级 decode 吞吐为 $X_{\mathrm{dec}}(P)=1/\tau(P)$，逐 token 时延为 $\mathrm{TPOT}=B\tau$。
 
-访存时间是一条**与 SM 频率无关的常数地板**；SM 频率只能改变 $T_{comp}$。
-两个阶段的全部差别就在这条地板的大小：decode 的 $T_{mem}$ 是主项（§4），
-prefill 的 $T_{mem}\ll T_{comp}$ 全程可忽略（§3）。
+两个部分的算术强度决定了分段结构。线性部分的强度 $I_{\mathrm{lin}}=C_{\mathrm{lin}}/M_{\mathrm{lin}}\approx 2B/b_w$ 随批线性增大，而注意力部分的强度 $I_{\mathrm{attn}}=C_{\mathrm{attn}}/M_{\mathrm{attn}}=2d/(d_{kv}b_{kv})=2g/b_{kv}$ 是一个与 $B$、$n$ 都无关的小常数（FP16 KV 下 MHA 为 1、GQA-8 为 8）。由 §1 的判定规则，某部分在 $R(P)=I$ 处、即相对频率 $\phi=I/R_{\max}$ 处从计算受限切换为访存受限，对应的分界功率为
 
-### 2.2 DVFS 功率模型与反解
+$$P_i=P_{\mathrm{stat}}+(P_{\max}-P_{\mathrm{stat}})\left(\frac{I_i}{R_{\max}}\right)^{\gamma},\qquad i\in\lbrace \mathrm{attn},,\mathrm{lin}\rbrace .\tag{11}$$
 
-SM 频率经 DVFS 决定功率（电压随频率非线性上升，动态功耗并为幂律）：
+在通常的服务批大小下（$B>g,b_w/b_{kv}$，即权重与 KV 同精度时 $B>g$）有 $I_{\mathrm{attn}}<I_{\mathrm{lin}}$，故随功率升高，注意力部分先切换、线性部分后切换，$P_{\mathrm{attn}}<P_{\mathrm{lin}}$，功率轴被分为三段。
 
-$$
-P(f_{sm}) = P_{static} + \chi\left(\frac{f_{sm}}{f_{max}}\right)^{\theta},\qquad \theta\in[2,4]
-$$
+当 $P\le P_{\mathrm{attn}}$ 时两部分都受频率限制，处于计算受限段。此时吞吐
 
-吞吐与功率都只由 $f_{sm}$ 驱动，故「吞吐 vs 功率」是一条以 $f_{sm}$ 为参数的曲线。
-把功率**反解出频率**再代入吞吐，即得显式模型。记 $x=f_{sm}/f_{max}$：
+$$X_{\mathrm{dec}}(P)=\frac{F(P)}{2N+4Ld\bar n}=\frac{\eta_C^{\mathrm{dec}}F_{\mathrm{peak}}}{2N+4Ld\bar n},\phi(P),\tag{12}$$
 
-$$
-x(P)=\left(\frac{P-P_{static}}{\chi}\right)^{1/\theta},\qquad P_{static}<P\le P_{static}+\chi=P(f_{max})
-$$
+与 prefill 同形、正比于 $\phi(P)$，且与批大小无关，因为每 token 的计算量是固定的，增大批只提高并行度而不减少总计算量。
 
-**适用域**：功率上限 $\ge P(f_{max})$ 时频率已顶到 $f_{max}$（$x{=}1$），须把 $x$ 钳到 1
-（$x>1$ 分支非物理，不可代入）。$P_{static}\leftrightarrow\theta$ 部分简并——单独数值仅供参考，
-合成出的 $\text{Throughput}(P)$ 不受影响。
+当 $P_{\mathrm{attn}}<P<P_{\mathrm{lin}}$ 时进入混合段。注意力部分已被 KV 读取带宽限死，成为一段不随功率缩短的固定时间，而线性部分的 GEMM 仍随频率加速，故
 
----
+$$X_{\mathrm{dec}}(P)=\left[\frac{2N}{F(P)}+\frac{2Ld_{kv}b_{kv}\bar n}{W}\right]^{-1}.\tag{13}$$
 
-## 3. Prefill 理论模型：$T_{mem}\to 0$ → 单段显式幂律
+吞吐仍随功率上升，但增加的功率只作用于占比越来越小的 GEMM 时间上，收益按双曲线衰减。
 
-### 3.1 推导
+当 $P\ge P_{\mathrm{lin}}$ 时两部分都受带宽限制，进入与功率无关的访存受限平台：
 
-prefill 权重复用（`I≫I*`）使 $T_{mem}\ll T_{comp}$ **在整个 DVFS 范围成立**：
+$$X_{\mathrm{dec}}(P)=\frac{WB}{b_wN+k_{\mathrm{act}}BLdb_a+2Ld_{kv}b_{kv}B\bar n}.\tag{14}$$
 
-$$
-\text{Time}\approx \frac{O_{comp}}{OPS(f_{sm})}\;\Rightarrow\;\text{Throughput}(x)= T_{f_{max}}\cdot x^{\,p}
-$$
+在小批时该式近似为 $WB/(b_wN)$，受权重带宽限制、平台高度随 $B$ 线性抬升；在大批时趋于 $\eta_M W_{\mathrm{peak}}/(2Ld_{kv}b_{kv}\bar n)$，受 KV 带宽限制，是一条无论如何增大批也无法突破的上限。将切换条件代入可验证三段在 $P_{\mathrm{attn}}$、$P_{\mathrm{lin}}$ 处取值连续（斜率不连续），整条 $X_{\mathrm{dec}}(P)$ 单调不减、上凸，以式 (14) 为水平上限。
 
-代入 §2.2 的 $x(P)$，得显式模型：
+由于两个分界功率均不含 $n$，它们与上下文长度无关：在固定功率下，一次生成自始至终停留在同一段内，上下文变长只改变段内数值（混合段中 KV 读取时间占比升高、边际收益变小，平台高度按 $1/\bar n$ 下降），而不改变所处的段。此外还有两点边界情形值得注明：当批极小以致 $B<g,b_w/b_{kv}$ 时切换顺序反转，且因两部分强度都很小，几乎整个功率区间都访存受限，这解释了 $B=1$ 解码时降低功率几乎不损失吞吐的现象；当批大到 $B\ge b_wR_{\max}/2$ 时 $P_{\mathrm{lin}}$ 超出 $P_{\max}$，平台移出可行区间，decode 全程计算受限。
 
-$$
-\boxed{\;\text{Throughput}(P) = T_{f_{max}}\left(\frac{P-P_{static}}{\chi}\right)^{p/\theta},
-\qquad P_{static}<P\le P_{static}+\chi\;}
-$$
+## 5 goodput：带时延约束的有效吞吐
 
-- **单段**幂律，指数 $p/\theta\in(0,1)$（实测 0.33–0.99）⇒ 曲线**凹**：低功率端每瓦换得多、
-  高功率端边际递减；
-- **无阶段、无带宽平台**——没有 $T_{mem}$ 地板，就没有转折。唯一的饱和是频率顶 $x=1$
-  （吞吐到 $T_{f_{max}}$），且重载 prefill 的 cap 量程通常在 $P(f_{max})$ 之下，量程内不出现；
-- 等价反函数是纯幂律 $P(T)=P_{static}+\chi (T/T_{f_{max}})^{\theta/p}$；旧文档的 V²f 形式
-  $P(T)=P_0+\kappa T(1+\rho T)^2$ 是同一物理在仿射电压 $V=V_0+\gamma f$ 下的另一种参数化，
-  保留作基线（拟合能力相当，见 §3.2）。
+上述吞吐尚未计入服务质量约束。给定首 token 时延目标 $\mathrm{TTFT}\le T_1$ 与逐 token 时延目标 $\mathrm{TPOT}\le T_2$，定义 goodput 为两条 SLO 同时满足时的生成吞吐，否则记为零：
 
-**能效推论（闭式）**：$E(P)=T/P\propto (P-P_{static})^{a}/P$（$a=p/\theta$），峰在
+$$G(P)=X_{\mathrm{dec}}(P)\cdot\mathbf{1}!\left[\mathrm{TTFT}(P)\le T_1\ \wedge\ \mathrm{TPOT}(P)\le T_2\right].\tag{15}$$
 
-$$
-P^* = \frac{P_{static}}{1-a}
-$$
+由于 TTFT 与 TPOT 都随功率单调下降，每条 SLO 都等价于一个最低功率门槛。TTFT 约束由式 (9) 反解，给出
 
-V100+Phi-3 实测峰 ≈**40 tok/J @ ~155 W**（62% TDP），与 $P_{static}\approx70{-}90$ W、
-$a\approx0.4{-}0.5$ 一致。能效敏感的部署把 prefill 压到峰附近，代价是 TTFT——交互应用的
-cap 下界由延迟 SLO 决定。
+$$P_1=P_{\mathrm{stat}}+(P_{\max}-P_{\mathrm{stat}})\left(\frac{Bs,(2N+2Lds)}{\eta_C^{\mathrm{pre}}F_{\mathrm{peak}},T_1}\right)^{\gamma},\tag{16}$$
 
-### 3.2 标定与验证（V100，10 类 workload，v3 数据）
+若括号内的量大于 1，则表示即便满功率也无法达标，该约束在此负载下无解，只能通过减小 $B$ 或 $s$ 来满足。TPOT 约束则须先判断可行性：由式 (14)，TPOT 的最小值在平台段取得，为 $B$ 倍的平台 $\tau$ 加固定开销，若此最小值仍大于 $T_2$，则加功率无济于事（平台与功率无关），只能靠减批或缩短上下文来满足——这是三段结构最直接的工程推论。若可行，则由混合段的式 (13) 令 $B\tau\le T_2$ 反解出最低功率
 
-两步时钟空间拟合（功率侧 $P_{static},\chi,\theta$；吞吐侧对数最小二乘出 $p,T_{f_{max}}$；
-合成 $\text{Throughput}(P)$ 在功率空间打分），与 V²f 基线同口径对比：
+$$P_2=P_{\mathrm{stat}}+(P_{\max}-P_{\mathrm{stat}})\left(\frac{2NB}{\eta_C^{\mathrm{dec}}F_{\mathrm{peak}}\left(T_2-T_0-2Ld_{kv}b_{kv}B\bar n/W\right)}\right)^{\gamma}\tag{17}$$
 
-| workload | S×B | 统一 R² | V²f R² | $p$ | | workload | S×B | 统一 R² | V²f R² | $p$ |
-|---|---|--:|--:|--:|---|---|---|--:|--:|--:|
-| chat-phi3 | 512×8 | 0.923 | 0.972 | 1.32 | | translate-qwen3b | 512×8 | 0.962 | 0.984 | 1.02 |
-| rag-phi3 | 4096×2 | 0.992 | 0.991 | 0.92 | | fastchat-qwen15b | 512×16 | 0.950 | 0.984 | 1.01 |
-| code-phi3 | 2048×4 | 0.992 | 0.992 | 0.97 | | classify-qwen7b | 2048×4 | 0.986 | 0.991 | 0.91 |
-| longform-phi3 | 256×16 | 0.957 | 0.956 | 1.19 | | qwen3chat-4b | 512×8 | 0.871 | 0.849 | 1.18 |
-| summarize-qwen7b | 4096×2 | 0.986 | 0.995 | 0.94 | | qwen3think-4b | 2048×4 | 0.979 | 0.974 | 0.81 |
-
-**核心验证是 p 列**：$p=0.81$–$1.32$（中位 ≈0.99）——10 个 workload 从 cap 扫描**独立复原**
-"计算受限 ⇒ 吞吐∝频率"的机制指数，与锁频 DVFS 直测的 $T\propto f^{0.90}$ 一致。
-两种参数化拟合能力相当（统一模型胜在框架一致与参数可解释；V²f 样本内略优）。
-qwen3chat 两者皆偏低（0.85/0.87）：最低 cap 点实抽 72 W、时钟 441 MHz，落在电压地板区之外。
-图：[fig_prefill_models.png](pt_cap_gpu1/portfolio/fig_prefill_models.png)。
-
----
-
-## 4. Decode 理论模型：$T_{mem}$ 地板 → 三阶段
-
-### 4.1 核心物理逻辑
-
-$$
-\text{Throughput} = \frac{\text{Batch Size}}{\text{Time per Token}},\qquad
-\text{Time per Token} = T_{mem} + T_{comp}
-$$
-
-decode 每步重读全部权重 + KV（`I≪I*`），$T_{mem}$ 是主项。由 §2.1 的关键约束：
-
-$$
-\boxed{\,BW(f_{mem})=\text{const}\;\Rightarrow\;T_{mem}=\text{const}\;\Rightarrow\;
-\text{吞吐天花板}=\frac{\text{Batch Size}}{T_{mem}}\,}
-$$
-
-访存地板与 SM 频率无关，**唯一决定吞吐上限**；SM 频率只能改变 $T_{comp}$。
-
-### 4.2 显式的吞吐–功率关系
-
-代入 $\text{Throughput}=B/(T_{mem}+T_{comp})$，其中 $T_{comp}=C\,(x^{-p}-1)$
-（$p$ 源自算力降级 $OPS\propto f_{sm}^{\,p}$；$x{=}1$ 时 $T_{comp}{=}0$，平台精确成立）：
-
-$$
-\boxed{\;\text{Throughput}(P)=\frac{B}{\,T_{mem}+C\!\left[\left(\dfrac{P-P_{static}}{\chi}\right)^{-p/\theta}-1\right]}
-=\frac{B}{\,(T_{mem}-C)+C\left(\dfrac{\chi}{P-P_{static}}\right)^{p/\theta}}\;}
-$$
-
-**两端渐近**（对应下文三阶段）：
-
-$$
-\underbrace{\text{Throughput}\approx\frac{B}{C}\left(\frac{P-P_{static}}{\chi}\right)^{p/\theta}\propto (P-P_{static})^{p/\theta}}_{\text{低功率：}T_{comp}\gg T_{mem}\text{，指数 }p/\theta\lesssim1\text{，近似线性}}
-\qquad
-\underbrace{\text{Throughput}\to \frac{B}{T_{mem}}}_{\text{高功率：}T_{comp}\to0\text{，平台}}
-$$
-
-### 4.3 吞吐随功率从低到高的三个阶段
-
-| 阶段 | 功率/频率条件 | 机理 | 吞吐–功率行为 |
-|---|---|---|---|
-| **1 伪计算受限** | $P$ 极低（$T_{comp}>T_{mem}$，$f_{sm}$ 被压到标称 20–30%） | $OPS(f_{sm})$ 急剧下降（频率↓且占用率塌缩），$T_{comp}$ 大幅上升、超过 $T_{mem}$，访存受限任务被挤成计算受限 | 幂律上升 $\propto(P-P_{static})^{p/\theta}$，指数 $\lesssim1$，**近似线性陡升** |
-| **2 边际递减** | 中等功率（$T_{comp}\sim T_{mem}$） | $f_{sm}$ 越过临界点后 $T_{comp}$ 收缩，任务回归访存受限；提频对缩短 $T_{mem}+T_{comp}$ 贡献渐小，功率主要喂给 $f_{sm}^{\theta}$ 动态功耗 | 持续上升但**斜率明显变缓**（旧 min() 在此系统性低估——"完美重叠"假设的必然） |
-| **3 访存平台** | 高功率/满载（$T_{comp}<5\%\,T_{mem}$，$f_{sm}\to f_{max}$） | $T_{comp}$ 可忽略，总耗时 $\approx T_{mem}$；且 $f_{sm}$ 已顶 $f_{max}$，再加功率只升压发热不升频 | **平台** $=B/T_{mem}$，与 $P$ 脱钩 |
-
-边界（解析）：I/II 在 $x_1=(C/(T_{mem}+C))^{1/p}$，II/III 在 $x_2=(C/(0.05\,T_{mem}+C))^{1/p}$，
-代回 $P(x)$ 得边界功率。
-
-### 4.4 天花板定律（可定量预测的部分）
-
-$$
-\boxed{\;T_{\max} = \frac{B\cdot BW_{eff}}{\,W + B\cdot C_{eff}\cdot kv\,}\;}
-$$
-
-- **可加访存量**：KV 主导时 $T_{\max}\to BW_{eff}/(C\cdot kv)$——**上下文翻倍、平台减半（1/C 律）**；
-  权重主导时（GQA 小 KV）平台近似 ∝B。
-- **MHA vs GQA 是主要驱动**：Phi-3（MHA，384 KB/tok）在 C=4096 平台已塌到 109 tok/s，
-  Qwen2.5（GQA，28–56 KB/tok）同级上下文高一个量级。
-- $C_{eff}=C+\text{steps}/2$：测量窗口内 KV 生长，用流量加权的有效上下文（方法学 v3）。
-- $BW_{eff}$ 是**模型×硬件×引擎**属性而非常数（§5.4）。
-
-### 4.5 单卡标定（V100 + Phi-3，13 点锁频扫描，batch=96）
-
-| 量 | 值 |
-|---|---|
-| $T_{mem}$（常数访存地板） | 149.3 ms（有效带宽 ~116 GB/s ≈峰值 13%：访存受限且延迟受限） |
-| $C,\ p$（$T_{comp}=C(x^{-p}{-}1)$） | 30.8 ms，$p=1.84$ |
-| $P_{static},\ \chi,\ \theta$ | 50 W，155.5 W，2.15 |
-| **天花板** $B/T_{mem}$ | **643 tok/s**（= 实测最大，精确命中） |
-| 阶段分界 | I/II：$P_1\approx70$ W（585 MHz）；II/III：$P_2\approx171$ W（1359 MHz） |
-| 阶段 1 指数 $p/\theta$ | 0.855（近线性） |
-| 拟合优度 | 频率空间 R²=0.97；功率 R²=0.99；功率空间 R²=0.956 |
-
-双路独立推导结果一致，且 $\text{Throughput}(P)$ 是参数模型的精确解析逆——把 $P(f)$ 回代可
-机器精度复现 $\text{Throughput}(f)$（差 $10^{-13}$）。细节与注意事项见
-[decode_model_theory.md](pt_cap_gpu1/decode_model_theory.md) §四。
-
-### 4.6 跨 workload 验证与旧模型对比
-
-与旧的完美重叠 roofline 近似 $T=\min(T_{V^2f},\,T_{max})$ 对比（公平基线：旧模型网格已放开
-收敛、含饱和特判分支）：可加三阶段在 9/10 上 R²=0.90–0.997（相对 RMSE 0.6–3.2%），旧模型
-−0.21–0.93（3.3–12.1%）；留一交叉验证 5/10 胜（败点均为最低功率点的域外外推伪影，曲线弯曲
-的 workload 上全部占优）。两个极端访存受限的 workload（32k 摘要、B=8 分类）是同一定律的
-小 $C$ 极限——无需特判。注意 $p,\theta$ 为**有效**指数（近平坦曲线上弱可辨识，CSV
-`exponents_railed` 列标记）；且 transformers 的 DynamicCache 每步对全 KV 做 cat（读+写拷贝），
-每步实际访存 ≈ 权重+~3×KV，被 $T_{mem}$ 标定自然吸收。
-图：[fig_decode_models.png](pt_cap_gpu1/portfolio/fig_decode_models.png)。
-
----
-
-## 5. 实验结果汇总（V100-DGXS-32GB，10 workload × 5 模型）
-
-### 5.1 设定
-
-单卡 V100（250 W cap、HBM2 877 MHz 固定、f_max=1530 MHz）。每 workload 固定 `(S,B)/(C,B)`，
-只扫功率 cap [100..250] W（8 点）。**测量方法学 v3**（伪影修复的完整证据链见
-[DATA_QUALITY.zh.md](pt_cap_gpu1/portfolio/DATA_QUALITY.zh.md)）：KV 用整段 prefill 建
-（chunk=ctx；小块 seeding 让分配器碎片化、GPU 饿死，chunk32 只有 225–233 vs chunk256 的
-~827 tok/s）、`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`（消除 ±9% 双模并快 15%）、
-步数目标窗口（≥32 步）+ 重复取中位、记录 `ctx_eff`。跨 4 卡参考点一致性 <2%。
-
-### 5.2 主表：10 类 workload 与 decode 两代模型对比
-
-| workload | 应用 | 模型 | decode C×B | 平台 tok/s | 旧 min() R² | **可加 R²** | 相对RMSE | LOO 可加/旧 |
-|---|---|---|---|--:|--:|--:|--:|--:|
-| chat-phi3 | 对话 | Phi-3-mini (MHA'24) | 256×64 | 825 | 0.928 | **0.986** | 1.7% | 6.8 / 16.0 |
-| rag-phi3 | RAG | Phi-3-mini | 1024×32 | 277 | 0.898 | **0.991** | 1.4% | 11.8 / 15.8 |
-| code-phi3 | 代码 | Phi-3-mini | 2048×16 | 128 | 0.906 | **0.987** | 1.5% | 24.7 / 14.9 |
-| longform-phi3 | 长文 | Phi-3-mini | 4096×8 | 109 | 0.917 | **0.997** | 0.6% | 2.1 / 12.6 |
-| summarize-qwen7b | 摘要32k | Qwen2.5-7B (GQA) | 32768×4 | 6.4 | −0.21 | **0.903** | 2.6% | 27.5 / 9.3 |
-| translate-qwen3b | 翻译 | Qwen2.5-3B (GQA) | 512×64 | 559 | 0.910 | **0.997** | 0.7% | 10.5 / 14.0 |
-| fastchat-qwen15b | 轻对话 | Qwen2.5-1.5B (GQA) | 512×64 | 900 | 0.891 | **0.993** | 0.9% | 26.1 / 12.6 |
-| classify-qwen7b | 分类 | Qwen2.5-7B | 256×8 | 149 | 0.440 | 0.632 | 9.8% | 18.2 / 21.2 |
-| qwen3chat-4b | 对话'25 | Qwen3-4B-2507 (GQA+QKNorm) | 1024×32 | 129 | 0.719 | **0.987** | 1.1% | 16.6 / 12.6 |
-| qwen3think-4b | **推理CoT** | Qwen3-4B-2507 | 8192×8 | 16.0 | 0.712 | **0.916** | 3.2% | 25.4 / 13.9 |
-
-- 对比是**公平的**：旧模型网格已放开收敛（未放开时它被低估最多 −0.9 R²）、含 v1 的饱和特判分支。
-- LOO 列为「可加 / 旧」两模型的留一样本外误差：可加模型 5/10 胜。混合的原因是**边界外推伪影**——
-  留出最低功率点时可加模型须外推到 $P_{static}$ 以下（钳到近零吞吐 → 巨误差），旧模型的平推
-  插值反而占便宜；曲线弯曲、信息量大的 workload 上可加模型 LOO 全部占优。
-- classify（B=8 欠饱和）：cap≥180 W 后实际功耗仅 ~150 W，**cap 不再咬合**，调速器自行浮动——
-  "cap 失效区"的真实行为（两张卡复现），如实呈现。
-- 总览图（统一模型 vs 全部实测点）：[fig_portfolio_grid.png](pt_cap_gpu1/portfolio/fig_portfolio_grid.png)。
-
-### 5.3 三阶段参数（可加模型，V100）
-
-| workload | $T_{mem}$ (ms) | $C$ (ms) | $p$ | $P_1$ (W) | $P_2$ (W) |
-|---|--:|--:|--:|--:|--:|
-| chat-phi3 | 77.5 | 8.8 | 2.8 | 96 | 177 |
-| rag-phi3 | 115.4 | 6.3 | 3.7 | 95 | 167 |
-| code-phi3 | 125.1 | 12.4 | 2.9 | 97 | 169 |
-| longform-phi3 | 73.7 | 12.6 | 2.2 | 94 | 163 |
-| summarize-qwen7b | 625.0 | 0.6 | 8.7† | 97 | 114 |
-| translate-qwen3b | 114.5 | 13.6 | 2.6 | 94 | 165 |
-| fastchat-qwen15b | 71.1 | 5.6 | 3.0 | 95 | 154 |
-| qwen3chat-4b | 247.7 | 1.5 | 6.6† | 95 | 126 |
-| qwen3think-4b | 500.0 | 2.9 | 6.3† | 97 | 129 |
-
-（† 近平坦曲线（$C/T_{mem}$ 极小）上 $p$ 弱可辨识：数值为有效指数、非物理常数，只有
-$T_{mem}$/平台可信——见 §4.6。）规律清晰：**访存越重（$C/T_{mem}$ 越小），$P_2$ 越靠前**——
-摘要 114 W 就饱和，对话要 177 W。
-
-### 5.4 天花板验证与有效带宽
-
-拟合平台 vs $B\cdot BW_{eff}/(W+B\cdot C_{eff}\cdot kv)$ 预测，按模型标定一个 $BW_{eff}$：
-**10 点跨 ~140×（6.4→900 tok/s）贴 y=x**
-（[fig_tmax_validation.png](pt_cap_gpu1/portfolio/fig_tmax_validation.png)）。
-
-| 模型 | BW_eff（实测标定） | 说明 |
-|---|--:|---|
-| Phi-3-mini | ~186 GB/s | chat/rag/code 隐含带宽 165–187 一致 → 验证可加 $D_{mem}$ 分解 |
-| Qwen2.5-7B | ~260 GB/s | 大权重流带宽利用率最高 |
-| Qwen2.5-3B / 1.5B | 65 / 57 GB/s | 小 hidden、多 launch，利用率低 |
-| Qwen3-4B-2507 | ~52 GB/s | 36 层小矩阵，同小 Qwen 一档 |
-
-$BW_{eff}$ 是**模型×硬件×引擎**属性（eager HF 的逐步 kernel 启动 + DynamicCache 每步全 KV
-cat 都被标定吸收）。显著残差：32k 超长上下文的稀疏 KV 读再打对折（summarize 落在预测线下方）。
-
-### 5.5 能效与容量规划要点
-
-- prefill 能效单峰（闭式 $P^*=P_{static}/(1-p/\theta)$；V100 峰 ≈40 tok/J @155 W）；
-  decode 峰在拐点 $P_2$ 附近（≈4–5 tok/J），过拐点单调降。
-- **同功率 prefill:decode 能效 ≈ 10:1**。
-- 功率封顶的操作含义：**decode 卡放心压到 $P_2$ 附近**（平台内免费省电）；prefill 卡压 cap
-  直接换吞吐，受 TTFT SLO 约束。机架级规划见 [rack_power_capping/](rack_power_capping/)：
-  **10 个实测 workload 归入 6 个应用类，每类一张机架配方**（含物理插槽上限约束）在
-  [rack_power_capping/v100/WORKLOADS.zh.md](rack_power_capping/v100/WORKLOADS.zh.md)；
-  真实 trace 的 P:D 统计见 [workload_analysis/](workload_analysis/)。
-- 推理型负载（长 CoT）：同一模型 C 1024→8192，平台 129→16 tok/s——**decode 极重 + 长 KV
-  的 2025 负载形态在功率规划里代价极高**。
-
-### 5.6 诚实的偏差清单
-
-1. `∝B` 偏弱：同 $D_{mem}$ 的 rag/code/longform 平台比 2.2:1.2:1（理论 4:2:1）——低 batch
-   下并发流不足以打满带宽，decode 偏延迟受限。
-2. $BW_{eff}$ 随负载浮动 52–260 GB/s（§5.4）——公式抓准访存**量**，有效**带宽**本身可变。
-3. classify 的"cap 失效区"散动（§5.2）。
-4. $p,\theta$ 是有效指数，近平坦曲线上弱可辨识（CSV 标记、边界抑制）。
-5. 全部为未热降频（冷启短测 + 热门控）口径；持续重载见 [schedule_lab/thermal_throttle/](schedule_lab/thermal_throttle/)。
-
----
-
-## 6. 跨硬件验证：H200（下一步）
-
-一键测量包已就绪并在 V100 上端到端验证（[H200_操作手册.md](H200_操作手册.md)）。预期：
-- **形状复现**：prefill 单段凹幂律、decode 三阶段 + 平台（HBM3e 运行内同样固定频率）；
-- **量级平移**：平台 ∝ 带宽（4.8 TB/s vs 0.9），约高一个量级；$P_{static}$ ~200 W 量级、
-  阶段边界整体右移；
-- 能量法窗口功率 + 降频门控已内建（Hopper 的 `power.draw` 是 ~1s 滑动平均，不可直接用）。
-
-## 7. 文件地图
-
-| 内容 | 文件 |
-|---|---|
-| **本总纲**（完整理论+结果） | `MODEL_AND_RESULTS.zh.md` |
-| prefill / decode 独立成篇（同一构建） | [prefill_model_theory.md](pt_cap_gpu1/prefill_model_theory.md) / [decode_model_theory.md](pt_cap_gpu1/decode_model_theory.md) |
-| 测量方法学 v3 证据链 | [DATA_QUALITY.zh.md](pt_cap_gpu1/portfolio/DATA_QUALITY.zh.md) |
-| portfolio 结果细节 | [RESULTS.zh.md](pt_cap_gpu1/portfolio/RESULTS.zh.md) |
-| 10 workload 配置 / 共享拟合库 | `portfolio/portfolio.py` / `portfolio/fitlib.py` |
-| 原始数据（V100 v3） | `portfolio/data/*.csv` + `meta.json`（元数据为事后补记） |
-| 总览（统一模型 vs 全部实测点） | `portfolio/fig_portfolio_grid.png` |
-| prefill / decode 新旧模型对比 | `fig_prefill_models.png` / `fig_decode_models.png` + 对应 CSV |
-| 天花板验证 | `portfolio/fig_tmax_validation.png` |
-| 单模型早期基线（**legacy**：变-batch frontier + 旧 min()） | `pt_cap_gpu1/fig_theory_vs_measured.png` |
-| 一键测量（H200/任意卡） | `portfolio/run_all.sh`（`--smoke` 验机） |
-| 机架级规划（V100，按 workload 类别的配方 + 经济性） | [rack_power_capping/v100/](rack_power_capping/v100/)，主文档 [WORKLOADS.zh.md](rack_power_capping/v100/WORKLOADS.zh.md) |
-| 真实 trace 的负载分类统计 | [workload_analysis/](workload_analysis/) |
+（若解出的 $P_2$ 低于 $P_{\mathrm{attn}}$，则改用计算受限段的式 (12) 反解，形式相同）。综合两条约束，goodput 在 $P\ge P_{\min}:=\max\lbrace P_1,P_2\rbrace $ 时等于 $X_{\mathrm{dec}}(P)$，否则为零。因此功率的合理工作区间为 $[P_{\min},,P_{\mathrm{lin}}]$：低于 $P_{\min}$ 将违反 SLO，高于 $P_{\mathrm{lin}}$ 则吞吐不再增长而徒耗电能。

@@ -1,11 +1,11 @@
 """Rack power capping per use-case class: OPT (caps float) vs TDP under physical constraints.
 
-Same rack problem as rack_power_capping/v100/solve_workloads.py — 5 kW budget, <=32 physical
+Same rack problem as rack_power_capping/solve_workloads.py — 5 kW budget, <=32 physical
 GPU slots, integer GPUs with >=1 per phase, caps confined to the measured [100, 250] W, decode
 never above its saturation cap — but solved for the 10 use-case classes of workload_ratios.csv:
 each class contributes its MEASURED aggregate P:D ratio (Lp = ratio_agg, Ld = 1) and the fitlib
 curves of the measured workload it maps onto (same MAP as plot_power_curves.py / the verified
-correspondence of WORKLOADS.zh.md §2). Solver AND curve construction are imported from
+correspondence of PLANNING.zh.md §2). Solver AND curve construction are imported from
 solve_workloads.py (load_workload is called directly, only Lp/Ld overridden with the class
 ratio) — nothing is re-implemented, so the two artifact sets cannot drift.
 
@@ -24,10 +24,12 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(HERE)
-sys.path.insert(0, os.path.join(ROOT, "rack_power_capping", "v100"))
+PARENT = os.path.dirname(HERE)                  # workload_analysis/
+ROOT = os.path.dirname(PARENT)
+sys.path.insert(0, os.path.join(ROOT, "rack_power_capping"))
+sys.path.insert(0, PARENT)
 import solve_workloads as SW                    # noqa: E402  (also puts fitlib on sys.path)
-from plot_power_curves import CAVEAT            # noqa: E402  (single source for mapping caveats)
+from curves_lib import CAVEAT                    # noqa: E402  (single source for mapping caveats)
 
 NAME = {"Generation 创作生成": "Generation", "General QA 常识问答": "General QA",
         "Brainstorming 头脑风暴": "Brainstorming", "Open QA 开放问答": "Open QA",
@@ -40,7 +42,7 @@ MAP = {"Generation 创作生成": "longform-phi3", "General QA 常识问答": "l
        "Extract 信息抽取": "classify-qwen7b", "Chat 多轮对话": "chat-phi3",
        "Closed QA 闭卷问答": "rag-phi3", "Code 代码补全": "code-phi3"}
 STAR = {"Chat 多轮对话", "Summarization 摘要", "Extract 信息抽取", "Closed QA 闭卷问答",
-        "Code 代码补全"}                        # mapping carries a caveat (WORKLOADS.zh.md §2)
+        "Code 代码补全"}                        # mapping carries a caveat (PLANNING.zh.md §2)
 BANDS = [("decode-heavy", 0.0, 0.5, "#d62728"),
          ("balanced", 0.5, 2.0, "#7f7f7f"),
          ("prefill-heavy", 2.0, np.inf, "#1f77b4")]
@@ -53,7 +55,7 @@ INK2 = "#52514e"
 
 
 def main():
-    rows = list(csv.DictReader(open(os.path.join(HERE, "workload_ratios.csv"))))
+    rows = list(csv.DictReader(open(os.path.join(PARENT, "workload_ratios.csv"))))
     classes = sorted([dict(klass=r["klass"], r=float(r["ratio_agg"])) for r in rows],
                      key=lambda c: c["r"])      # decode-heavy -> prefill-heavy
     by_id = {w["id"]: w for w in SW.PORTFOLIO}  # curves via THE canonical loader; Lp/Ld overridden
@@ -178,9 +180,9 @@ def main():
     fig.text(0.5, 0.005,
              "classes ordered decode-heavy -> prefill-heavy; label color = P:D band (red decode-heavy / "
              "gray balanced / blue prefill-heavy, as in fig_workload_pd.png); P:D = aggregate ratio from "
-             "workload_ratios.csv\ncurves & optimizer identical to rack_power_capping/v100 "
+             "workload_ratios.csv\ncurves & optimizer identical to rack_power_capping/ "
              "(solve_workloads.py)  ·  * = class-to-workload mapping carries an accounting/scale caveat "
-             "— see WORKLOADS.zh.md §2 / workload_power_curves.csv",
+             "— see PLANNING.zh.md §2 / workload_power_curves.csv",
              ha="center", fontsize=7.4, color=INK2)
     fig.tight_layout(rect=(0, 0.015, 1, 1))
     outp = os.path.join(HERE, "fig_workload_rack_capping.png")

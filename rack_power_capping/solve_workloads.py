@@ -5,7 +5,7 @@ code / long-form / summarization / translation / classification / reasoning ...)
 OWN prefill curve and ITS OWN decode curve (context baked in). WORKLOAD_CLASSES below groups them
 into 6 application classes by request shape (decode-dominant ... pure-prefill batch); the class —
 not a numeric ratio — is the unit of presentation everywhere downstream. Under the router
-assumption (每个机架专服一类应用, see WORKLOADS.zh.md) each workload gets its own rack recipe:
+assumption (每个机架专服一类应用, see workload_analysis/PLANNING.zh.md) each workload gets its own rack recipe:
 how many prefill/decode GPUs, each capped at what.
 
 INPUTS (nothing hand-set here):
@@ -27,7 +27,7 @@ import csv, os, sys
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(os.path.dirname(HERE))
+ROOT = os.path.dirname(HERE)
 PORT = os.path.join(ROOT, "pt_cap_gpu1", "portfolio")
 sys.path.insert(0, PORT)
 import fitlib                                   # noqa: E402

@@ -1,10 +1,13 @@
-# 真实 workload 的分类与机架配方（V100，5 kW / 32 卡）
+# 机架级规划框架与 workload 分类
 
-> 本目录唯一的机架文档：从"为什么按类规划"到"每类的配方与经济性"一篇讲完。
-> 求解器（唯一）：[`solve_workloads.py`](solve_workloads.py) · 图：[`fig_workloads.png`](fig_workloads.png) ·
-> 表：[`workloads_results.csv`](workloads_results.csv) · 经济性：[`economics.py`](economics.py) →
-> [`fig_payback.png`](fig_payback.png)。早期"合成 P:D 比例扫描"求解器与规划长文已并入本文/移除，
-> 见 git 历史。
+> 本文讲**为什么按 workload 类别规划机架**（规划框架）+ **分类怎么来的**（文献依据与实测映射）。
+> 按类的**图表与结果**是 workload_analysis 的产物：分类图 [`fig_workload_pd.png`](fig_workload_pd.png)、
+> 每类功率曲线 [`fig_workload_power_throughput.png`](v100/fig_workload_power_throughput.png) /
+> [`fig_workload_power_tokj.png`](v100/fig_workload_power_tokj.png)、每类机架配方
+> [`fig_workload_rack_capping.png`](v100/fig_workload_rack_capping.png)（V100；H200 见
+> [h200/](h200/)）、经济性见 [ECONOMICS.md](ECONOMICS.md)。求解器内核在
+> [../rack_power_capping/solve_workloads.py](../rack_power_capping/solve_workloads.py)，
+> 被 [`solve_rack_capping.py`](v100/solve_rack_capping.py) 直接复用。
 
 ## 1. 规划框架：为什么按 workload 类别规划机架
 
@@ -22,7 +25,7 @@ prefill/decode 长度、**上下文量级**、**延迟要求**都不同；把它
 预测配额，未做）。代价也在规划期可见：小众应用填不满一个机架的粒度浪费、以及对需求预测的依赖。
 
 不同类别的机架配方差异来自两个物理事实（详见总纲
-[MODEL_AND_RESULTS.zh.md](../../MODEL_AND_RESULTS.zh.md) §4–5）：一是**上下文决定 decode 天花板**
+[MODEL_AND_RESULTS.zh.md](../MODEL_AND_RESULTS.zh.md) §4–5）：一是**上下文决定 decode 天花板**
 （`T_max ∝ 1/C`）：同为一张 V100，chat 类实测平台 825 tok/s，32k 摘要只剩 6.4 tok/s——产出同一个
 token 的功率成本差两个数量级；二是**延迟 SLO 决定 cap 下界**：交互类压 cap 直接抬 TTFT/逐字延迟，
 批处理类可以一路压到能效甜点。
@@ -44,7 +47,7 @@ token 的功率成本差两个数量级；二是**延迟 SLO 决定 cap 下界**
 
 ### 分类的文献与数据依据（已核验）
 
-分类图：[../../workload_analysis/fig_workload_pd.png](../../workload_analysis/fig_workload_pd.png)。
+分类图：[fig_workload_pd.png](fig_workload_pd.png)。
 分类法不是自拟的，出处已逐条核验：**InstructGPT**[1] 的 Table 1 把真实 OpenAI API 提示流量分为
 **10 类**（Generation, Open QA, Brainstorming, Chat, Rewrite, Summarization, Classification,
 Other, Closed QA, Extract）。落地数据的覆盖情况如实说明：其中 **8 类有数据**（7 类来自
@@ -52,7 +55,7 @@ Other, Closed QA, Extract）。落地数据的覆盖情况如实说明：其中 
 Databricks 增设的自由问答类**；Chat 用生产 trace：Azure conv[3] + BurstGPT[4]）；Rewrite 无干净
 公开数据集未单列，Other 为杂项不计；另补一个**生产级 Code 代码补全类**（Azure code trace[3]，
 超出 2022 原分类法）。共 10 个使用类型，在 P:D 轴上落成三个带（decode-重 4 / 平衡 1 /
-prefill-重 5），统计脚本与完整数字见 [../../workload_analysis/](../../workload_analysis/)。
+prefill-重 5），统计脚本与完整数字见 本目录（workload_analysis）。
 
 **文献类 ↔ 实测 workload 的逐条对应**（双向核验；口径差异如实标注）：
 
@@ -95,8 +98,10 @@ prefill-重 5），统计脚本与完整数字见 [../../workload_analysis/](../
 
 ## 4. 结果：按类别的机架配方
 
-`OPT` = cap 浮动 + 花满预算 + 插槽感知；`TDP` = 全部 250 W。完整数字见
-[`workloads_results.csv`](workloads_results.csv)，图见 [`fig_workloads.png`](fig_workloads.png)。
+`OPT` = cap 浮动 + 花满预算 + 插槽感知；`TDP` = 全部 250 W。下表是求解器内核
+[solve_workloads.py](../rack_power_capping/solve_workloads.py) 独立运行的输出
+（per-measured-workload 视角，6 个 app-class）；按 10 类文献用途分类的展示图见
+[fig_workload_rack_capping.png](v100/fig_workload_rack_capping.png)。
 
 | 类别 | workload | OPT 配方（Np+Nd @ pre/dec W） | OPT tok/s | TDP tok/s | 增益 | rack tok/J（OPT/TDP） |
 |---|---|---|--:|--:|--:|---|
@@ -140,8 +145,9 @@ OPT 装满 32 张——**+36% ~ +62% 吞吐、同功率**，增益上限由插�
 ## 6. 经济性：同一个招式，按类分化的回本
 
 Capping 的账是"用同样的电装更多的卡"：每类机架 OPT 比 TDP 多 12 张卡（+$30k CapEx），换多出的
-token 收入（能耗两边相同，相抵）。按 $0.05/M 输入、$0.20/M 输出、卡价 $2500 计
-（[`economics.csv`](economics.csv) · [`fig_payback.png`](fig_payback.png)）：
+token 收入（能耗两边相同，相抵）。按 $0.05/M 输入、$0.20/M 输出、卡价 $2500 计（按类回本；
+跨时间的累计利润曲线、以及电价敏感的综合经济性见 [ECONOMICS.md](ECONOMICS.md) 与
+[fig_profit_over_time.png](fig_profit_over_time.png)）：
 
 | 类别 | 额外 CapEx 回本 |
 |---|---|
@@ -162,6 +168,6 @@ token 收入（能耗两边相同，相抵）。按 $0.05/M 输入、$0.20/M 输
 - **延迟 SLO 未入约束**：交互类（对话/RAG/代码）压 cap 会抬 TTFT 与逐字延迟，实际部署应给这些类
   的 cap 设下界；当前配方是纯吞吐最优。
 - **形状假设是类别级旋钮**（§2），不是实测分布；真实 trace 的比例统计见
-  [../../workload_analysis/](../../workload_analysis/)，可直接替换。
+  本目录（workload_analysis），可直接替换。
 - **机架间配额层**（每类分几个机架）是规划的第二层，尚未实现，输入是各类的需求预测。
-- **H200 复算**：`data_h200` 决胜数据齐后，同一求解器换数据目录即可出 `rack_power_capping/h200/`。
+- **H200 复算**：已完成——同一求解器换数据目录（`data_h200`）跑出 H200 版，见 [h200/](h200/)。

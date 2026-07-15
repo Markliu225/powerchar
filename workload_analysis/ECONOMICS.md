@@ -6,7 +6,7 @@
 
 > ⚠️ 这是**纯吞吐/能耗**经济模型，**未建模延迟/SLO**。综合里 92%(Chat+Code)是交互类,压 cap 会
 > 抬 TTFT/逐字延迟——真实会掉收入或违 SLO。所以下面算出的"利润最优 cap"是**对交互流量能压多深的
-> 上界**,不是目标值(与机架长文 [WORKLOADS.zh.md §7](../rack_power_capping/v100/WORKLOADS.zh.md) 同款局限)。
+> 上界**,不是目标值(与机架长文 [PLANNING.zh.md §7](PLANNING.zh.md) 同款局限)。
 
 > 脚本 [`plot_composite_economics.py`](plot_composite_economics.py) →
 > [`fig_composite_economics.png`](fig_composite_economics.png)(利润 vs cap)·
@@ -17,11 +17,11 @@
 > [`plot_profit_over_time.py`](plot_profit_over_time.py) →
 > [`fig_profit_over_time.png`](fig_profit_over_time.png) · [`profit_over_time.csv`](profit_over_time.csv)——见下节。
 
-## 与仓库既有经济分析的区别
+## 与"利润 vs 时间"图的区别
 
-[rack_power_capping/v100/economics.py](../rack_power_capping/v100/economics.py) 固定机架功率预算,
-让两个机队(capped / 不 capped)**能耗相抵**,所以它的回本是**线性、与电价无关**的。这里问相反的、
-更真实的问题:综合 workload 下,**能耗不相抵**时,利润随 cap 与电价如何变化。
+[plot_profit_over_time.py](plot_profit_over_time.py)(利润 vs 时间)固定机架功率预算,让两个机队
+(capped / 不 capped)**能耗相抵**,回本主要由"多买的卡 vs 多卖的 token"驱动。这里问相反的、
+更真实的问题:综合 workload 下,**能耗不相抵**时,利润随 cap 与电价如何变化(有内部最优 cap)。
 
 ## 综合 workload(数据集规模加权)
 
@@ -33,7 +33,7 @@
   映射 workload 的 fitlib 拟合曲线与实测 `power_avg_w`(V100 portfolio / data_h200)。**注意口径**:
   token 数来自真实 trace,吞吐/功耗曲线来自映射 workload 在**其自身上下文规模**下的实测(如 Chat 用
   chat-phi3 的 ctx=256 decode 曲线,而 trace 里 Chat 请求上千 token)——因 `T_max ∝ 1/C`,这会**高估
-  decode 吞吐、低估 decode 成本**,使利润偏乐观。是标准映射 caveat(WORKLOADS.zh.md §2),$ 数值取近似。
+  decode 吞吐、低估 decode 成本**,使利润偏乐观。是标准映射 caveat(PLANNING.zh.md §2),$ 数值取近似。
 
 ## 为什么是非线性(核心机制)
 

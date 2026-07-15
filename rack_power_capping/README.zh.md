@@ -1,28 +1,13 @@
-# rack_power_capping — 机架级功率封顶规划
+# rack_power_capping — 机架级功率封顶求解器（共享内核）
 
-单卡的 P↔T 曲线（见根目录 [MODEL_AND_RESULTS.zh.md](../MODEL_AND_RESULTS.zh.md)）向上聚合成
-机架级决策：给定机架功率预算 W 与**物理插槽上限 N_GPU_MAX**，按 **workload 类别**决定
-prefill / decode 各配几张卡、每张卡 cap 到多少瓦，以及每类的吞吐/能效/回本。
-
-**按硬件分目录**——每种卡的曲线、求解结果、图表自成一套：
-
-| 目录 | 硬件 | 状态 |
-|---|---|---|
-| [v100/](v100/) | Tesla V100-DGXS-32GB（portfolio v3 实测曲线） | ✅ 完整 |
-| h200/ | H200（曲线待 `data_h200` 决胜数据） | ⏳ 计划 |
-
-## v100/ 内容
+本目录只留 **共享求解器内核**。机架级规划的**分析、图、文档、经济性**已统一到
+[../workload_analysis/](../workload_analysis/)（按 10 类文献用途分类，V100 + H200；见
+[../workload_analysis/PLANNING.zh.md](../workload_analysis/PLANNING.zh.md) 与
+[../workload_analysis/README.md](../workload_analysis/README.md)）。
 
 | 文件 | 作用 |
 |---|---|
-| [WORKLOADS.zh.md](v100/WORKLOADS.zh.md) | **唯一文档**：规划框架 → workload 分类（6 类 × 10 实测负载）→ 每类机架配方 → 分析与经济性 |
-| [solve_workloads.py](v100/solve_workloads.py) | **唯一求解器**（含 N_GPU_MAX 物理约束）：分类定义 + 按类求配方 → `workloads_results.csv` |
-| [plot_workloads.py](v100/plot_workloads.py) | → `fig_workloads.png`（按类别标注的配方三联图） |
-| [economics.py](v100/economics.py) | 按类回本分析 → `economics.csv` / `fig_payback.png` |
+| [solve_workloads.py](solve_workloads.py) | **求解器内核**：`load_workload`（fitlib 拟合单卡曲线）、`solve_opt` / `solve_tdp`（整数卡、每相 ≥1、`N_GPU_MAX` 插槽墙、cap∈实测区间、decode 不超饱和 cap、花满预算）、`sweet_spot`（tok/J 按**实测功耗**计）、`cont_bound`。`workload_analysis/{v100,h200}/solve_rack_capping.py` 直接 import 它并重定向数据目录/场景参数——不重复实现，两侧结果不会漂移。 |
 
-```bash
-cd v100
-python3 solve_workloads.py   # 每类 workload 的机架配方
-python3 plot_workloads.py    # 配方图
-python3 economics.py         # 按类回本
-```
+内核也可独立运行做自检（`python3 solve_workloads.py` → 打印 6 个 app-class 的配方表、
+写 `workloads_results.csv`），但正式展示以 `workload_analysis/` 的按类图表为准。

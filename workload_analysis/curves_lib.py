@@ -1,0 +1,231 @@
+"""Per-use-case-class power curves: power vs throughput & power vs tok/J, PER PHASE (log y).
+
+For the 10 use-case classes of workload_ratios.csv (the InstructGPT/Dolly/trace taxonomy — see
+README + REFERENCES.zh.md), each maps onto a measured workload (the verified correspondence of
+PLANNING.zh.md §2, same MAP as fig_workload_pd.png). Per class, the PREFILL and DECODE curves of
+that workload are co-plotted on ONE panel; they sit 1-2 orders of magnitude apart, so the y-axis
+is LOG. The rack solver caps each phase on its own curve, so the per-phase curves are the primitives.
+
+    model (MODEL_AND_RESULTS.zh.md): prefill is compute-bound throughout → X_pre ∝ φ(P) (linear in
+    f_sm); decode per-token time is a SUM of two rooflines + overhead, τ=max(a/x,b)+max(c/x,d)+e →
+    X_dec=1/τ, giving three segments (compute-bound rise → attention saturates → bandwidth plateau).
+    throughput:  T_pre(P), T_dec(P)   fitlib.fit_{prefill,decode}_theory over the measured power range
+    efficiency:  T_phase / MEASURED draw (power_avg_w)   tok/J from throughput & measured power —
+                 NOT the set cap, NOT the CSV tok_per_joule column (energy-counter, unreliable);
+                 decode's cap under-enforces at low cap so the two differ.  ring = per-phase sweet spot
+
+Dots = raw measured grid. The class's aggregate P:D ratio labels identity; it enters no curve.
+
+SHARED LIBRARY: this module holds the taxonomy (NAME/MAP/CAVEAT/BANDS), the fit loader
+(load_curves), and the figure builder (build_power_figs). It is imported — not run — by the
+per-hardware wrappers v100/plot_power_curves.py and h200/plot_power_curves.py (which set DATA /
+CAP_LO / CAP_HI / F_MAX and call build_power_figs), and by solve_rack_capping.py (taxonomy) and
+plot_composite_economics.py (NAME/MAP). One implementation, so the two hardwares cannot drift.
+"""
+from __future__ import annotations
+import csv, os, sys
+import numpy as np
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+PORT = os.path.join(ROOT, "pt_cap_gpu1", "portfolio")
+sys.path.insert(0, PORT)
+import fitlib                                   # noqa: E402
+
+DATA = os.path.join(PORT, "data")
+F_MAX = fitlib.resolve_f_max(DATA)
+CAP_LO, CAP_HI = 100.0, 250.0                   # measured cap range — never extrapolate
+
+NAME = {"Generation 创作生成": "Generation", "General QA 常识问答": "General QA",
+        "Brainstorming 头脑风暴": "Brainstorming", "Open QA 开放问答": "Open QA",
+        "Classification 分类": "Classification", "Summarization 摘要": "Summarization",
+        "Extract 信息抽取": "Extract", "Chat 多轮对话": "Chat (dialogue)",
+        "Closed QA 闭卷问答": "Closed QA", "Code 代码补全": "Code (completion)"}
+# class -> measured workload whose curves it maps onto (PLANNING.zh.md §2 mapping, resolved to
+# each class's anchor member of WORKLOAD_CLASSES where a class has several)
+MAP = {"Generation 创作生成": "longform-phi3", "General QA 常识问答": "longform-phi3",
+       "Brainstorming 头脑风暴": "longform-phi3", "Open QA 开放问答": "longform-phi3",
+       "Classification 分类": "translate-qwen3b", "Summarization 摘要": "summarize-qwen7b",
+       "Extract 信息抽取": "classify-qwen7b", "Chat 多轮对话": "chat-phi3",
+       "Closed QA 闭卷问答": "rag-phi3", "Code 代码补全": "code-phi3"}
+MODEL_SHORT = {"longform-phi3": "Phi-3-mini", "chat-phi3": "Phi-3-mini",
+               "translate-qwen3b": "Qwen2.5-3B", "rag-phi3": "Phi-3-mini",
+               "code-phi3": "Phi-3-mini", "summarize-qwen7b": "Qwen2.5-7B",
+               "classify-qwen7b": "Qwen2.5-7B"}
+# P:D bands, same thresholds & colors as fig_workload_pd.png (color follows the band entity)
+BANDS = [("decode-heavy", 0.0, 0.5, "#d62728"),
+         ("balanced", 0.5, 2.0, "#7f7f7f"),
+         ("prefill-heavy", 2.0, np.inf, "#1f77b4")]
+PRE_C, DEC_C = "#1f77b4", "#ff7f0e"             # phase colors (repo fleet palette)
+INK, INK2, MUTE, GRID = "#0b0b0b", "#52514e", "#898781", "#e1e0d9"
+
+# classes whose mapping carries an accounting/scale caveat in PLANNING.zh.md §2 (starred)
+CAVEAT = {"Chat 多轮对话": "trace accounting (full history re-prefilled per turn); serving shape with KV reuse ~1:2",
+          "Summarization 摘要": "Dolly short-doc 2.3:1 on 32k production-scale curves",
+          "Extract 信息抽取": "Dolly 3.1:1 on production-scale curves (class shape 100:1); near-flat decode, fit R2<0 - read the dots",
+          "Closed QA 闭卷问答": "Dolly 6.2:1 on ~4k RAG-scale curves (class shape 10:1)",
+          "Code 代码补全": "2023 completion-trace 73.5:1; the rack doc plans with a conservative 10:1"}
+
+FOOT = ("curves: updated first-principles theory (MODEL_AND_RESULTS.zh.md) — prefill X∝φ(P) linear in f_sm; "
+        "decode τ=max(a/x,b)+max(c/x,d)+e (two rooflines + overhead), X=1/τ  ·  dots: raw measured grid\n"
+        "x = enforced cap (decode) / measured draw (H200 clock-swept prefill)  ·  P:D = class aggregate ratio (labels the class)  ·  "
+        "tok/J = T_phase / MEASURED draw (power_avg_w), not the set cap, not the CSV column  ·  "
+        "* = mapping caveat (PLANNING.zh.md §2); where dots deviate (Extract: near-flat decode) read the dots")
+
+ratio_str = lambda x: f"{x:.1f}:1" if x >= 1 else f"1:{1/x:.0f}"
+band_of = lambda r: next(b for b in BANDS if b[1] <= r < b[2])
+fmt = lambda v: (f"{v/1e3:.1f}k" if v >= 1e3 else f"{v:.0f}" if v >= 100
+                 else f"{v:.1f}" if v >= 10 else f"{v:.2f}")
+
+
+def _read(path):
+    """(power_axis, throughput, sm_clk, measured_draw, rows). Power axis = ENFORCED cap when swept
+    (decode); when cap is fixed and the SM CLOCK is swept (H200 prefill), the MEASURED draw
+    power_avg_w. Measured draw is always returned separately (the tok/J denominator)."""
+    rows = [r for r in csv.DictReader(open(path)) if float(r["throughput_tok_s"]) > 0]
+    cap = np.array([float(r["cap_w"]) for r in rows])
+    thr = np.array([float(r["throughput_tok_s"]) for r in rows])
+    clk = np.array([float(r["sm_clk_avg"]) for r in rows])
+    pwr = np.array([float(r["power_avg_w"]) for r in rows])   # MEASURED draw (energy-window avg)
+    P = cap if np.ptp(cap) > 1e-6 else pwr
+    return P, thr, clk, pwr, rows
+
+
+def load_curves(wid):
+    """fitlib fits + raw per-phase points for one measured workload (same recipe as the rack solver)."""
+    Pp, Tp, Fp, Wp, prow = _read(os.path.join(DATA, f"{wid}_prefill.csv"))
+    Pd, Td, Fd, Wd, drow = _read(os.path.join(DATA, f"{wid}_decode.csv"))
+    B = float(drow[0]["batch"])
+    # UPDATED first-principles theory (MODEL_AND_RESULTS.zh.md): prefill LINEAR in phi;
+    # decode = sum of two rooflines + overhead (three segments). See fitlib.fit_*_theory.
+    preT, pre = fitlib.fit_prefill_theory(Pp, Tp, Fp, F_MAX)
+    decT, dec = fitlib.fit_decode_theory(Pd, Td, Fd, B, F_MAX)
+
+    def _pwr_of(x, w):                                          # MEASURED draw as a fn of the fit's power axis
+        o = np.argsort(x)                                      # (prefill: axis IS measured draw -> identity;
+        return lambda q: np.interp(np.asarray(q, float), x[o], w[o])   # decode: cap axis -> map cap to draw)
+    return dict(Tpre=lambda q: np.maximum(preT(np.clip(np.asarray(q, float), CAP_LO, CAP_HI)), 1e-9),
+                Tdec=lambda q: np.maximum(decT(np.clip(np.asarray(q, float), CAP_LO, CAP_HI)), 1e-9),
+                pre_x=Pp, pre_y=Tp, dec_x=Pd, dec_y=Td,
+                pre_pwr=Wp, dec_pwr=Wd, pre_pwr_of=_pwr_of(Pp, Wp), dec_pwr_of=_pwr_of(Pd, Wd),
+                pre_rng=(float(Pp.min()), float(Pp.max())), dec_rng=(float(Pd.min()), float(Pd.max())),
+                pre=pre, dec=dec, ctx=drow[0]["ctx"], b_dec=drow[0]["batch"])
+
+
+def _phase_series(cv, phase, metric, g):
+    """(gg, curve_y, dot_x, dot_y, color) for one phase & metric ('T' throughput | 'E' tok/J)."""
+    if phase == "pre":
+        rng, fn, x, y, w, wof, c = cv["pre_rng"], cv["Tpre"], cv["pre_x"], cv["pre_y"], cv["pre_pwr"], cv["pre_pwr_of"], PRE_C
+    else:
+        rng, fn, x, y, w, wof, c = cv["dec_rng"], cv["Tdec"], cv["dec_x"], cv["dec_y"], cv["dec_pwr"], cv["dec_pwr_of"], DEC_C
+    gg = g[(g >= rng[0]) & (g <= rng[1])]
+    if metric == "T":
+        return gg, fn(gg), x, y, c
+    return gg, fn(gg) / wof(gg), x, y / w, c        # tok/J = fitted T / MEASURED draw; dots = raw T / raw draw
+
+
+def _panel(ax, cl, cv, metric, g):
+    """One class panel: BOTH phases co-plotted on a LOG y-axis (they sit 1-2 orders apart)."""
+    ax.set_yscale("log")
+    mid = (CAP_LO + CAP_HI) / 2
+    dys = []
+    for phase in ("pre", "dec"):
+        gg, curve, dx, dy, c = _phase_series(cv, phase, metric, g)
+        ax.plot(gg, curve, color=c, lw=2, zorder=3)
+        ax.plot(dx, dy, "o", ms=4.5, color=c, mec="white", mew=0.9, zorder=4)
+        if metric == "E":
+            i = int(np.argmax(curve)); right = gg[i] > mid
+            ax.plot(gg[i], curve[i], "o", ms=8, mfc="none", mec=INK, mew=1.2, zorder=5)
+            ax.annotate(f"{gg[i]:.0f}W · {fmt(curve[i])}", (gg[i], curve[i]), textcoords="offset points",
+                        xytext=(-7, 4) if right else (7, 4), ha="right" if right else "left",
+                        fontsize=7.6, color=c)
+        else:
+            ax.annotate(fmt(curve[-1]), (gg[-1], curve[-1]), textcoords="offset points",
+                        xytext=(-2, 6), ha="right", fontsize=7.8, color=c)
+        dys.append(dy)
+    lo = min(float(dys[0].min()), float(dys[1].min())); hi = max(float(dys[0].max()), float(dys[1].max()))
+    ax.set_ylim(lo * 0.35, hi * (5 if metric == "E" else 3.2))
+    bname, _, _, bcol = band_of(cl["r"])
+    star = "*" if cl["klass"] in CAVEAT else ""
+    ax.set_title(f"{NAME[cl['klass']]}   P:D {ratio_str(cl['r'])}{star}", fontsize=10.5, color=INK, pad=22)
+    ax.text(0.5, 1.10, f"via {MAP[cl['klass']]} · {MODEL_SHORT.get(MAP[cl['klass']], '')} · "
+            f"dec {cv['ctx']}×{cv['b_dec']}", transform=ax.transAxes, ha="center", fontsize=7.3, color=INK2)
+    ax.text(0.03, 0.96, bname, transform=ax.transAxes, ha="left", va="top", fontsize=7.8, color=bcol, weight="bold")
+    ax.set_xlim(CAP_LO * 0.92, CAP_HI * 1.03)
+    ax.grid(alpha=.45, color=GRID, lw=0.7, which="both")
+    ax.tick_params(labelsize=8, colors=MUTE)
+    [s.set_visible(False) for s in (ax.spines["top"], ax.spines["right"])]
+    [ax.spines[s].set_color(GRID) for s in ("left", "bottom")]
+
+
+def build_power_figs(ratios_path, out_dir, hw, xlab):
+    """Per-use-case-class panels (both phases co-plotted, LOG y) for throughput and tok/J, + the
+    per-class CSV. Reads DATA/F_MAX/CAP_* module globals (H200 overrides them), so one implementation
+    serves both hardwares."""
+    rows = list(csv.DictReader(open(ratios_path)))
+    classes = sorted([dict(klass=r["klass"], r=float(r["ratio_agg"])) for r in rows
+                      if os.path.exists(os.path.join(DATA, f"{MAP[r['klass']]}_prefill.csv"))],
+                     key=lambda c: c["r"])       # decode-heavy -> prefill-heavy
+    curves = {wid: load_curves(wid) for wid in sorted({MAP[c["klass"]] for c in classes})}
+    g = np.linspace(CAP_LO, CAP_HI, 1501)
+    n = len(classes); ncol = 5; nrow = int(np.ceil(n / ncol))
+
+    for metric, fname, ylab, ttl in [
+        ("T", "fig_workload_power_throughput.png", "throughput (tok/s, log)",
+         f"Power vs throughput on {hw} — first-principles theory (prefill X∝φ; decode = two-roofline sum) vs measured, per use-case class (log)"),
+        ("E", "fig_workload_power_tokj.png", "efficiency (tok/J on measured draw, log)",
+         f"Power vs energy efficiency (tok/J) on {hw} — first-principles theory; tok/J = T / MEASURED draw; rings = per-phase sweet spot (log)")]:
+        fig, axes = plt.subplots(nrow, ncol, figsize=(16, 3.7 * nrow), squeeze=False)
+        axes = axes.ravel()
+        for j, cl in enumerate(classes):
+            _panel(axes[j], cl, curves[MAP[cl["klass"]]], metric, g)
+        for ax in axes[n:]:
+            ax.set_visible(False)
+        for ax in axes[(nrow - 1) * ncol:n]:
+            ax.set_xlabel(xlab, fontsize=8.5, color=INK2)
+        for k in range(0, n, ncol):
+            axes[k].set_ylabel(ylab, fontsize=8.5, color=INK2)
+        fig.legend(handles=[Line2D([], [], color=PRE_C, lw=2, label="prefill"),
+                            Line2D([], [], color=DEC_C, lw=2, label="decode")],
+                   loc="upper right", bbox_to_anchor=(0.99, 0.99), fontsize=9, frameon=False)
+        fig.suptitle(ttl, fontsize=12.5, color=INK)
+        fig.text(0.5, 0.012, FOOT, ha="center", fontsize=7.2, color=INK2)
+        fig.tight_layout(rect=(0, 0.06, 1, 0.92))
+        fig.savefig(os.path.join(out_dir, fname), dpi=130, bbox_inches="tight")
+        plt.close(fig)
+        print("wrote", os.path.join(out_dir, fname))
+
+    _write_csv(classes, curves, out_dir, g)
+
+
+def _write_csv(classes, curves, out_dir, g):
+    """Per-class summary (sweet caps, tok/J on measured draw, plateau throughput, fit R²)."""
+    out = []
+    for cl in classes:
+        cv = curves[MAP[cl["klass"]]]
+        gp = g[(g >= cv["pre_rng"][0]) & (g <= cv["pre_rng"][1])]
+        gd = g[(g >= cv["dec_rng"][0]) & (g <= cv["dec_rng"][1])]
+        Tp, Td = cv["Tpre"](gp), cv["Tdec"](gd)
+        Ep, Ed = Tp / cv["pre_pwr_of"](gp), Td / cv["dec_pwr_of"](gd)   # tok/J on MEASURED draw
+        ip, id_ = int(np.argmax(Ep)), int(np.argmax(Ed))
+        d_sat = float(gd[int(np.argmax(Td >= 0.995 * Td[-1]))])
+        out.append({"klass": cl["klass"], "band": band_of(cl["r"])[0], "ratio_agg": cl["r"],
+                    "via_workload": MAP[cl["klass"]], "mapping_caveat": CAVEAT.get(cl["klass"], ""),
+                    "pre_sweet_cap_w": round(float(gp[ip])), "pre_tok_per_j_sweet": round(float(Ep[ip]), 3),
+                    "pre_tok_s_caphi": round(float(Tp[-1]), 1),
+                    "dec_sweet_cap_w": round(float(gd[id_])), "dec_tok_per_j_sweet": round(float(Ed[id_]), 3),
+                    "dec_tok_s_caphi": round(float(Td[-1]), 1), "dec_sat_cap_w": round(d_sat),
+                    "pre_fit_R2": round(cv["pre"]["R2"], 3), "dec_fit_R2": round(cv["dec"]["R2"], 3)})
+    path = os.path.join(out_dir, "workload_power_curves.csv")
+    with open(path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(out[0].keys())); w.writeheader(); [w.writerow(r) for r in out]
+    print(f"wrote {os.path.basename(path)}")
+
+
+if __name__ == "__main__":
+    raise SystemExit("curves_lib.py is a shared library — run v100/plot_power_curves.py or "
+                     "h200/plot_power_curves.py instead.")

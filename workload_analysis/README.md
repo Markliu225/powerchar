@@ -1,6 +1,6 @@
 # LLM 推理工作负载分析 —— 按使用类型的 prefill : decode 比例
 
-用**文献里公认的分类法**把 LLM 推理负载分成若干使用类型,并用**真实数据**量化每类的 prefill(输入)/ decode(输出)token 比例,为上层机架功率规划([../rack_power_capping/v100/WORKLOADS.zh.md](../rack_power_capping/v100/WORKLOADS.zh.md))提供真实的 `R_eff`,替代拍脑袋的 1:1 / 1:10。
+用**文献里公认的分类法**把 LLM 推理负载分成若干使用类型,并用**真实数据**量化每类的 prefill(输入)/ decode(输出)token 比例,为上层机架功率规划([PLANNING.zh.md](PLANNING.zh.md))提供真实的 `R_eff`,替代拍脑袋的 1:1 / 1:10。
 
 > **分类法的文献依据、数据集出处、引用链接、完整结果与 caveat,见 [REFERENCES.zh.md](REFERENCES.zh.md)。**
 
@@ -26,17 +26,18 @@
 
 - `analyze.py` —— 拉数据 + 分词 → `workload_ratios.csv`
 - `plot.py` —— → `fig_workload_pd.png`
-- `plot_power_curves.py` —— 每类的 V100 功率曲线,**prefill / decode 两相分开画**(映射同
-  `fig_workload_pd.png` 右栏;两相吞吐差 1–2 个数量级,对数轴;与 disaggregated 规划口径一致) →
-  `fig_workload_power_throughput.png`(power vs 吞吐)·`fig_workload_power_tokj.png`
-  (power vs tok/J,含每相能效甜点环)·`workload_power_curves.csv`(每类两相的甜点
-  cap / tok/J、250 W 吞吐、decode 饱和 cap)
-- `solve_rack_capping.py` —— 加上机架物理约束(5 kW / ≤32 槽 / cap∈[100,250] W),对每类求
-  OPT(cap 浮动)vs TDP(全 250 W)配方,优化内核直接 import 自
-  `../rack_power_capping/v100/solve_workloads.py` → `fig_workload_rack_capping.png`
-  (吞吐提升 + GPU 数量/劈分变化)·`workload_rack_capping.csv`
-- `h200/` —— 同一流程跑在 H200 数据(`../data_h200`,cap 200–700 W;机架场景等比缩放为
-  14 kW / 32 槽 / TDP 700 W),脚本复用本目录与求解器模块,见 [h200/README.md](h200/README.md)
+- `curves_lib.py` —— **共享库**(不单独运行):分类法(NAME/MAP/CAVEAT)、曲线加载(load_curves,
+  按更新的一阶理论 `fitlib.fit_*_theory` 拟合)、图构造(build_power_figs)。由 v100/ 与 h200/ 的
+  包装器、以及 solve_rack_capping / plot_composite_economics 直接 import——一套实现,两硬件不漂移。
+- `v100/` —— **V100 版**(与 h200/ 对称):
+  - `plot_power_curves.py`(包装器)→ `v100/fig_workload_power_throughput.png` ·
+    `fig_workload_power_tokj.png`(prefill/decode 每类曲线,对数轴;tok/J 按实测功耗)·
+    `workload_power_curves.csv`
+  - `solve_rack_capping.py`(机架物理约束 5 kW / ≤32 槽 / cap∈[100,250] W,OPT vs TDP,优化内核
+    import 自 `../../rack_power_capping/solve_workloads.py`)→ `v100/fig_workload_rack_capping.png` ·
+    `workload_rack_capping.csv`
+- `h200/` —— 同一流程跑在 H200 数据(`../data_h200`,cap 200–700 W;机架场景 14 kW / 32 槽 /
+  TDP 700 W),脚本复用 `curves_lib` 与求解器内核,见 [h200/README.md](h200/README.md)
 - `plot_composite_economics.py` —— 综合 workload(10 类按真实比例 `n` 共存)的**非线性经济
   收益曲线**,V100 & H200:利润随 cap(收入固定,成本 = CapEx↓ + 电价·瓦特↑ → 内部最优随电价滑)
   与随电价的敏感性(uniform vs disaggregated vs TDP) → `fig_composite_economics.png` ·
@@ -52,8 +53,8 @@
 ```bash
 python3 workload_analysis/analyze.py
 python3 workload_analysis/plot.py
-python3 workload_analysis/plot_power_curves.py
-python3 workload_analysis/solve_rack_capping.py
+python3 workload_analysis/v100/plot_power_curves.py
+python3 workload_analysis/v100/solve_rack_capping.py
 python3 workload_analysis/plot_composite_economics.py
 python3 workload_analysis/plot_profit_over_time.py
 ```

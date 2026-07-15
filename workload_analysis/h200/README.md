@@ -2,7 +2,7 @@
 
 把 [../](../)(V100)的两步流程跑在 **H200 数据**(`../../data_h200/`,F_MAX 1980 MHz)上。
 分类、P:D 比例、类别↔实测 workload 映射与 caveat 全部**从 V100 脚本 import**,不另拷贝;曲线加载器
-与机架求解器同样直接复用(`../plot_power_curves.py`、`rack_power_capping/v100/solve_workloads.py`),
+与机架求解器同样直接复用(`../curves_lib.py`、`rack_power_capping/solve_workloads.py`),
 仅在运行时把数据目录 / 功率区间 / 场景参数重定向到 H200。
 
 ## 数据修订(2026-07-15)——`classify-qwen7b` 补测,Extract 回归 → **10 类齐**

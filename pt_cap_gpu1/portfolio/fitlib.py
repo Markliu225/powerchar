@@ -9,6 +9,11 @@ One law for both phases (see ../prefill_model_theory.md and ../decode_model_theo
   PREFILL (T_mem -> 0):  Throughput(P) = T_fmax * x(P)^p          single concave power law
   DECODE  (T_mem floor): Throughput(P) = B / (T_mem + Cc*(x(P)^-p - 1))   three stages + plateau
 
+UPDATED first-principles theory (MODEL_AND_RESULTS.zh.md), used by the power-vs-throughput /
+power-vs-tok/J figures — fit_prefill_theory / fit_decode_theory at the bottom of this file:
+  PREFILL:  X_pre(P) = a * phi(P)                     linear in f_sm (compute-bound throughout)
+  DECODE :  X_dec(P) = 1 / [max(a/x,b) + max(c/x,d) + e]   sum of two rooflines + overhead
+The legacy fits above are kept for the rack solver and the old-vs-new comparison plots.
 All plot scripts import from here so the figures can never drift apart.
 """
 from __future__ import annotations
@@ -124,4 +129,64 @@ def fit_decode_additive(P, T, F, B, f_max):
               T_plateau=T_plateau, T_max=T_plateau, P1=P1, P2=P2, edge=edge,
               R2_clk=r2(T, B / (T_mem + Cc * (x ** (-p) - 1.0))),
               R2=r2(T, T_of_P(P)), relRMSE=rel_rmse(T, T_of_P(P)))
+    return T_of_P, pr
+
+
+# ================================================================= UPDATED first-principles theory
+# The analytical model of MODEL_AND_RESULTS.zh.md. Relative frequency phi=f_sm/f_max is the shared
+# knob; both phases plug F(P)=eta_C*F_peak*phi into a roofline per-token time. These are the forms
+# the power-vs-throughput / power-vs-tok/J figures draw (plot_power_curves.py); the legacy fits above
+# are kept for the rack solver and the old-vs-new comparison plots.
+
+def fit_prefill_theory(P, T, F, f_max):
+    """§3: prefill is compute-bound over the whole range, so throughput is LINEAR in phi:
+        X_pre(P) = a * phi(P),   phi(P)=x(P)=((P-P_s)/chi)^(1/theta)   (exponent 1, i.e. X ∝ f_sm).
+    a = eta_C^pre * F_peak / (2N + 2Lds) is fit as one scale (LS through the origin in x)."""
+    x = np.clip(F / f_max, 1e-3, 1.0)
+    Ps, chi, th, th_railed = fit_power_side(P, x)
+    a = float(np.sum(x * T) / np.sum(x * x))            # X = a*x, least squares through origin
+
+    def T_of_P(Q):
+        return a * _x_of_P(Q, Ps, chi, th)
+
+    pr = dict(P_s=Ps, chi=chi, theta=th, a=a, T_fmax=a, p=1.0, th_railed=th_railed,
+              R2_clk=r2(T, a * x), R2=r2(T, T_of_P(P)), relRMSE=rel_rmse(T, T_of_P(P)))
+    return T_of_P, pr
+
+
+def fit_decode_theory(P, T, F, B, f_max):
+    """§4: decode per-token time is the SUM of two rooflines (linear part + attention part) plus a
+    fixed per-token overhead, x=f_sm/f_max:
+        tau(x) = max(a/x, b) + max(c/x, d) + e,   X_dec = 1/tau.
+        a,c = compute times (∝1/phi) of the linear / attention parts at f_max;
+        b,d = their bandwidth-bound (phi-independent) times; e = T0/B.
+    Three segments emerge as phi rises: both compute-bound (X∝phi) -> attention saturates (mixed) ->
+    both bandwidth-bound (plateau X=1/(b+d+e)). Fit (a,b,c,d,e)>=0 to measured (x, 1/T)."""
+    from scipy.optimize import least_squares
+    x = np.clip(F / f_max, 1e-3, 1.0)
+    Ps, chi, th, th_railed = fit_power_side(P, x)
+    tau = 1.0 / np.asarray(T, float)                    # measured per-token time (s)
+
+    def rt(par, xx):
+        a, b, c, d, e = par
+        return np.maximum(a / xx, b) + np.maximum(c / xx, d) + e
+
+    tau_plat = float(np.min(tau))                       # plateau ~ b+d+e (fastest = highest throughput)
+    o = np.argsort(x)
+    comp = float(tau[o[0]] * x[o[0]])                   # tau*x at lowest clock ~ (a+c)
+    p0 = [0.5 * comp, 0.35 * tau_plat, 0.5 * comp, 0.35 * tau_plat, 0.15 * tau_plat]
+    res = least_squares(lambda par: rt(par, x) - tau, p0, bounds=(1e-12, np.inf),
+                        method="trf", max_nfev=20000)
+    a, b, c, d, e = (float(v) for v in res.x)
+
+    def T_of_P(Q):
+        xx = _x_of_P(Q, Ps, chi, th)
+        return 1.0 / (np.maximum(a / xx, b) + np.maximum(c / xx, d) + e)
+
+    T_plateau = 1.0 / (b + d + e)
+    xk = sorted([min(a / b, 1.0), min(c / d, 1.0)])     # the two compute->bandwidth crossover clocks
+    P1, P2 = (Ps + chi * xk[0] ** th, Ps + chi * xk[1] ** th)
+    pr = dict(P_s=Ps, chi=chi, theta=th, a=a, b=b, c=c, d=d, e=e, th_railed=th_railed,
+              T_plateau=T_plateau, T_max=T_plateau, P1=P1, P2=P2,
+              R2_clk=r2(T, 1.0 / rt(res.x, x)), R2=r2(T, T_of_P(P)), relRMSE=rel_rmse(T, T_of_P(P)))
     return T_of_P, pr

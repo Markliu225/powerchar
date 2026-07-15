@@ -1,2 +1,0 @@
-id,prefill_seq_len,prefill_batch,R2_v2f,R2_unified,relRMSE_v2f_pct,relRMSE_unified_pct,LOO_v2f_pct,LOO_unified_pct,p,theta,p_over_theta,P_s_W,chi_W,T_fmax,R2_clock_fit
-chat-phi3,512,8,0.978,0.963,6.7,8.6,7.6,9.7,1.03,1.44,0.716,45.8,253.3,10069.0,0.964
