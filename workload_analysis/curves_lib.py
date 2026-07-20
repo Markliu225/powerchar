@@ -19,8 +19,8 @@ Dots = raw measured grid. The class's aggregate P:D ratio labels identity; it en
 SHARED LIBRARY: this module holds the taxonomy (NAME/MAP/CAVEAT/BANDS), the fit loader
 (load_curves), and the figure builder (build_power_figs). It is imported — not run — by the
 per-hardware wrappers v100/plot_power_curves.py and h200/plot_power_curves.py (which set DATA /
-CAP_LO / CAP_HI / F_MAX and call build_power_figs), and by solve_rack_capping.py (taxonomy) and
-plot_composite_economics.py (NAME/MAP). One implementation, so the two hardwares cannot drift.
+CAP_LO / CAP_HI / F_MAX and call build_power_figs), and by solve_rack_capping.py (taxonomy).
+One implementation, so the two hardwares cannot drift.
 """
 from __future__ import annotations
 import csv, os, sys

@@ -146,8 +146,8 @@ OPT 装满 32 张——**+36% ~ +62% 吞吐、同功率**，增益上限由插�
 
 Capping 的账是"用同样的电装更多的卡"：每类机架 OPT 比 TDP 多 12 张卡（+$30k CapEx），换多出的
 token 收入（能耗两边相同，相抵）。按 $0.05/M 输入、$0.20/M 输出、卡价 $2500 计（按类回本；
-跨时间的累计利润曲线、以及电价敏感的综合经济性见 [ECONOMICS.md](ECONOMICS.md) 与
-[fig_profit_over_time.png](fig_profit_over_time.png)）：
+混合 workload 下按论文经济模型核算的 5 年累计利润曲线见 [ECONOMICS.md](ECONOMICS.md) 与
+[fig_profit_model.png](fig_profit_model.png)）：
 
 | 类别 | 额外 CapEx 回本 |
 |---|---|

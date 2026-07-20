@@ -1,123 +1,110 @@
-# 综合 workload 的功率封顶经济性 —— 非线性收益曲线（V100 & H200）
+# 混合 workload 的功率封顶经济性 —— 论文经济模型（V100 & H200）
 
-把 10 种使用类型按**数据集规模加权**共存成一个综合 workload，问一个仓库既有经济分析没回答的
-问题:**一旦把电价当作真实成本，选择运行 cap 时利润长什么样?** 答案是——**非线性**，且最优点随
-电价移动。
+按论文**经济模型**（式 (1)–(15)）核算：功率封顶（power capping）用同样的机架功率装更多的卡、
+多产 token，对比每卡满功率（TDP）方案，**5 年内谁更赚钱**。答案（当前基线）：两种硬件上
+capping 都显著占优——V100 每 1 MW 集群 5 年多赚 **$99M（+46%）**，H200 多赚 **$67M（+39%）**。
 
-> ⚠️ 这是**纯吞吐/能耗**经济模型，**未建模延迟/SLO**。综合里 92%(Chat+Code)是交互类,压 cap 会
-> 抬 TTFT/逐字延迟——真实会掉收入或违 SLO。所以下面算出的"利润最优 cap"是**对交互流量能压多深的
-> 上界**,不是目标值(与机架长文 [PLANNING.zh.md §7](PLANNING.zh.md) 同款局限)。
+> 脚本 [`plot_profit_model.py`](plot_profit_model.py) →
+> [`fig_profit_model.png`](fig_profit_model.png)（V100 & H200 两面板，混合 workload 累计利润
+> Φ(t)）· [`profit_model.csv`](profit_model.csv)（集群汇总行 + 每类每机架明细行）。
 
-> 脚本 [`plot_composite_economics.py`](plot_composite_economics.py) →
-> [`fig_composite_economics.png`](fig_composite_economics.png)(利润 vs cap)·
-> [`fig_composite_elec_sensitivity.png`](fig_composite_elec_sensitivity.png)(利润/收益 vs 电价)·
-> [`composite_economics.csv`](composite_economics.csv)
->
-> **另有**利润 vs **时间**图(cap vs TDP,两条累计利润曲线,V100/H200 各一):
-> [`plot_profit_over_time.py`](plot_profit_over_time.py) →
-> [`fig_profit_over_time.png`](fig_profit_over_time.png) · [`profit_over_time.csv`](profit_over_time.csv)——见下节。
+> ⚠️ **未建模延迟/SLO**。模型令收入与 cap 无关，即假设压 cap 不损服务质量；混合里多数是交互类，
+> 真实压 cap 会抬 TTFT/逐字延迟。所以 capping 的收益是**上界**，落地须给交互类 cap 设 SLO 下界
+> （与机架长文 [PLANNING.zh.md §7](PLANNING.zh.md) 同款局限）。
 
-## 与"利润 vs 时间"图的区别
+## 1. 经济模型（式 (1)–(15)）
 
-[plot_profit_over_time.py](plot_profit_over_time.py)(利润 vs 时间)固定机架功率预算,让两个机队
-(capped / 不 capped)**能耗相抵**,回本主要由"多买的卡 vs 多卖的 token"驱动。这里问相反的、
-更真实的问题:综合 workload 下,**能耗不相抵**时,利润随 cap 与电价如何变化(有内部最优 cap)。
+模型输入一个机架配置（GPU 数 $m$、吞吐 $X$、实测功耗 $P$），以年为核算单位、寿命 $n$ 年，输出成本、
+收入、利润、ROI、回收期：
 
-## 综合 workload(数据集规模加权)
-
-- **权重 φ_i**:取 `workload_ratios.csv` 的 `n`(样本量)归一化。结果由 **Chat 68% + Code 24%**
-  主导,其余 8 类长尾(合计 8%)。**Caveat**:`n` 是**数据集规模**(Chat/Code 是 2.5 万/8.8 千的
-  生产 trace,8 个 Dolly 类各几百样本),不是严格的生产流量占比——是"真实比例"的**代理**,可替换旋钮。
-- **每请求 token 数 Lp_i / Ld_i**:取实测均值 `pre_mean` / `dec_mean`(真实请求长度)。
-- **每相吞吐 T_pre_i(cap) / T_dec_i(cap)** 与 **实测功耗 P_pre_i(cap) / P_dec_i(cap)**:来自该类
-  映射 workload 的 fitlib 拟合曲线与实测 `power_avg_w`(V100 portfolio / data_h200)。**注意口径**:
-  token 数来自真实 trace,吞吐/功耗曲线来自映射 workload 在**其自身上下文规模**下的实测(如 Chat 用
-  chat-phi3 的 ctx=256 decode 曲线,而 trace 里 Chat 请求上千 token)——因 `T_max ∝ 1/C`,这会**高估
-  decode 吞吐、低估 decode 成本**,使利润偏乐观。是标准映射 caveat(PLANNING.zh.md §2),$ 数值取近似。
-
-## 为什么是非线性(核心机制)
-
-服务固定需求,单请求要租的 GPU 秒数
-`g(p) = Σ_i φ_i ( Lp_i/T_pre_i(p) + Ld_i/T_dec_i(p) )`。单请求成本有两项**方向相反**:
-
-| 成本项 | 随 cap 上升 | 极小点 |
+| 量 | 式 | 说明 |
 |---|---|---|
-| 能耗 = PUE·电价·Σφ_i(Lp_i·P_pre_i/T_pre_i + Ld_i·P_dec_i/T_dec_i) | ↑(瓦特升,GPU 秒降) | 能效甜点附近(U 型) |
-| CapEx = (GPU价/寿命)·g(p) | ↓(每卡产出更多 token) | 最高吞吐(高 cap) |
+| 资本投入 $K$ | $m\,c_g$ | 单卡成本含加速卡 + 按卡分摊的服务器/网络 |
+| 折旧 $D$ | $(K-S)/n$ | 直线法，残值 $S=0$（保守） |
+| 电费 $E$ | $e\,\beta\,P\times 8760$ | 电价 × PUE × **实测 IT 功耗** × 年小时数 |
+| 运维 $M$ | $\mu K$ | 按资本投入比例 |
+| 年成本 $C$ | $D+E+M$ | |
+| 年产 $Q$ | $X\cdot T_{yr}$ | $T_{yr}\approx3.15\times10^7$ s |
+| 平均单价 $\pi$ | $(\kappa\pi_p+\pi_d)/(1+\kappa)$ | $\kappa{:}1$ = 该类输入:输出 token 比 |
+| 价格路径 | $\pi(t)=\pi e^{-\lambda t}$ | token 价按年率 $\lambda$ 指数衰减 |
+| 累计利润 $\Phi(n)$ | $\pi Q\,\dfrac{1-e^{-\lambda n}}{\lambda}-C\,n$ | 折旧已入 $C$（accrual，见下方纵轴说明） |
+| 投资回报率 | $\Phi(n)/K$ | |
+| 现金回收期 $T_{pb}$ | $K/(\pi Q-E-M)$（$\lambda=0$） | 现金流口径，**不扣折旧**（非现金） |
+| 单位成本 / 毛利 | $c_{tok}=C/Q$，$g=(\pi-c_{tok})/\pi$ | |
 
-能耗按**实测功耗 P(cap)** 计,不按设定 cap:电费付的是实际消耗。这很关键——V100 上 memory-bound 的
-decode 实测功耗低于 cap(250 W 档只画 227 W),H200 低 cap 档反而**超过** cap(200 W 档 prefill 实测
-~310–375 W)。用设定 cap 会单边虚增 capping 收益,故一律用实测 `power_avg_w`。CapEx 只含 GPU 时间
-(GPU 秒×摊销),不含功率。
+因收入与吞吐成正比（$\kappa$ 类内固定），**同一负载类中最大化吞吐 = 最大化收入**，经济模型与
+以吞吐为目标的机架配置方法一致。
 
-收入由需求固定,所以 `利润/Mtok(p) = 收入/Mtok − (能耗+CapEx)/Mtok(p)` 是**非线性**的,有一个
-内部最优 cap;**电价越贵,最优点越往能效甜点(低 cap)滑,电价越便宜越往最高吞吐(TDP)靠**。
+## 2. 纵轴 = accrual 累计利润 Φ(t)
 
-## 两种 cap 策略
+图的纵轴是 **1 MW 集群到 t 年为止的累计利润 Φ(t)**（百万美元，式 (11)）：
+**累计 token 收入（价格按 λ 衰减）− 累计年成本 C·t**，而 C 里的折旧 D=K/n 已把买卡钱按 n 年摊平。
+因此：
 
-- **UNIFORM**:两相同一个 cap(图1 的单旋钮曲线)。
-- **DISAGGREGATED**:每类每相各自在自己曲线上取 cost 最小 cap(机架配方真正的做法)。理论上比 uniform
-  更省(min 分离和 ≤ 单一 cap),V100 上明显;H200 上因 CapEx 太重,两者都≈TDP,差别可忽略(见结果)。
+- 曲线**从 0 出发**——买卡不是 t=0 的一次性台阶（这是会计利润，不是现金流曲线）；
+- 第 5 年的高度 = 式 (11) 对全集群机架求和；
+- 图上 **▼ 标记**是另一个口径的**现金回收期**（式 (13)：累计"收入 − 电费 − 运维"首次覆盖期初 K
+  的时刻），与利润曲线口径不同，故单独标注。
 
-## 结果(见 `composite_economics.csv`)
+## 3. 混合 workload 层（式 (8) + 按类分机架）
 
-**V100(便宜卡 $2.5k):经典非线性,capping 值得。** 电价 $0.05→$1.00/kWh,利润最优 cap 从
-**250 W(=TDP)滑到 138 W**;capping 相对不 cap 的收益从 0 涨到 **+$0.008/Mtok(disagg)**,
-且是**凸增长**(电价越高,加速)。
+真实负载是 $J$ 个 P:D 类的混合。设第 $j$ 类占 token 量份额 $w_j$，各类共用同一价目时集群平均单价为
+各类单价按 token 份额的加权和（式 (8)）：$\pi=\sum_j w_j\,(\kappa_j\pi_p+\pi_d)/(1+\kappa_j)$。
 
-**H200(贵卡 $30k):CapEx 主宰,就该开满 TDP,capping 基本不划算。** 现实电价区间内 uniform 与
-disaggregated 最优 cap **都≈700 W(=TDP)**——贵卡靠高吞吐摊薄折旧,压 cap 几乎不省:capping 收益
-≤ **$0.0002/Mtok**(即便 $1/kWh、disagg),实务上可忽略;要到更贵的电价(>$1/kWh)红利才隐约出现。
-小模型 + 低 token 价下,H200 在 ~$0.45/kWh 以上 **每 token 亏钱**(绝对利润为负)。结论:H200 上
-这套 workload 就该 TDP 满跑。(H200 数据修订后 prefill 时钟扫、更干净,利润比旧数据高;Extract 因
-classify-qwen7b 缺席在 H200 侧剔除,mix 在 9 类上重新归一——V100 仍 10 类,两侧 revenue 差 <0.2%。)
+- **需求混合 $w_j$**：取各类的 **token 量份额** = 样本量 × 每请求平均 token（`n·(pre_mean+dec_mean)`，
+  `workload_ratios.csv`）。结果 **Chat 64% + Code 35%** 主导，其余 8 类合计 ~1%。构成的测量方法见
+  ServeGen [R10]；$w_j$ 是**可替换旋钮**（脚本 `W_OVERRIDE`），有自有生产 trace 时直接替换。
+- **按类分机架**：本系统按负载类划分机架、每机架专服一类，第 $j$ 类分得的机架数 $N_j\propto w_j/X_j$
+  （产能匹配需求份额）。产出的 token 混合因此等于需求混合，模型对机架线性可加，**集群利润 =
+  各机架利润之和**（每机架内部仍用式 (7) 的 $\kappa_j$ 定价，等价于式 (8)）。
+  注意机架份额 ≠ token 份额：低吞吐类（如 32k 摘要 $X$ 极小）单位需求要更多机架，故其机架份额
+  被放大（V100 上摘要占 24% 机架却只占很小 token 量）。
+- **集群归一**：两方案同 IT 功率（**1 MW**：V100 200 机架 ×5 kW / H200 71 机架 ×14 kW）、同机架总数，
+  按同一规则分配、各用自己的每机架吞吐。capping 每机架填满 32 槽 vs TDP 的 20 槽，服务同一需求混合、
+  卖出更多 token。
 
-**跨设备结论**:capping 的经济价值取决于 **电价 : 卡价** 之比。便宜/已折旧的卡 + 贵电 → capping
-显著回本(V100);贵的新卡 + 便宜电 → 开满更划算(H200),capping 红利小到可忽略。
+## 4. 结果
 
-## 利润 vs 时间(cap vs TDP,两条累计利润曲线)
+| 硬件 | 方案 | GPU | CapEx | 吞吐 X | Φ(5yr) | ROI₅ | 现金回收 |
+|---|---|--:|--:|--:|--:|--:|--:|
+| **V100**（$2.5k/卡，200 机架） | CAP | 6,400 | $16.0M | 13.5M tok/s | **$312.8M** | +19.5 | ~1 mo |
+| | TDP | 4,000 | $10.0M | 9.2M tok/s | $213.8M | +21.4 | ~1 mo |
+| **H200**（$27k/卡，71 机架） | CAP | 2,286 | $61.7M | 12.8M tok/s | **$240.5M** | +3.9 | ~5 mo |
+| | TDP | 1,429 | $38.6M | 9.0M tok/s | $173.5M | +4.5 | ~5 mo |
 
-[`plot_profit_over_time.py`](plot_profit_over_time.py) → [`fig_profit_over_time.png`](fig_profit_over_time.png):
-横轴时间、纵轴累计净利润,对比 **power cap 与 TDP 两个机队**服务同一综合 workload,V100 / H200 各一张。
-与上面"利润 vs cap"互补——这里固定策略(全 cap / 全 TDP),看利润**随运营时间**如何积累。
+- **V100**：capping 5 年多赚 **$99.0M（+46%）**，约 1 个月回本。
+- **H200**：capping 5 年多赚 **$67.1M（+39%）**，约 5 个月回本。
+- **要在论文点明的张力**：TDP 的 **ROI（每美元回报率）略高**（V100 +21.4 vs +19.5），但 CAP 的
+  **绝对利润高得多**——capping 多投 60% 的卡，摊薄了单位回报率却做大了总利润。混合掉了单类里
+  32k 摘要那种亏损案例（单机架下该类两方案都亏），集群整体两种硬件都稳定盈利。
 
-- **框架 = 同功率预算(弹性需求)**:两机队抽同样的机架功率;cap 把每相压到 **max-tok/J** 点,
-  同瓦特多产 **+40%(V100)/ +19%(H200)** token → 每天多卖 token(**前提是卖得掉**)。cap 机队卡更多
-  (CapEx 高)、日收入更高,故起点更低、爬升更陡,早早反超 TDP。
-- **曲线为什么弯**:两个随时间变化的真实因素——**token 价随时间衰减**(LLM 推理价约每 ~18 个月腰斩,
-  收入速率递减→累计利润凹、变平)+ **电价凸性上涨**(AI 电网压力,二次抬升能耗账,较小的第二重下弯)。
-  两者都非线性,故利润-时间曲线**不是直线**,是弯的。
-- **token 起价拉高 → 回本更快**:起价 \$0.30/\$1.20 per Mtok 时,V100 回本 ~1.2 个月、cap 反超 TDP ~1.8 个月;
-  H200 回本 ~7.7 个月、反超 ~30 个月(比旧线性模型的 ~106 个月大幅提前——高起价把 cap 的多卖 token 优势
-  前置到价格还高的早期)。回本周期 ∝ 1/token 价。
-- **⚠️ 决定性假设 = 弹性需求**:cap 的全部优势是把多产的 token **按市价卖掉**。若需求固定(卖不掉多余
-  产出),加卡多产就是浪费,结论可能翻号——此时应按上文"利润 vs cap / 固定需求"口径,H200 甚至 V100
-  在便宜电价下都该 TDP 满跑。图底脚注已标注此假设及其它(CapEx 只含 GPU 裸价、单次采购不含换代/贴现、
-  未建模延迟/SLO)。
+## 5. 经济旋钮（全部在脚本顶部可改）
 
-## 经济旋钮(全部可改,脚本顶部)
+单卡成本 $c_g$ **$2.5k（V100）/ $27k（H200）** · 寿命 **$n=5$ 年**、$S=0$ · 电价 $e=$ **$0.10/kWh** ·
+PUE $\beta=$ **1.1** · 运维率 $\mu=$ **4%** · token 单价 $\pi_p/\pi_d=$ **$0.30/$1.20 per Mtok**（输入/输出）·
+价格年降率 $\lambda=$ **0.46/年**（每 18 个月腰斩）· 集群 IT 功率 **1 MW**。
 
-GPU 价 $2.5k(V100)/$30k(H200) · 3 年直线摊销 · PUE 1.3 · token 价 $0.05/$0.20 per Mtok
-(输入/输出,同仓库) · 电价曲线 $0.05–$1.00/kWh,敏感性图扫到 $1.5(高端含需量电费/碳价)。
+## 6. 局限
 
-## 局限
+- **未建模延迟/SLO（最重要）**：收入与 cap 无关，等于假设压 cap 不损服务质量；交互类压 cap 会抬
+  TTFT/逐字延迟，真实要么掉收入要么违 SLO。capping 收益应视为**上界**。
+- **需求全售（利用率 100%）**：假设产能全卖得掉。需求受限时应在收入上乘利用率系数，capping 多产的
+  token 若卖不掉则优势缩水。
+- **需求混合 $w$ 是数据集 token 量代理**，非严格生产占比；ServeGen [R10] 给出构成测量法，$w$ 可替换。
+- **token 数 vs 曲线上下文规模**：每类的吞吐/功耗曲线来自映射 workload 在其自身上下文规模下的实测
+  （标准映射 caveat，[PLANNING.zh.md §2](PLANNING.zh.md)），$ 数值取近似。
+- **TDP 实测功耗**由 `tdp_tok_s / tdp_rack_tok_per_j` 从取整列还原，带 ≤0.5% 往返误差（对 E 影响
+  ≤$22/年/机架，可忽略）。
+- **token 价用小模型口径**（$0.30/$1.20）；H200 跑大模型 / 高 token 价时经济性另算。
 
-- **未建模延迟/SLO(最重要)**:模型令收入与 cap 无关,等于假设压 cap 不损服务质量。但 92%
-  的量是交互类,压 cap 抬 TTFT/逐字延迟——真实要么掉收入要么违 SLO。**利润最优 cap 应视为交互
-  流量的压 cap 上界,而非目标。** 要落地须给交互类的 cap 设 SLO 下界后再算。
-- **UNIFORM cap 低估 H200 capping**:单旋钮无法单独 cap decode;disaggregated 才是可达上限(图2)。
-  新数据下两者在 H200 上都≈TDP,差别可忽略。
-- **能耗一律按实测 `power_avg_w` 计**,不按设定 cap。H200 修订版 prefill 改为时钟扫(功率轴=实测),
-  旧的低 cap 未兑现问题已消失;decode 仍 cap 扫、memory-bound 下实测略低于 cap,故仍用实测功耗。
-  **Extract 在 H200 缺席**(classify-qwen7b 无数据),H200 侧 mix 于 9 类重新归一。
-- **token 数 vs 曲线上下文规模不一致**(见上节口径说明):$ 数值系近似,倾向乐观。
-- **权重 φ 是数据集规模代理**,非严格生产占比;换 φ 重跑即可。
-- token 价用小模型口径($0.05/$0.20);H200 跑大模型/高 token 价时经济性另算(本文口径下 H200
-  在 $0.5/kWh 以上每 token 亏钱,是"贵卡跑小模型"的真实结论)。
+## 参考文献
+
+- [R10] Y. Xiang, X. Li, K. Qian, W. Yu, E. Zhai, and X. Jin. *ServeGen: Workload characterization
+  and generation of large language model serving in production.* NSDI 2026.
+- 经济模型参数依据（折旧年限、PUE、运维率、token 价趋势）：见论文 §经济模型 [R1]–[R9]。
 
 ## 复现
 
 ```bash
-python3 workload_analysis/plot_composite_economics.py   # 利润 vs cap / vs 电价
-python3 workload_analysis/plot_profit_over_time.py       # 利润 vs 时间(cap vs TDP)
+python3 workload_analysis/plot_profit_model.py   # -> fig_profit_model.png + profit_model.csv
 ```

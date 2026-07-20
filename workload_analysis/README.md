@@ -29,7 +29,7 @@
 - `plot.py` —— → `fig_workload_pd.png`
 - `curves_lib.py` —— **共享库**(不单独运行):分类法(NAME/MAP/CAVEAT)、曲线加载(load_curves,
   按更新的一阶理论 `fitlib.fit_*_theory` 拟合)、图构造(build_power_figs)。由 v100/ 与 h200/ 的
-  包装器、以及 solve_rack_capping / plot_composite_economics 直接 import——一套实现,两硬件不漂移。
+  包装器、以及 solve_rack_capping 直接 import——一套实现,两硬件不漂移。
 - `v100/` —— **V100 版**(与 h200/ 对称):
   - `plot_power_curves.py`(包装器)→ `v100/fig_workload_power_throughput.png` ·
     `fig_workload_power_tokj.png`(prefill/decode 每类曲线,对数轴;tok/J 按实测功耗)·
@@ -39,13 +39,11 @@
     `workload_rack_capping.csv`
 - `h200/` —— 同一流程跑在 H200 数据(`../data_h200`,cap 200–700 W;机架场景 14 kW / 32 槽 /
   TDP 700 W),脚本复用 `curves_lib` 与求解器内核,见 [h200/README.md](h200/README.md)
-- `plot_composite_economics.py` —— 综合 workload(10 类按真实比例 `n` 共存)的**非线性经济
-  收益曲线**,V100 & H200:利润随 cap(收入固定,成本 = CapEx↓ + 电价·瓦特↑ → 内部最优随电价滑)
-  与随电价的敏感性(uniform vs disaggregated vs TDP) → `fig_composite_economics.png` ·
-  `fig_composite_elec_sensitivity.png` · `composite_economics.csv`;详见 [ECONOMICS.md](ECONOMICS.md)
-- `plot_profit_over_time.py` —— 综合 workload 的**利润 vs 时间**图(cap vs TDP 两条累计利润曲线,
-  V100/H200 各一):同功率预算、弹性需求;曲线因 **token 价随时间衰减 + 电价凸升**而**非线性弯曲**,
-  token 起价越高回本越快 → `fig_profit_over_time.png` · `profit_over_time.csv`;详见 [ECONOMICS.md](ECONOMICS.md)
+- `plot_profit_model.py` —— **论文正式经济模型**(式 (1)–(15):直线折旧、PUE 电费、运维率、
+  价格指数衰减、accrual 累计利润 Φ(t)、ROI、现金流回收期、c_tok)按**混合 workload**的 5 年
+  收益:真实负载是 J 个 P:D 类的混合(份额 w_j = 数据集 token 量占比,构成测量法见 ServeGen
+  NSDI'26),系统按类分机架、每类机架数 ∝ 需求份额(N_j ∝ w_j/X_j);1 MW 集群 CAP vs TDP,
+  V100 & H200 → `fig_profit_model.png` · `profit_model.csv`
 - `data/` —— 缓存的生产 trace 样本(Azure conv/code、BurstGPT)
 - `REFERENCES.zh.md` —— 分类法依据 + 数据集 + 引用链接 + caveat
 
@@ -56,6 +54,5 @@ python3 workload_analysis/analyze.py
 python3 workload_analysis/plot.py
 python3 workload_analysis/v100/plot_power_curves.py
 python3 workload_analysis/v100/solve_rack_capping.py
-python3 workload_analysis/plot_composite_economics.py
-python3 workload_analysis/plot_profit_over_time.py
+python3 workload_analysis/plot_profit_model.py
 ```

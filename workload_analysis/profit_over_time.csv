@@ -1,3 +1,0 @@
-device,budget_kw,cap_gpus,tdp_gpus,cap_capex_usd,tdp_capex_usd,rev_day0_cap_usd,rev_day0_tdp_usd,tokens_per_day_rel,cap_breakeven_mo,tdp_breakeven_mo,cap_overtakes_tdp_mo,cap_profit_peak_mo
-V100,5.0,39,23,97228,56791,2647.7,1886.6,1.403,1.24,1.02,1.81,42.0
-H200,12.0,31,18,915222,526078,5611.0,3930.8,1.427,6.05,4.87,9.0,42.0

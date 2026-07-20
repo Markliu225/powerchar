@@ -85,5 +85,5 @@ BW_eff ≈207 GB/s)。其余 6 个 workload 的 CSV 与 07-13 版逐字节一致
 ```bash
 python3 workload_analysis/h200/plot_power_curves.py
 python3 workload_analysis/h200/solve_rack_capping.py
-python3 workload_analysis/plot_composite_economics.py   # 顺带刷新 H200 经济性
+python3 workload_analysis/plot_profit_model.py   # 顺带刷新混合 workload 经济性(V100 & H200)
 ```
