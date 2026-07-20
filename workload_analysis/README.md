@@ -3,6 +3,7 @@
 用**文献里公认的分类法**把 LLM 推理负载分成若干使用类型,并用**真实数据**量化每类的 prefill(输入)/ decode(输出)token 比例,为上层机架功率规划([PLANNING.zh.md](PLANNING.zh.md))提供真实的 `R_eff`,替代拍脑袋的 1:1 / 1:10。
 
 > **分类法的文献依据、数据集出处、引用链接、完整结果与 caveat,见 [REFERENCES.zh.md](REFERENCES.zh.md)。**
+> **论文用的完整方法学底稿(原理/流程/引用,含逐条核验与 BibTeX),见 [CLASSIFICATION.zh.md](CLASSIFICATION.zh.md)。**
 
 ## 分类法
 

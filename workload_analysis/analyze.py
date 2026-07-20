@@ -1,9 +1,9 @@
 """prefill:decode token ratios per LLM USE-CASE CLASS — using a referenced taxonomy.
 
 CLASSIFICATION SCHEME (not ad-hoc): the LLM use-case taxonomy from **InstructGPT**
-(Ouyang et al., 2022, arXiv:2203.02155, Table 1), induced from REAL OpenAI API traffic into ~9 task
-types: Generation, Open QA, Brainstorming, Chat, Rewrite, Summarization, Classification, Closed QA,
-Extract. We OPERATIONALIZE it with real data:
+(Ouyang et al., 2022, arXiv:2203.02155, Table 1), induced from REAL OpenAI API traffic into 10 task
+types: Generation, Open QA, Brainstorming, Chat, Rewrite, Summarization, Classification, Other,
+Closed QA, Extract. We OPERATIONALIZE it with real data:
   - **Dolly-15k** (databricks-dolly-15k): 8 human-labelled categories that map 1:1 onto the taxonomy;
     prefill = instruction (+ context), decode = response.   (tokenized with the local Phi-3 tokenizer)
   - **Production traces** (Azure conv + BurstGPT conv) for the 'Chat / multi-turn dialogue' class
