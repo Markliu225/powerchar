@@ -1,21 +1,28 @@
 # 混合 workload 的功率封顶经济性 —— 论文经济模型（V100 & H200）
 
-按论文**经济模型**（式 (1)–(15)）核算：功率封顶（power capping）用同样的机架功率装更多的卡、
-多产 token，对比每卡满功率（TDP）方案，**5 年内谁更赚钱**。答案（当前基线）：两种硬件上
-capping 都显著占优——V100 每 1 MW 集群 5 年多赚 **$99M（+46%）**，H200 多赚 **$67M（+39%）**。
+按论文**经济模型**（式 (1)–(15)）在 **II-C 七类生产负载分类**上核算：功率封顶（power capping）用同样的
+机架功率装更多的卡、多产 token，对比每卡满功率（TDP）方案，**5 年内累计净现金流谁更高**。
+混合比例取**研究查证的生产请求份额**（ServeGen 实测请求量、Copilot/Cursor 补全规模、OpenRouter
+token 份额等）× 各类 trace 实测的每请求 token 数；各类按 **2026 分档定价**（式 8）。
 
-> 脚本 [`plot_profit_model.py`](plot_profit_model.py) →
-> [`fig_profit_model.png`](fig_profit_model.png)（V100 & H200 两面板，混合 workload 累计利润
-> Φ(t)）· [`profit_model.csv`](profit_model.csv)（集群汇总行 + 每类每机架明细行）。
+结论（λ=20% 为代表）：**两种硬件 capping 都显著占优且盈利**——
 
-> ⚠️ **未建模延迟/SLO**。模型令收入与 cap 无关，即假设压 cap 不损服务质量；混合里多数是交互类，
-> 真实压 cap 会抬 TTFT/逐字延迟。所以 capping 的收益是**上界**，落地须给交互类 cap 设 SLO 下界
-> （与机架长文 [PLANNING.zh.md §7](PLANNING.zh.md) 同款局限）。
+- **V100**：Φ_CAP $1,100M vs TDP $691M / MW·5yr，末端利润 **1.59 倍**，额外投资 **~0.6 个月**回本。
+- **H200**：Φ_CAP $1,018M vs TDP $782M，**1.30 倍**，约 **3.5 个月**回本。
+
+> 脚本 [`plot_profit_model.py`](plot_profit_model.py) 产出两组图：
+> - **第一组** [`fig_profit_model.png`](fig_profit_model.png)：2 行（V100/H200）× 4 列（价格年降率
+>   λ = 0/10/20/30 %/yr）的**累计净现金流**曲线，CAP vs TDP；
+> - **第二组** [`fig_profit_mix.png`](fig_profit_mix.png)：1×2（V100/H200），λ 固定 20%，
+>   **混合比例敏感性**（CAP−TDP 差值，每次把某一类份额 ±20% 逐类扰动）；
+> - 数据 [`profit_model.csv`](profit_model.csv)。
+
+> ⚠️ **未建模延迟/SLO**。模型令收入与 cap 无关，即假设压 cap 不损服务质量；交互类压 cap 会抬
+> TTFT/逐字延迟。capping 收益应视为**上界**（与 [PLANNING.zh.md §7](PLANNING.zh.md) 同款局限）。
 
 ## 1. 经济模型（式 (1)–(15)）
 
-模型输入一个机架配置（GPU 数 $m$、吞吐 $X$、实测功耗 $P$），以年为核算单位、寿命 $n$ 年，输出成本、
-收入、利润、ROI、回收期：
+模型输入一个机架配置（GPU 数 $m$、吞吐 $X$、实测功耗 $P$），以年为核算单位、寿命 $n$ 年：
 
 | 量 | 式 | 说明 |
 |---|---|---|
@@ -25,86 +32,111 @@ capping 都显著占优——V100 每 1 MW 集群 5 年多赚 **$99M（+46%）**
 | 运维 $M$ | $\mu K$ | 按资本投入比例 |
 | 年成本 $C$ | $D+E+M$ | |
 | 年产 $Q$ | $X\cdot T_{yr}$ | $T_{yr}\approx3.15\times10^7$ s |
-| 平均单价 $\pi$ | $(\kappa\pi_p+\pi_d)/(1+\kappa)$ | $\kappa{:}1$ = 该类输入:输出 token 比 |
+| 平均单价 $\pi$ | $(\kappa\pi_p+\pi_d)/(1+\kappa)$ | $\kappa{:}1$ = 该类输入:输出 token 比（$\bar\rho$） |
 | 价格路径 | $\pi(t)=\pi e^{-\lambda t}$ | token 价按年率 $\lambda$ 指数衰减 |
-| 累计利润 $\Phi(n)$ | $\pi Q\,\dfrac{1-e^{-\lambda n}}{\lambda}-C\,n$ | 折旧已入 $C$（accrual，见下方纵轴说明） |
+| 累计利润 $\Phi(n)$ | $\pi Q\,\dfrac{1-e^{-\lambda n}}{\lambda}-C\,n$ | 折旧已入 $C$ |
 | 投资回报率 | $\Phi(n)/K$ | |
 | 现金回收期 $T_{pb}$ | $K/(\pi Q-E-M)$（$\lambda=0$） | 现金流口径，**不扣折旧**（非现金） |
 | 单位成本 / 毛利 | $c_{tok}=C/Q$，$g=(\pi-c_{tok})/\pi$ | |
 
-因收入与吞吐成正比（$\kappa$ 类内固定），**同一负载类中最大化吞吐 = 最大化收入**，经济模型与
-以吞吐为目标的机架配置方法一致。
+## 2. 纵轴 = 累计净现金流（起点 −K，末端 Φ(n)）
 
-## 2. 纵轴 = accrual 累计利润 Φ(t)
+$$\mathrm{CF}(t)=\pi Q\,\frac{1-e^{-\lambda t}}{\lambda}-(E+M)\,t-K$$
 
-图的纵轴是 **1 MW 集群到 t 年为止的累计利润 Φ(t)**（百万美元，式 (11)）：
-**累计 token 收入（价格按 λ 衰减）− 累计年成本 C·t**，而 C 里的折旧 D=K/n 已把买卡钱按 n 年摊平。
-因此：
+**纵轴计入期初投入 K**：CAP（卡多）从更深的负值出发，与 TDP 相交——**● 交点 T× = 额外投资的
+回收期**；因 $S=0$ 时 $D\cdot n=K$，**曲线末端 CF(n) 恰等于式 (11) 的累计利润 Φ(n)**（已核验到
+浮点精度）。**G** = 末端之比 $\Phi_{\mathrm{CAP}}/\Phi_{\mathrm{TDP}}$。同行共用纵轴。
 
-- 曲线**从 0 出发**——买卡不是 t=0 的一次性台阶（这是会计利润，不是现金流曲线）；
-- 第 5 年的高度 = 式 (11) 对全集群机架求和；
-- 图上 **▼ 标记**是另一个口径的**现金回收期**（式 (13)：累计"收入 − 电费 − 运维"首次覆盖期初 K
-  的时刻），与利润曲线口径不同，故单独标注。
+## 3. 混合层：II-C 七类 × 真实请求份额 × 分档定价
 
-## 3. 混合 workload 层（式 (8) + 按类分机架）
+**分类与机架配方**来自 [workload_classes.csv](workload_classes.csv)（II-C 表 1：各类 trace 实测
+$\bar\rho$ 与 $\overline{L_p}/\overline{L_d}$）与按类求解的
+`{v100,h200}/workload_rack_capping.csv`。
 
-真实负载是 $J$ 个 P:D 类的混合。设第 $j$ 类占 token 量份额 $w_j$，各类共用同一价目时集群平均单价为
-各类单价按 token 份额的加权和（式 (8)）：$\pi=\sum_j w_j\,(\kappa_j\pi_p+\pi_d)/(1+\kappa_j)$。
+**请求份额 $r_j$（研究查证，为可替换旋钮）**：
 
-- **需求混合 $w_j$**：取各类的 **token 量份额** = 样本量 × 每请求平均 token（`n·(pre_mean+dec_mean)`，
-  `workload_ratios.csv`）。结果 **Chat 64% + Code 35%** 主导，其余 8 类合计 ~1%。构成的测量方法见
-  ServeGen [R10]；$w_j$ 是**可替换旋钮**（脚本 `W_OVERRIDE`），有自有生产 trace 时直接替换。
-- **按类分机架**：本系统按负载类划分机架、每机架专服一类，第 $j$ 类分得的机架数 $N_j\propto w_j/X_j$
-  （产能匹配需求份额）。产出的 token 混合因此等于需求混合，模型对机架线性可加，**集群利润 =
-  各机架利润之和**（每机架内部仍用式 (7) 的 $\kappa_j$ 定价，等价于式 (8)）。
-  注意机架份额 ≠ token 份额：低吞吐类（如 32k 摘要 $X$ 极小）单位需求要更多机架，故其机架份额
-  被放大（V100 上摘要占 24% 机架却只占很小 token 量）。
-- **集群归一**：两方案同 IT 功率（**1 MW**：V100 200 机架 ×5 kW / H200 71 机架 ×14 kW）、同机架总数，
-  按同一规则分配、各用自己的每机架吞吐。capping 每机架填满 32 槽 vs TDP 的 20 槽，服务同一需求混合、
-  卖出更多 token。
+| 类 | $r_j$ | 依据强度 | 关键锚点 |
+|---|--:|---|---|
+| 对话 | 30% | 中 | ChatGPT ~2.5B prompts/天（2025-07）；ServeGen 通用 chat 档占其实测请求 ~63%（2025 初），2026 被 reasoning 路由分流 |
+| 代码补全 | 27% | **高** | ServeGen M-code 实测 **2.76 亿次/周 = 24.6%**；Copilot 4 亿补全/天、Cursor 数十亿/天 |
+| 推理 | 14% | 中 | ServeGen 实测 1.7%（2025-03，R1 发布次月，自述低估）；OpenRouter 全年 reasoning token 份额 0→>50% |
+| Agentic 工具调用 | 11% | 低 | Kimi FAST'25 trace toolagent:conversation ≈ 2:1；Anthropic 经济指数 77% API 为自动化型 |
+| 助手 API | 10% | 低 | ServeGen M-large（批量 API 提交）~4.9% |
+| 长上下文对话 | 4% | 中 | ServeGen M-long 实测 4.3% |
+| 多模态图文 | 4% | 低 | ServeGen 实测 1.4%（2025 初），按 omni 增长上调 |
+
+**token 量份额** $w_j = r_j\cdot(\overline{L_p}+\overline{L_d})$ 归一化：
+**Agentic 30.3% · 代码补全 21.5% · 对话 16.4% · 长上下文 15.5% · 推理 12.3% · 助手API 2.3% ·
+多模态 1.7%**——请求少但每步上下文巨大的 Agentic 成为最大 token 消耗方。
+
+**分档定价 $\pi^{(j)}$（2026-07 查证）**：推理、Agentic → 旗舰 **$5/$25**；长上下文 → **$3/$15**；
+对话、多模态 → **$2/$10**；助手 API、代码补全（IDE 行内补全跑轻量专用模型；agent 式写码在
+Agentic 类）→ **$1/$5**。混合平均 **$4.83/Mtok**。
+
+**按类分机架**：$N_j\propto w_j/X_j$（产能匹配需求份额），集群 = 各机架之和（1 MW：V100 200 机架 /
+H200 71 机架，两方案同机架数同功率）。机架份额被慢类主导：V100 上 **Agentic 41% + 长上下文 27% +
+推理 25%**——它们 token 份额合计 58% 却占 93% 的机架，快类（代码补全/对话）只需零头机架。
 
 ## 4. 结果
 
-| 硬件 | 方案 | GPU | CapEx | 吞吐 X | Φ(5yr) | ROI₅ | 现金回收 |
-|---|---|--:|--:|--:|--:|--:|--:|
-| **V100**（$2.5k/卡，200 机架） | CAP | 6,400 | $16.0M | 13.5M tok/s | **$312.8M** | +19.5 | ~1 mo |
-| | TDP | 4,000 | $10.0M | 9.2M tok/s | $213.8M | +21.4 | ~1 mo |
-| **H200**（$27k/卡，71 机架） | CAP | 2,286 | $61.7M | 12.8M tok/s | **$240.5M** | +3.9 | ~5 mo |
-| | TDP | 1,429 | $38.6M | 9.0M tok/s | $173.5M | +4.5 | ~5 mo |
+**第一组（价格年降率扫描）**，1 MW 集群 5 年累计净现金流（CAP / TDP，百万美元）：
 
-- **V100**：capping 5 年多赚 **$99.0M（+46%）**，约 1 个月回本。
-- **H200**：capping 5 年多赚 **$67.1M（+39%）**，约 5 个月回本。
-- **要在论文点明的张力**：TDP 的 **ROI（每美元回报率）略高**（V100 +21.4 vs +19.5），但 CAP 的
-  **绝对利润高得多**——capping 多投 60% 的卡，摊薄了单位回报率却做大了总利润。混合掉了单类里
-  32k 摘要那种亏损案例（单机架下该类两方案都亏），集群整体两种硬件都稳定盈利。
+| 硬件 | λ=0 | λ=10% | λ=20% | λ=30% | T× | G |
+|---|--:|--:|--:|--:|--:|--:|
+| **V100** | 1754 / 1103 | 1375 / 864 | 1100 / 691 | 897 / 563 | 0.5–0.6 mo | **1.59** |
+| **H200** | 1656 / 1266 | 1286 / 985 | 1018 / 782 | 820 / 631 | 3.4–3.5 mo | **1.30–1.31** |
 
-## 5. 经济旋钮（全部在脚本顶部可改）
+- **T× 与 G 对 λ 几乎不动**：回收发生在极早期（价格未衰减），衰减只等比压低两条曲线，相对优势稳健。
+- **V100 G 更高（1.59 vs 1.30）**：便宜卡上"多装 60% 的卡"杠杆更大；H200 折旧占比高摊薄相对增益，
+  但绝对量仍是每 MW 5 年多赚 **$236M**（V100 **$409M**）。
 
-单卡成本 $c_g$ **$2.5k（V100）/ $27k（H200）** · 寿命 **$n=5$ 年**、$S=0$ · 电价 $e=$ **$0.10/kWh** ·
-PUE $\beta=$ **1.1** · 运维率 $\mu=$ **4%** · token 单价 $\pi_p/\pi_d=$ **$0.30/$1.20 per Mtok**（输入/输出）·
-价格年降率 $\lambda=$ **0.46/年**（每 18 个月腰斩）· 集群 IT 功率 **1 MW**。
+**第二组（混合敏感性，λ=20%）**——CAP−TDP 差值，起点 −ΔK（混合无关：每机架恒 32/20 卡），
+每类份额 ±20% 逐类扰动（2×7 条曲线成带）：
+
+| 硬件 | ΔK | T×（基准/带） | 5 年多赚 ΔΦ(n)（基准/带） |
+|---|--:|--:|--:|
+| **V100** | $6.0M | 0.6 mo（0.5–0.6） | **+$409M**（带 [+396, +424]） |
+| **H200** | $23.1M | 3.5 mo（3.3–3.6） | **+$236M**（带 [+225, +247]） |
+
+带的上下界主要由**长上下文对话**与**推理**的扰动决定（低吞吐放大机架份额）。**带全为正、过零点
+集中**——任一单类份额 ±20% 的估计误差不改变"capping 更赚"的结论。
+
+## 5. 实验设置（两组图共用）
+
+- **每类分别求解** TDP 与 OPT 机架配置（按该类 trace $\bar\rho$，`workload_rack_capping.csv`）；
+  功耗取**实测值**；**集群量 = 各机架之和**（$N_j\propto w_j/X_j$ 分配）。
+- **按设备标定**：$c_g$ 与吞吐/功耗数据。**全组共用**：$e$、$\beta$、$\mu$、$n$、按类价 $\pi^{(j)}$；
+  λ 是第一组列变量（第二组固定 20%）。
+- **取值**：$c_g=$ **\$2.5k(V100)/\$27k(H200)** · $n=$ **5 年**、$S=0$ · $e=$ **\$0.10/kWh** ·
+  $\beta=$ **1.1** · $\mu=$ **4%** · 集群 **1 MW** · ΔK = **$6.0M / $23.1M**。
 
 ## 6. 局限
 
-- **未建模延迟/SLO（最重要）**：收入与 cap 无关，等于假设压 cap 不损服务质量；交互类压 cap 会抬
-  TTFT/逐字延迟，真实要么掉收入要么违 SLO。capping 收益应视为**上界**。
-- **需求全售（利用率 100%）**：假设产能全卖得掉。需求受限时应在收入上乘利用率系数，capping 多产的
-  token 若卖不掉则优势缩水。
-- **需求混合 $w$ 是数据集 token 量代理**，非严格生产占比；ServeGen [R10] 给出构成测量法，$w$ 可替换。
-- **token 数 vs 曲线上下文规模**：每类的吞吐/功耗曲线来自映射 workload 在其自身上下文规模下的实测
-  （标准映射 caveat，[PLANNING.zh.md §2](PLANNING.zh.md)），$ 数值取近似。
-- **TDP 实测功耗**由 `tdp_tok_s / tdp_rack_tok_per_j` 从取整列还原，带 ≤0.5% 往返误差（对 E 影响
-  ≤$22/年/机架，可忽略）。
-- **token 价用小模型口径**（$0.30/$1.20）；H200 跑大模型 / 高 token 价时经济性另算。
+- **未建模延迟/SLO（最重要）**：capping 收益是上界。交互类（对话/补全/agentic 逐步）需 cap 下界。
+- **需求全售（利用率 100%）**；需求受限时在收入乘利用率系数。
+- **⚠️ 定价档 vs 吞吐口径不一致（最大数值 caveat，偏乐观）**：价取旗舰/中档模型市场价，吞吐曲线来自
+  小模型实测（实验所能测）。相对结论（G、T×）对此不敏感（价格是两方案公因子），绝对 $ 偏高。
+- **请求份额 $r_j$ 置信度不一**（表格已标）：代码补全高（两处独立实测），Agentic/助手API/多模态低
+  （估计成分大）；第二组敏感性图正是量化其影响——符号结论对 ±20% 稳健。
+- **锚定映射的规模 caveat**（长上下文/Agentic 用 32k summarize 曲线，保守）见
+  `workload_rack_capping.csv` 的 `mapping_caveat` 列。
+- **TDP 实测功耗**由取整列还原，≤0.5% 往返误差，可忽略。
 
 ## 参考文献
 
-- [R10] Y. Xiang, X. Li, K. Qian, W. Yu, E. Zhai, and X. Jin. *ServeGen: Workload characterization
-  and generation of large language model serving in production.* NSDI 2026.
-- 经济模型参数依据（折旧年限、PUE、运维率、token 价趋势）：见论文 §经济模型 [R1]–[R9]。
+- [R26] Y. Xiang, X. Li, K. Qian, W. Yu, E. Zhai, X. Jin. *ServeGen: Workload Characterization and
+  Generation of Large Language Model Serving in Production.* NSDI 2026. arXiv:2505.09999
+  （Table 1 逐 workload 请求量：M-code 276M/周、M-long 48M/周、reasoning 18.8M/周等）。
+- [R17] Stojkovic et al. *DynamoLLM*, HPCA 2025（Azure 2024 conv/code trace）。
+- [R28] Qin et al. *Mooncake*, FAST 2025（长上下文与 toolagent trace）。
+- [R11] OpenRouter / a16z. *State of AI: An Empirical 100 Trillion Token Study.* arXiv:2601.10088
+  （2025 年 reasoning 与 programming token 份额趋势）。
+- [R12] 分档定价（2026-07 查证）：Anthropic（Opus 4.8 $5/$25、Sonnet-5 $2/$10、Haiku-4.5 $1/$5）·
+  OpenAI GPT-5.6（Sol $5/$30、Terra $2.5/$15、Luna $1/$6）。
+- 其余经济参数依据（折旧年限、PUE、运维率、价格衰减）：论文 §经济模型 [R1]–[R9]。
 
 ## 复现
 
 ```bash
-python3 workload_analysis/plot_profit_model.py   # -> fig_profit_model.png + profit_model.csv
+python3 workload_analysis/plot_profit_model.py   # -> fig_profit_model.png + fig_profit_mix.png + profit_model.csv
 ```

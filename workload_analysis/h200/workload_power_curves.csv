@@ -1,11 +1,8 @@
 klass,band,ratio_agg,via_workload,mapping_caveat,pre_sweet_cap_w,pre_tok_per_j_sweet,pre_tok_s_caphi,dec_sweet_cap_w,dec_tok_per_j_sweet,dec_tok_s_caphi,dec_sat_cap_w,pre_fit_R2,dec_fit_R2
-Generation 创作生成,decode-heavy,0.09,longform-phi3,,652,39.294,27305.4,463,0.373,241.7,696,0.981,0.952
-General QA 常识问答,decode-heavy,0.12,longform-phi3,,652,39.294,27305.4,463,0.373,241.7,696,0.981,0.952
-Brainstorming 头脑风暴,decode-heavy,0.15,longform-phi3,,652,39.294,27305.4,463,0.373,241.7,696,0.981,0.952
-Open QA 开放问答,decode-heavy,0.16,longform-phi3,,652,39.294,27305.4,463,0.373,241.7,696,0.981,0.952
-Classification 分类,balanced,0.84,translate-qwen3b,,612,53.366,37093.7,424,3.379,2215.9,696,0.987,0.96
-Summarization 摘要,prefill-heavy,2.3,summarize-qwen7b,Dolly short-doc 2.3:1 on 32k production-scale curves,549,15.199,10178.4,626,0.049,34.1,697,0.96,0.969
-Extract 信息抽取,prefill-heavy,3.06,classify-qwen7b,"Dolly 3.1:1 on production-scale curves (class shape 100:1); near-flat decode, fit R2<0 - read the dots",700,21.009,14935.1,303,1.272,392.4,303,0.967,0.762
-Chat 多轮对话,prefill-heavy,4.93,chat-phi3,trace accounting (full history re-prefilled per turn); serving shape with KV reuse ~1:2,619,36.417,25080.8,700,3.475,2311.4,696,0.978,0.937
-Closed QA 闭卷问答,prefill-heavy,6.18,rag-phi3,Dolly 6.2:1 on ~4k RAG-scale curves (class shape 10:1),571,15.535,10688.3,556,1.126,759.1,697,0.986,0.964
-Code 代码补全,prefill-heavy,73.45,code-phi3,2023 completion-trace 73.5:1; the rack doc plans with a conservative 10:1,586,21.962,15143.0,426,0.344,218.7,696,0.991,0.716
+推理,balanced,0.83,longform-phi3,anchor longform-phi3 dec 4096x8; qwen3think-4b (8192x8) is the closer shape but has no H200 data,652,39.294,27305.4,463,0.373,241.7,696,0.981,0.952
+助手API,prefill-heavy,7.7,translate-qwen3b,translate curves (512x64) stand in for its ~0.7k programmatic requests,612,53.366,37093.7,424,3.378,2213.3,695,0.987,0.96
+多模态图文,prefill-heavy,9.4,rag-phi3,text-only curves - vision tokens priced as text prefill (no multimodal measurement),571,15.535,10688.3,556,1.126,759.1,697,0.986,0.964
+对话,prefill-heavy,15.5,code-phi3,anchor code-phi3 for its 2048 ctx (~1.7k accumulated history); B=16 below chat-typical concurrency,586,21.962,15143.0,426,0.344,218.7,696,0.991,0.716
+长上下文对话,prefill-heavy,35.1,summarize-qwen7b,32k summarize curves vs ~12k real context - decode ceiling conservative (T∝1/C),549,15.199,10178.4,626,0.049,33.6,693,0.96,0.97
+Agentic工具调用,prefill-heavy,47.2,summarize-qwen7b,32k summarize curves vs ~8.8k per-step context - conservative; full-history re-prefill accounting,549,15.199,10178.4,626,0.049,33.6,693,0.96,0.97
+代码补全,prefill-heavy,110.7,code-phi3,,586,21.962,15143.0,426,0.344,218.7,696,0.991,0.716

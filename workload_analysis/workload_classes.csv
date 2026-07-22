@@ -1,0 +1,8 @@
+klass,name_en,Lp_mean,Ld_mean,ratio_agg,source,via_workload
+推理,Reasoning,1268,1527,0.83,ServeGen (NSDI'26),longform-phi3
+助手API,Assistant API,641,83,7.7,ServeGen (NSDI'26),translate-qwen3b
+多模态图文,Multimodal,1222,130,9.4,ServeGen (NSDI'26),rag-phi3
+对话,Chat (dialogue),1632,106,15.5,DynamoLLM / Azure'24 (HPCA'25),code-phi3
+长上下文对话,Long-context chat,12035,343,35.1,Mooncake (FAST'25),summarize-qwen7b
+Agentic工具调用,Agentic tool-use,8596,182,47.2,Mooncake (FAST'25),summarize-qwen7b
+代码补全,Code completion,2511,23,110.7,DynamoLLM / Azure'24 (HPCA'25),code-phi3

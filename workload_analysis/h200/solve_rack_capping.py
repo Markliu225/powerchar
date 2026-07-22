@@ -11,14 +11,10 @@ SCENARIO (H200-scaled from the V100 5 kW / 32-slot experiment, disclosed on the 
   N_GPU_MAX = 32 slots;  P_TDP = 700 W;  caps confined to the MEASURED [200, 700] W
   decode never above its saturation cap (0.995 of T at 700 W), integer GPUs, >=1 per phase
 
-With the v-next H200 data (prefill clock-swept, so its efficiency sweet spot lands ~530-575 W
-in range), the 32-slot wall binds for all classes present — prefill no longer needs ~650-700 W,
-so even Code fills the slots (16+16) rather than being budget-bound. Classes whose mapped workload
-has no H200 data are skipped automatically (the subtitle names any that were). As of 2026-07-15 all
-10 use-case classes are present (classify-qwen7b re-measured -> Extract back). NOTE: classify-qwen7b
-prefill is still v3 cap-swept (under-enforces <367 W) and its decode is near-flat (fit R^2<0), so
-Extract's curves are the shakiest of the 10 — see h200/README.md; its recipe operates in the
-enforced region so the +59% gain (decode-bottleneck packing) is structural, not an artifact.
+Solved for the 7 PRODUCTION workload classes of workload_classes.csv (the paper's II-C
+trace-based taxonomy, rho-bar 0.83..110.7). All 7 anchors (longform/translate/rag/code/summarize)
+have H200 data; classes whose anchor lacked data would be skipped automatically (subtitle names
+any). H200 prefill is clock-swept (power axis = measured draw), decode cap-swept.
 
 python3 solve_rack_capping.py -> fig_workload_rack_capping.png + workload_rack_capping.csv
 """
@@ -48,11 +44,9 @@ SW.P_TDP, SW.CAP_LO, SW.CAP_HI = 700.0, 200.0, 700.0
 SW.sweet_spot.__defaults__ = (SW.CAP_HI,)       # hi= default was bound to 250 at def time
 
 NAME, MAP, BANDS = V.NAME, V.MAP, V.BANDS
-CAVEAT = {**V.CAVEAT,                           # Extract fit note updated to the H200 numbers
-          "Extract 信息抽取": "Dolly 3.1:1 on production-scale curves (class shape 100:1); "
-                              "decode fit poor on H200 (R2<0, relRMSE ~23%) - read the dots"}
+CAVEAT = V.CAVEAT                               # single source: II-C taxonomy (curves_lib)
 band_of = lambda r: next(b for b in BANDS if b[1] <= r < b[2])
-ratio_str = lambda x: f"{x:.1f}:1" if x >= 1 else f"1:{1/x:.0f}"
+ratio_str = lambda x: f"{x:.1f}:1" if x >= 1 else f"{x:.2f}:1"
 
 GREEN, RED, BLUE, ORANGE = "#2ca02c", "#d62728", "#1f77b4", "#ff7f0e"   # repo figure palette
 BLUE_LT, ORANGE_LT = "#aec7e8", "#ffbb78"       # TDP (lighter step of the same hues)
@@ -60,10 +54,10 @@ INK2 = "#52514e"
 
 
 def main():
-    rows = list(csv.DictReader(open(os.path.join(PARENT, "workload_ratios.csv"))))
+    rows = list(csv.DictReader(open(os.path.join(PARENT, "workload_classes.csv"), encoding="utf-8")))
     avail = lambda wid: os.path.exists(os.path.join(SW.DATA, f"{wid}_prefill.csv"))
     classes = sorted([dict(klass=r["klass"], r=float(r["ratio_agg"])) for r in rows
-                      if avail(MAP[r["klass"]])], key=lambda c: c["r"])   # Extract dropped: classify-qwen7b absent
+                      if avail(MAP[r["klass"]])], key=lambda c: c["r"])   # skip classes whose anchor lacks H200 data
     by_id = {w["id"]: w for w in SW.PORTFOLIO}  # curves via THE canonical loader; Lp/Ld overridden
     base = {wid: SW.load_workload(by_id[wid]) for wid in sorted({MAP[c["klass"]] for c in classes})}
 
@@ -100,7 +94,7 @@ def main():
                     "constraint_binds": "+".join(binds)})
 
     path = os.path.join(HERE, "workload_rack_capping.csv")
-    with open(path, "w", newline="") as f:
+    with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=list(out[0].keys()))
         w.writeheader()
         [w.writerow(r) for r in out]
@@ -108,8 +102,7 @@ def main():
 
     # ---------------- figure: (a) throughput OPT vs TDP · (b) GPU count & split ----------------
     x = np.arange(len(recs))
-    lab = [f"{NAME[r['cl']['klass']]}{'*' if r['cl']['klass'] in CAVEAT else ''}\n"
-           f"{ratio_str(r['cl']['r'])}" for r in recs]
+    lab = [f"{NAME[r['cl']['klass']]}\n{ratio_str(r['cl']['r'])}" for r in recs]
     bounds = [i - 0.5 for i in range(1, len(recs))
               if band_of(recs[i]["cl"]["r"])[0] != band_of(recs[i - 1]["cl"]["r"])[0]]
     fmt_tok = lambda v: f"{v/1e3:.0f}k" if v >= 9500 else (f"{v/1e3:.1f}k" if v >= 1000
@@ -174,7 +167,7 @@ def main():
     present = {r["cl"]["klass"] for r in recs}
     dropped = [NAME[r["klass"]] for r in rows if r["klass"] not in present]
     drop_note = f"  ·  {', '.join(dropped)} omitted (no H200 data)" if dropped else \
-                f"  ·  all {len(recs)}/10 use-case classes present"
+                f"  ·  all {len(recs)}/7 production classes present"
     a.set_title("GPU count & phase split per class — left bar TDP (every GPU @700 W), right bar "
                 f"OPT (Np+Nd @pre/dec cap W)\nsame 14 kW: TDP affords 20 GPUs; OPT hits the "
                 f"32-slot wall in {n_wall}/{len(recs)} classes (min fleet {n_min}); "
@@ -187,14 +180,13 @@ def main():
     a.grid(alpha=.3, axis="y")
     a.set_ylim(0, N_GPU_MAX * 1.3)
 
-    fig.suptitle("H200 rack power capping by use-case class — measured P:D ratios on the mapped "
-                 "workload curves", fontsize=14)
+    fig.suptitle("H200 rack power capping by production workload class — trace P:D ratios on the "
+                 "mapped workload curves", fontsize=14)
     fig.text(0.5, 0.005,
              "classes ordered decode-heavy -> prefill-heavy; label color = P:D band (red decode-heavy / "
-             "gray balanced / blue prefill-heavy, as in fig_workload_pd.png); P:D = aggregate ratio from "
-             "workload_ratios.csv\nscenario scaled from the V100 experiment by the TDP ratio 700/250 "
-             "(5 kW -> 14 kW, same 32 slots); curves data_h200, optimizer identical to "
-             "rack_power_capping/solve_workloads.py  ·  * = mapping caveat, see ../PLANNING.zh.md §2",
+             "gray balanced / blue prefill-heavy)\n"
+             "P:D = trace aggregate ratio (ServeGen NSDI'26 · DynamoLLM-Azure'24 HPCA'25 · Mooncake FAST'25)"
+             "  ·  scenario scaled from the V100 experiment by the TDP ratio 700/250 (5 kW -> 14 kW, same 32 slots)",
              ha="center", fontsize=7.4, color=INK2)
     fig.tight_layout(rect=(0, 0.015, 1, 1))
     outp = os.path.join(HERE, "fig_workload_rack_capping.png")

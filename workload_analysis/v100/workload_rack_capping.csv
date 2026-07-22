@@ -1,11 +1,8 @@
 klass,band,ratio_agg,via_workload,mapping_caveat,opt_tok_s,tdp_tok_s,gain_pct,opt_N_prefill,opt_N_decode,opt_cap_prefill_w,opt_cap_decode_w,opt_w_provisioned,opt_w_measured,tdp_N_prefill,tdp_N_decode,opt_rack_tok_per_j,tdp_rack_tok_per_j,opt_pct_of_cont_bound,constraint_binds
-Generation 创作生成,decode-heavy,0.09,longform-phi3,,3456.0,2248.4,53.7,1,31,100,158,5000,4847,1,19,0.713,0.525,81.2,N_max=32+Np=1
-General QA 常识问答,decode-heavy,0.12,longform-phi3,,3551.2,2310.3,53.7,1,31,100,158,5000,4847,1,19,0.733,0.539,81.2,N_max=32+Np=1
-Brainstorming 头脑风暴,decode-heavy,0.15,longform-phi3,,3646.3,2372.2,53.7,1,31,100,158,5000,4847,1,19,0.752,0.554,81.3,N_max=32+Np=1
-Open QA 开放问答,decode-heavy,0.16,longform-phi3,,3678.0,2392.8,53.7,1,31,100,158,5000,4847,1,19,0.759,0.559,81.3,N_max=32+Np=1
-Classification 分类,balanced,0.84,translate-qwen3b,,28964.4,19535.6,48.3,2,30,159,156,5000,4980,1,19,5.816,4.481,85.6,N_max=32
-Summarization 摘要,prefill-heavy,2.3,summarize-qwen7b,Dolly short-doc 2.3:1 on 32k production-scale curves,651.4,401.3,62.3,1,31,100,137,4350,4326,1,19,0.151,0.103,70.8,N_max=32
-Extract 信息抽取,prefill-heavy,3.06,classify-qwen7b,"Dolly 3.1:1 on production-scale curves (class shape 100:1); near-flat decode, fit R2<0 - read the dots",16140.1,10265.6,57.2,5,27,166,155,5000,4830,3,17,3.341,3.254,67.2,N_max=32
-Chat 多轮对话,prefill-heavy,4.93,chat-phi3,trace accounting (full history re-prefilled per turn); serving shape with KV reuse ~1:2; NB the repo's canonical chat-class shape 1:2 yields 2+30 @150/157 W (workloads_results.csv),94532.6,67823.6,39.4,9,23,228,128,5000,4956,6,14,19.074,14.607,98.0,N_max=32
-Closed QA 闭卷问答,prefill-heavy,6.18,rag-phi3,Dolly 6.2:1 on ~4k RAG-scale curves (class shape 10:1),44408.5,29872.4,48.7,7,25,230,136,5000,4962,5,15,8.95,6.461,90.4,N_max=32
-Code 代码补全,prefill-heavy,73.45,code-phi3,2023 completion-trace 73.5:1; the rack doc plans with a conservative 10:1,109443.1,78146.3,40.0,19,13,172,133,5000,5004,11,9,21.87,16.709,95.4,N_max=32
+推理,balanced,0.83,longform-phi3,anchor longform-phi3 dec 4096x8; qwen3think-4b (8192x8) is the closer shape but has no H200 data,5801.7,3774.9,53.7,1,31,102,158,5000,4850,1,19,1.196,0.881,82.4,N_max=32+Np=1
+助手API,prefill-heavy,7.7,translate-qwen3b,translate curves (512x64) stand in for its ~0.7k programmatic requests,94154.4,63200.3,49.0,10,22,216,129,5000,4992,7,13,18.859,13.997,94.2,N_max=32
+多模态图文,prefill-heavy,9.4,rag-phi3,text-only curves - vision tokens priced as text prefill (no multimodal measurement),56587.4,37686.7,50.2,10,22,202,135,5000,4994,6,14,11.33,8.127,91.5,N_max=32
+对话,prefill-heavy,15.5,code-phi3,anchor code-phi3 for its 2048 ctx (~1.7k accumulated history); B=16 below chat-typical concurrency,47771.1,31647.0,50.9,7,25,210,141,5000,4979,5,15,9.594,6.908,91.4,N_max=32
+长上下文对话,prefill-heavy,35.1,summarize-qwen7b,32k summarize curves vs ~12k real context - decode ceiling conservative (T∝1/C),6627.8,4158.7,59.4,3,29,250,137,4726,4634,2,18,1.43,1.059,76.9,N_max=32
+Agentic工具调用,prefill-heavy,47.2,summarize-qwen7b,32k summarize curves vs ~8.8k per-step context - conservative; full-history re-prefill accounting,8594.3,5244.2,63.9,4,28,239,137,4794,4698,3,17,1.829,1.324,78.6,N_max=32
+代码补全,prefill-heavy,110.7,code-phi3,,124399.1,91937.2,35.3,22,10,168,129,5000,5000,13,7,24.879,19.525,96.1,N_max=32

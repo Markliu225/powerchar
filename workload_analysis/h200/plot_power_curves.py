@@ -5,8 +5,7 @@ tok/J-on-measured-draw definition, the taxonomy/mapping/caveats, and the CSV are
 the V100 module (nothing re-implemented, so the two hardwares cannot drift).
 
 H200 data notes: PREFILL is clock-swept at a fixed 700 W cap, so its power axis is the MEASURED
-draw power_avg_w (~300-710 W); DECODE is cap-swept (200-700 W). classify-qwen7b is the lone v3
-cap-swept prefill (under-enforces <367 W) with near-flat decode (fit R²<0) — read its dots.
+draw power_avg_w (~300-710 W); DECODE is cap-swept (200-700 W).
 
 python3 plot_power_curves.py -> fig_workload_power_throughput.png · fig_workload_power_tokj.png
                                 workload_power_curves.csv     (all in this h200/ folder)
@@ -26,7 +25,7 @@ V.F_MAX = V.fitlib.resolve_f_max(V.DATA)
 
 
 def main():
-    V.build_power_figs(os.path.join(PARENT, "workload_ratios.csv"), HERE, "H200", "GPU power (W)")
+    V.build_power_figs(os.path.join(PARENT, "workload_classes.csv"), HERE, "H200", "GPU power (W)")
 
 
 if __name__ == "__main__":

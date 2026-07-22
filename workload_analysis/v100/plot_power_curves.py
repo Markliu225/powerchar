@@ -17,7 +17,7 @@ import curves_lib as V                          # noqa: E402  shared builder + t
 
 
 def main():
-    V.build_power_figs(os.path.join(PARENT, "workload_ratios.csv"), HERE, "V100", "power cap (W)")
+    V.build_power_figs(os.path.join(PARENT, "workload_classes.csv"), HERE, "V100", "power cap (W)")
 
 
 if __name__ == "__main__":

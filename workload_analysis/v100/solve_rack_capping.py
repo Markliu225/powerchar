@@ -2,12 +2,12 @@
 
 Same rack problem as rack_power_capping/solve_workloads.py — 5 kW budget, <=32 physical
 GPU slots, integer GPUs with >=1 per phase, caps confined to the measured [100, 250] W, decode
-never above its saturation cap — but solved for the 10 use-case classes of workload_ratios.csv:
-each class contributes its MEASURED aggregate P:D ratio (Lp = ratio_agg, Ld = 1) and the fitlib
-curves of the measured workload it maps onto (same MAP as plot_power_curves.py / the verified
-correspondence of PLANNING.zh.md §2). Solver AND curve construction are imported from
-solve_workloads.py (load_workload is called directly, only Lp/Ld overridden with the class
-ratio) — nothing is re-implemented, so the two artifact sets cannot drift.
+never above its saturation cap — but solved for the 7 PRODUCTION workload classes of
+workload_classes.csv (the paper's II-C trace-based taxonomy, rho-bar 0.83..110.7 from ServeGen /
+DynamoLLM-Azure'24 / Mooncake): each class contributes its trace P:D (Lp = ratio_agg, Ld = 1)
+and the fitlib curves of the measured workload it maps onto (curves_lib.MAP, nearest decode-
+context anchor). Solver AND curve construction are imported from solve_workloads.py (only Lp/Ld
+overridden) — nothing is re-implemented, so the two artifact sets cannot drift.
 
 OPT = per-phase caps float to spend the budget (decode never above its saturation cap, so a
 saturation-limited class can strand watts — see opt_w_used); TDP = every GPU at nameplate
@@ -29,25 +29,14 @@ ROOT = os.path.dirname(PARENT)
 sys.path.insert(0, os.path.join(ROOT, "rack_power_capping"))
 sys.path.insert(0, PARENT)
 import solve_workloads as SW                    # noqa: E402  (also puts fitlib on sys.path)
-from curves_lib import CAVEAT                    # noqa: E402  (single source for mapping caveats)
+from curves_lib import NAME, MAP, CAVEAT         # noqa: E402  (single source: II-C taxonomy)
 
-NAME = {"Generation 创作生成": "Generation", "General QA 常识问答": "General QA",
-        "Brainstorming 头脑风暴": "Brainstorming", "Open QA 开放问答": "Open QA",
-        "Classification 分类": "Classification", "Summarization 摘要": "Summarization",
-        "Extract 信息抽取": "Extract", "Chat 多轮对话": "Chat (dialogue)",
-        "Closed QA 闭卷问答": "Closed QA", "Code 代码补全": "Code (completion)"}
-MAP = {"Generation 创作生成": "longform-phi3", "General QA 常识问答": "longform-phi3",
-       "Brainstorming 头脑风暴": "longform-phi3", "Open QA 开放问答": "longform-phi3",
-       "Classification 分类": "translate-qwen3b", "Summarization 摘要": "summarize-qwen7b",
-       "Extract 信息抽取": "classify-qwen7b", "Chat 多轮对话": "chat-phi3",
-       "Closed QA 闭卷问答": "rag-phi3", "Code 代码补全": "code-phi3"}
-STAR = {"Chat 多轮对话", "Summarization 摘要", "Extract 信息抽取", "Closed QA 闭卷问答",
-        "Code 代码补全"}                        # mapping carries a caveat (PLANNING.zh.md §2)
+STAR = set(CAVEAT)                              # anchor mapping carries a caveat (starred)
 BANDS = [("decode-heavy", 0.0, 0.5, "#d62728"),
          ("balanced", 0.5, 2.0, "#7f7f7f"),
          ("prefill-heavy", 2.0, np.inf, "#1f77b4")]
 band_of = lambda r: next(b for b in BANDS if b[1] <= r < b[2])
-ratio_str = lambda x: f"{x:.1f}:1" if x >= 1 else f"1:{1/x:.0f}"
+ratio_str = lambda x: f"{x:.1f}:1" if x >= 1 else f"{x:.2f}:1"
 
 GREEN, RED, BLUE, ORANGE = "#2ca02c", "#d62728", "#1f77b4", "#ff7f0e"   # repo figure palette
 BLUE_LT, ORANGE_LT = "#aec7e8", "#ffbb78"       # TDP (lighter step of the same hues)
@@ -55,7 +44,7 @@ INK2 = "#52514e"
 
 
 def main():
-    rows = list(csv.DictReader(open(os.path.join(PARENT, "workload_ratios.csv"))))
+    rows = list(csv.DictReader(open(os.path.join(PARENT, "workload_classes.csv"), encoding="utf-8")))
     classes = sorted([dict(klass=r["klass"], r=float(r["ratio_agg"])) for r in rows],
                      key=lambda c: c["r"])      # decode-heavy -> prefill-heavy
     by_id = {w["id"]: w for w in SW.PORTFOLIO}  # curves via THE canonical loader; Lp/Ld overridden
@@ -78,9 +67,6 @@ def main():
         o_mw, t_mw = mw(o), mw(t)
         recs.append(dict(cl=cl, o=o, t=t))
         cav = CAVEAT.get(cl["klass"], "")
-        if cl["klass"] == "Chat 多轮对话":     # trace accounting nearly inverts the recipe
-            cav += ("; NB the repo's canonical chat-class shape 1:2 yields 2+30 @150/157 W "
-                    "(workloads_results.csv)")
         out.append({"klass": cl["klass"], "band": band_of(cl["r"])[0], "ratio_agg": cl["r"],
                     "via_workload": MAP[cl["klass"]], "mapping_caveat": cav,
                     "opt_tok_s": round(o["tot"], 1), "tdp_tok_s": round(t["tot"], 1),
@@ -95,7 +81,7 @@ def main():
                     "constraint_binds": "+".join(binds)})
 
     path = os.path.join(HERE, "workload_rack_capping.csv")
-    with open(path, "w", newline="") as f:
+    with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=list(out[0].keys()))
         w.writeheader()
         [w.writerow(r) for r in out]
@@ -103,8 +89,7 @@ def main():
 
     # ---------------- figure: (a) throughput OPT vs TDP · (b) GPU count & split ----------------
     x = np.arange(len(recs))
-    lab = [f"{NAME[r['cl']['klass']]}{'*' if r['cl']['klass'] in STAR else ''}\n"
-           f"{ratio_str(r['cl']['r'])}" for r in recs]
+    lab = [f"{NAME[r['cl']['klass']]}\n{ratio_str(r['cl']['r'])}" for r in recs]
     bounds = [i - 0.5 for i in range(1, len(recs))
               if band_of(recs[i]["cl"]["r"])[0] != band_of(recs[i - 1]["cl"]["r"])[0]]
     fmt_tok = lambda v: f"{v/1e3:.0f}k" if v >= 9500 else (f"{v/1e3:.1f}k" if v >= 1000
@@ -175,14 +160,12 @@ def main():
     a.grid(alpha=.3, axis="y")
     a.set_ylim(0, SW.N_GPU_MAX * 1.3)
 
-    fig.suptitle("V100 rack power capping by use-case class — measured P:D ratios on the mapped "
-                 "workload curves", fontsize=14)
+    fig.suptitle("V100 rack power capping by production workload class — trace P:D ratios on the "
+                 "mapped workload curves", fontsize=14)
     fig.text(0.5, 0.005,
              "classes ordered decode-heavy -> prefill-heavy; label color = P:D band (red decode-heavy / "
-             "gray balanced / blue prefill-heavy, as in fig_workload_pd.png); P:D = aggregate ratio from "
-             "workload_ratios.csv\ncurves & optimizer identical to rack_power_capping/ "
-             "(solve_workloads.py)  ·  * = class-to-workload mapping carries an accounting/scale caveat "
-             "— see PLANNING.zh.md §2 / workload_power_curves.csv",
+             "gray balanced / blue prefill-heavy)\n"
+             "P:D = trace aggregate ratio (ServeGen NSDI'26 · DynamoLLM-Azure'24 HPCA'25 · Mooncake FAST'25)",
              ha="center", fontsize=7.4, color=INK2)
     fig.tight_layout(rect=(0, 0.015, 1, 1))
     outp = os.path.join(HERE, "fig_workload_rack_capping.png")

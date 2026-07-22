@@ -1,10 +1,11 @@
-"""Per-use-case-class power curves: power vs throughput & power vs tok/J, PER PHASE (log y).
+"""Per-production-class power curves: power vs throughput & power vs tok/J, PER PHASE (log y).
 
-For the 10 use-case classes of workload_ratios.csv (the InstructGPT/Dolly/trace taxonomy — see
-README + REFERENCES.zh.md), each maps onto a measured workload (the verified correspondence of
-PLANNING.zh.md §2, same MAP as fig_workload_pd.png). Per class, the PREFILL and DECODE curves of
-that workload are co-plotted on ONE panel; they sit 1-2 orders of magnitude apart, so the y-axis
-is LOG. The rack solver caps each phase on its own curve, so the per-phase curves are the primitives.
+For the 7 production workload classes of workload_classes.csv (the paper's II-C trace-based
+taxonomy: Reasoning / Assistant API / Multimodal / Chat / Long-context chat / Agentic / Code,
+P:D 0.83 ... 110.7 from ServeGen, DynamoLLM/Azure'24 and Mooncake traces), each maps onto a
+measured workload by nearest decode-context scale (MAP below). Per class, the PREFILL and DECODE
+curves of that anchor are co-plotted on ONE panel; they sit 1-2 orders of magnitude apart, so the
+y-axis is LOG. The rack solver caps each phase on its own curve, so these are the primitives.
 
     model (MODEL_AND_RESULTS.zh.md): prefill is compute-bound throughout → X_pre ∝ φ(P) (linear in
     f_sm); decode per-token time is a SUM of two rooflines + overhead, τ=max(a/x,b)+max(c/x,d)+e →
@@ -40,22 +41,24 @@ DATA = os.path.join(PORT, "data")
 F_MAX = fitlib.resolve_f_max(DATA)
 CAP_LO, CAP_HI = 100.0, 250.0                   # measured cap range — never extrapolate
 
-NAME = {"Generation 创作生成": "Generation", "General QA 常识问答": "General QA",
-        "Brainstorming 头脑风暴": "Brainstorming", "Open QA 开放问答": "Open QA",
-        "Classification 分类": "Classification", "Summarization 摘要": "Summarization",
-        "Extract 信息抽取": "Extract", "Chat 多轮对话": "Chat (dialogue)",
-        "Closed QA 闭卷问答": "Closed QA", "Code 代码补全": "Code (completion)"}
-# class -> measured workload whose curves it maps onto (PLANNING.zh.md §2 mapping, resolved to
-# each class's anchor member of WORKLOAD_CLASSES where a class has several)
-MAP = {"Generation 创作生成": "longform-phi3", "General QA 常识问答": "longform-phi3",
-       "Brainstorming 头脑风暴": "longform-phi3", "Open QA 开放问答": "longform-phi3",
-       "Classification 分类": "translate-qwen3b", "Summarization 摘要": "summarize-qwen7b",
-       "Extract 信息抽取": "classify-qwen7b", "Chat 多轮对话": "chat-phi3",
-       "Closed QA 闭卷问答": "rag-phi3", "Code 代码补全": "code-phi3"}
-MODEL_SHORT = {"longform-phi3": "Phi-3-mini", "chat-phi3": "Phi-3-mini",
-               "translate-qwen3b": "Qwen2.5-3B", "rag-phi3": "Phi-3-mini",
-               "code-phi3": "Phi-3-mini", "summarize-qwen7b": "Qwen2.5-7B",
-               "classify-qwen7b": "Qwen2.5-7B"}
+# The taxonomy = the paper's II-C production workload classes (trace-measured P:D, eq. (1)
+# rho-bar = sum Lp / sum Ld): Reasoning 0.83 (ServeGen) · Assistant API 7.7 (ServeGen) ·
+# Multimodal 9.4 (ServeGen) · Chat 15.5 (DynamoLLM/Azure'24) · Long-context chat 35.1 (Mooncake) ·
+# Agentic tool-use 47.2 (Mooncake) · Code completion 110.7 (DynamoLLM/Azure'24).
+# Data lives in workload_classes.csv (klass, Lp_mean, Ld_mean, ratio_agg, source, via_workload).
+NAME = {"推理": "Reasoning", "助手API": "Assistant API", "多模态图文": "Multimodal",
+        "对话": "Chat (dialogue)", "长上下文对话": "Long-context chat",
+        "Agentic工具调用": "Agentic tool-use", "代码补全": "Code completion"}
+# class -> measured workload whose curves it maps onto, chosen by NEAREST DECODE-CONTEXT scale
+# (the decode ceiling T ∝ 1/C is what the anchor must reproduce; the class SHAPE rho-bar enters
+# the solver separately via Lp/Ld). All anchors exist on BOTH V100 and H200.
+MAP = {"推理": "longform-phi3",            # ~2.8k eff. ctx, decode-dominant -> dec 4096x8 anchor
+       "助手API": "translate-qwen3b",      # ~0.7k total -> 512x64
+       "多模态图文": "rag-phi3",           # ~1.4k -> dec 1024x32 (vision tokens priced as text)
+       "对话": "code-phi3",                # ~1.7k accumulated history -> dec 2048x16
+       "长上下文对话": "summarize-qwen7b", # ~12k -> 32k anchor (conservative ceiling)
+       "Agentic工具调用": "summarize-qwen7b",  # ~8.8k per-step re-prefill -> 32k (conservative)
+       "代码补全": "code-phi3"}            # its own Azure-trace basis, dec 2048x16
 # P:D bands, same thresholds & colors as fig_workload_pd.png (color follows the band entity)
 BANDS = [("decode-heavy", 0.0, 0.5, "#d62728"),
          ("balanced", 0.5, 2.0, "#7f7f7f"),
@@ -63,20 +66,19 @@ BANDS = [("decode-heavy", 0.0, 0.5, "#d62728"),
 PRE_C, DEC_C = "#1f77b4", "#ff7f0e"             # phase colors (repo fleet palette)
 INK, INK2, MUTE, GRID = "#0b0b0b", "#52514e", "#898781", "#e1e0d9"
 
-# classes whose mapping carries an accounting/scale caveat in PLANNING.zh.md §2 (starred)
-CAVEAT = {"Chat 多轮对话": "trace accounting (full history re-prefilled per turn); serving shape with KV reuse ~1:2",
-          "Summarization 摘要": "Dolly short-doc 2.3:1 on 32k production-scale curves",
-          "Extract 信息抽取": "Dolly 3.1:1 on production-scale curves (class shape 100:1); near-flat decode, fit R2<0 - read the dots",
-          "Closed QA 闭卷问答": "Dolly 6.2:1 on ~4k RAG-scale curves (class shape 10:1)",
-          "Code 代码补全": "2023 completion-trace 73.5:1; the rack doc plans with a conservative 10:1"}
+# classes whose anchor mapping carries a scale/accounting caveat (starred in the figures)
+CAVEAT = {"推理": "anchor longform-phi3 dec 4096x8; qwen3think-4b (8192x8) is the closer shape but has no H200 data",
+          "助手API": "translate curves (512x64) stand in for its ~0.7k programmatic requests",
+          "多模态图文": "text-only curves - vision tokens priced as text prefill (no multimodal measurement)",
+          "对话": "anchor code-phi3 for its 2048 ctx (~1.7k accumulated history); B=16 below chat-typical concurrency",
+          "长上下文对话": "32k summarize curves vs ~12k real context - decode ceiling conservative (T∝1/C)",
+          "Agentic工具调用": "32k summarize curves vs ~8.8k per-step context - conservative; full-history re-prefill accounting"}
 
-FOOT = ("curves: updated first-principles theory (MODEL_AND_RESULTS.zh.md) — prefill X∝φ(P) linear in f_sm; "
-        "decode τ=max(a/x,b)+max(c/x,d)+e (two rooflines + overhead), X=1/τ  ·  dots: raw measured grid\n"
-        "x = enforced cap (decode) / measured draw (H200 clock-swept prefill)  ·  P:D = class aggregate ratio (labels the class)  ·  "
-        "tok/J = T_phase / MEASURED draw (power_avg_w), not the set cap, not the CSV column  ·  "
-        "* = mapping caveat (PLANNING.zh.md §2); where dots deviate (Extract: near-flat decode) read the dots")
+FOOT = ("lines = model fits, dots = measured  ·  title = class P:D, colored by band "
+        "(red decode-heavy · gray balanced · blue prefill-heavy)  ·  "
+        "P:D from production traces (ServeGen NSDI'26 · DynamoLLM-Azure'24 · Mooncake FAST'25)  ·  tok/J on measured draw")
 
-ratio_str = lambda x: f"{x:.1f}:1" if x >= 1 else f"1:{1/x:.0f}"
+ratio_str = lambda x: f"{x:.1f}:1" if x >= 1 else f"{x:.2f}:1"
 band_of = lambda r: next(b for b in BANDS if b[1] <= r < b[2])
 fmt = lambda v: (f"{v/1e3:.1f}k" if v >= 1e3 else f"{v:.0f}" if v >= 100
                  else f"{v:.1f}" if v >= 10 else f"{v:.2f}")
@@ -149,12 +151,9 @@ def _panel(ax, cl, cv, metric, g):
         dys.append(dy)
     lo = min(float(dys[0].min()), float(dys[1].min())); hi = max(float(dys[0].max()), float(dys[1].max()))
     ax.set_ylim(lo * 0.35, hi * (5 if metric == "E" else 3.2))
-    bname, _, _, bcol = band_of(cl["r"])
-    star = "*" if cl["klass"] in CAVEAT else ""
-    ax.set_title(f"{NAME[cl['klass']]}   P:D {ratio_str(cl['r'])}{star}", fontsize=10.5, color=INK, pad=22)
-    ax.text(0.5, 1.10, f"via {MAP[cl['klass']]} · {MODEL_SHORT.get(MAP[cl['klass']], '')} · "
-            f"dec {cv['ctx']}×{cv['b_dec']}", transform=ax.transAxes, ha="center", fontsize=7.3, color=INK2)
-    ax.text(0.03, 0.96, bname, transform=ax.transAxes, ha="left", va="top", fontsize=7.8, color=bcol, weight="bold")
+    bcol = band_of(cl["r"])[3]                       # band conveyed by title color, no extra text
+    ax.set_title(f"{NAME[cl['klass']]}   {ratio_str(cl['r'])}", fontsize=11, color=bcol,
+                 weight="bold", pad=8)
     ax.set_xlim(CAP_LO * 0.92, CAP_HI * 1.03)
     ax.grid(alpha=.45, color=GRID, lw=0.7, which="both")
     ax.tick_params(labelsize=8, colors=MUTE)
@@ -166,35 +165,36 @@ def build_power_figs(ratios_path, out_dir, hw, xlab):
     """Per-use-case-class panels (both phases co-plotted, LOG y) for throughput and tok/J, + the
     per-class CSV. Reads DATA/F_MAX/CAP_* module globals (H200 overrides them), so one implementation
     serves both hardwares."""
-    rows = list(csv.DictReader(open(ratios_path)))
+    rows = list(csv.DictReader(open(ratios_path, encoding="utf-8")))
     classes = sorted([dict(klass=r["klass"], r=float(r["ratio_agg"])) for r in rows
                       if os.path.exists(os.path.join(DATA, f"{MAP[r['klass']]}_prefill.csv"))],
                      key=lambda c: c["r"])       # decode-heavy -> prefill-heavy
     curves = {wid: load_curves(wid) for wid in sorted({MAP[c["klass"]] for c in classes})}
     g = np.linspace(CAP_LO, CAP_HI, 1501)
-    n = len(classes); ncol = 5; nrow = int(np.ceil(n / ncol))
+    n = len(classes); ncol = 4; nrow = int(np.ceil(n / ncol))   # 7 classes -> balanced 4+3
 
     for metric, fname, ylab, ttl in [
         ("T", "fig_workload_power_throughput.png", "throughput (tok/s, log)",
-         f"Power vs throughput on {hw} — first-principles theory (prefill X∝φ; decode = two-roofline sum) vs measured, per use-case class (log)"),
-        ("E", "fig_workload_power_tokj.png", "efficiency (tok/J on measured draw, log)",
-         f"Power vs energy efficiency (tok/J) on {hw} — first-principles theory; tok/J = T / MEASURED draw; rings = per-phase sweet spot (log)")]:
-        fig, axes = plt.subplots(nrow, ncol, figsize=(16, 3.7 * nrow), squeeze=False)
+         f"Power vs throughput on {hw} — prefill & decode per production workload class"),
+        ("E", "fig_workload_power_tokj.png", "efficiency (tok/J, log)",
+         f"Power vs energy efficiency (tok/J) on {hw} — rings mark each phase's sweet spot")]:
+        fig, axes = plt.subplots(nrow, ncol, figsize=(14.5, 3.9 * nrow), squeeze=False)
         axes = axes.ravel()
         for j, cl in enumerate(classes):
             _panel(axes[j], cl, curves[MAP[cl["klass"]]], metric, g)
         for ax in axes[n:]:
             ax.set_visible(False)
-        for ax in axes[(nrow - 1) * ncol:n]:
-            ax.set_xlabel(xlab, fontsize=8.5, color=INK2)
+        for j in range(n):                           # x-label on each column's LOWEST visible panel
+            if j + ncol >= n:
+                axes[j].set_xlabel(xlab, fontsize=9, color=INK2)
         for k in range(0, n, ncol):
-            axes[k].set_ylabel(ylab, fontsize=8.5, color=INK2)
-        fig.legend(handles=[Line2D([], [], color=PRE_C, lw=2, label="prefill"),
-                            Line2D([], [], color=DEC_C, lw=2, label="decode")],
-                   loc="upper right", bbox_to_anchor=(0.99, 0.99), fontsize=9, frameon=False)
-        fig.suptitle(ttl, fontsize=12.5, color=INK)
-        fig.text(0.5, 0.012, FOOT, ha="center", fontsize=7.2, color=INK2)
-        fig.tight_layout(rect=(0, 0.06, 1, 0.92))
+            axes[k].set_ylabel(ylab, fontsize=9, color=INK2)
+        fig.legend(handles=[Line2D([], [], color=PRE_C, lw=2.2, label="prefill"),
+                            Line2D([], [], color=DEC_C, lw=2.2, label="decode")],
+                   loc="lower right", bbox_to_anchor=(0.97, 0.10), fontsize=10.5, frameon=False)
+        fig.suptitle(ttl, fontsize=13, color=INK)
+        fig.text(0.5, 0.008, FOOT, ha="center", fontsize=7.2, color=INK2)
+        fig.tight_layout(rect=(0, 0.035, 1, 0.945))
         fig.savefig(os.path.join(out_dir, fname), dpi=130, bbox_inches="tight")
         plt.close(fig)
         print("wrote", os.path.join(out_dir, fname))
@@ -221,7 +221,7 @@ def _write_csv(classes, curves, out_dir, g):
                     "dec_tok_s_caphi": round(float(Td[-1]), 1), "dec_sat_cap_w": round(d_sat),
                     "pre_fit_R2": round(cv["pre"]["R2"], 3), "dec_fit_R2": round(cv["dec"]["R2"], 3)})
     path = os.path.join(out_dir, "workload_power_curves.csv")
-    with open(path, "w", newline="") as f:
+    with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=list(out[0].keys())); w.writeheader(); [w.writerow(r) for r in out]
     print(f"wrote {os.path.basename(path)}")
 
