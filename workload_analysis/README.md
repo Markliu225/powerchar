@@ -40,7 +40,8 @@
 - `plot_profit_model.py` —— **论文经济模型**(式 (1)–(15))按 II-C 七类混合核算 CAP vs TDP 的
   **累计净现金流**(起点 −K,末端 = Φ(n)):混合 w_j = **研究查证的请求份额 r_j**(ServeGen 实测
   请求量、Copilot/Cursor 补全规模、OpenRouter 份额;逐类置信度见 ECONOMICS.md §3)× 各类 trace
-  每请求 token 数;各类 2026 分档定价(式 8);N_j ∝ w_j/X_j 按类分机架,1 MW 集群。两组图:
+  每请求 token 数;各类 2026 分档定价(式 8)× **1/3 小模型折价**(`PRICE_SCALE`,见 ECONOMICS.md
+  §6);N_j ∝ w_j/X_j 按类分机架,1 MW 集群。两组图:
   `fig_profit_model.png`(2×4,设备 × λ=0/10/20/30%,标注 T× 与 G)·
   `fig_profit_mix.png`(1×2,每类份额 ±20% 逐类扰动敏感带)· `profit_model.csv`;
   详见 [ECONOMICS.md](ECONOMICS.md)

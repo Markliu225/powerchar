@@ -62,6 +62,12 @@ PRICE = {"推理": (5.0, 25.0),           # reasoning models = flagship tier
          "助手API": (1.0, 5.0),         # programmatic API tasks, Haiku tier
          "代码补全": (1.0, 5.0)}        # IDE inline completion = fast/cheap models (agent coding is Agentic)
 DEFAULT_PRICE = (1.0, 5.0)
+# Haircut applied to every listed price. The throughput curves are MEASURED on small models
+# (phi3-mini / qwen-3B / qwen-7B — what the testbed can run) while the list prices above are the
+# market rate of the much larger models that really serve these classes; charging flagship rates for
+# small-model token volume overstates absolute revenue. 1/3 is a deliberate conservative discount on
+# that mismatch (see ECONOMICS.md §6). Set to 1.0 to recover raw list prices.
+PRICE_SCALE = 1.0 / 3.0
 T_YR_S = 365.0 * 86400.0  # seconds/yr (~3.15e7, eq. 6)
 CLUSTER_MW = 1.0          # cluster IT power both policies are normalized to
 DECAYS = [0.0, 0.10, 0.20, 0.30]   # price annual decay rates lambda (columns of group 1)
@@ -96,7 +102,7 @@ GREEN, RED, GOLD, MUTE, GRID = "#2ca02c", "#d62728", "#cc6600", "#52514e", "#e1e
 # ---- per-rack economics (eq. 1-7; lambda-independent) -----------------------------------------
 def econ(m, X, P_w, kappa, c_g, price):
     """price = (pi_p, pi_d) for THIS class in $/Mtok (eq. 8 per-class pricing)."""
-    pi_p, pi_d = price[0] / 1e6, price[1] / 1e6
+    pi_p, pi_d = price[0] * PRICE_SCALE / 1e6, price[1] * PRICE_SCALE / 1e6
     K = m * c_g
     D = (K - SALVAGE) / N_YR
     E = ELEC * PUE * (P_w / 1000.0) * 8760.0
@@ -239,7 +245,10 @@ def fig_group1(dev_cl):
     fig.text(0.5, 0.008,
              f"mixed workload (per-class racks summed, N_j ∝ w_j/X_j; w = est. request shares × trace tokens/req, 7 II-C classes)  ·  "
              f"n={N_YR:.0f} yr S=0 · e=\\${ELEC:.2f}/kWh × PUE {PUE} · μ={MU:.0%} · "
-             f"per-class 2026 tier price (reasoning/agentic \\$5/\\$25 · long-ctx \\$3/\\$15 · chat/multimodal \\$2/\\$10 · API/completion \\$1/\\$5 per Mtok) · "
+             f"per-class 2026 tier price × {PRICE_SCALE:.3g} small-model haircut "
+             f"(reasoning/agentic \\${5*PRICE_SCALE:.2f}/\\${25*PRICE_SCALE:.2f} · long-ctx \\${3*PRICE_SCALE:.2f}/\\${15*PRICE_SCALE:.2f} · "
+             f"chat/multimodal \\${2*PRICE_SCALE:.2f}/\\${10*PRICE_SCALE:.2f} · API/completion \\${1*PRICE_SCALE:.2f}/\\${5*PRICE_SCALE:.2f} per Mtok; "
+             f"blended \\${dev_cl['V100']['CAP']['pi']*1e6:.2f}) · "
              f"c_g \\${C_G['V100']:,.0f}(V100)/\\${C_G['H200']:,.0f}(H200)  ·  100% util, SLO not priced",
              ha="center", fontsize=7.5, color=MUTE)
     fig.tight_layout(rect=(0, 0.045, 1, 0.94))
@@ -280,7 +289,7 @@ def fig_group2(classes_by_dev, w0):
         for c in [c for c in classes if w0[c["klass"]] > 0]:   # active classes × {+20%, −20%}
             for fac in (1 + MIX_SHIFT, 1 - MIX_SHIFT):
                 dy, _ = dcf(dev, classes, perturb_mix(w0, c["klass"], fac))
-                ax.plot(t, dy, color=ccol[c["klass"]], lw=1.1, alpha=.75, zorder=3)
+                ax.plot(t, dy, color=ccol[c["klass"]], lw=0.85, alpha=.7, zorder=3)
                 curves.append(dy)
                 tc = first_cross(t, dy)
                 if tc is not None:
@@ -293,21 +302,25 @@ def fig_group2(classes_by_dev, w0):
         band = np.array(curves)
         lo, hi = band.min(0), band.max(0)
         ax.fill_between(t, lo, hi, color="#9a9a9a", alpha=.16, zorder=1, lw=0)   # sensitivity envelope
-        ax.plot(t, base_dy, color=INK, lw=3.1, zorder=6, label="real mix (measured proportions)")
+        ax.plot(t, base_dy, color=INK, lw=2.0, zorder=6, label="real mix (measured proportions)")
         ax.axhline(0, color="k", ls="--", lw=0.8)
 
         tx0 = first_cross(t, base_dy)
         if tx0 is not None:
-            ax.plot(tx0, 0, "o", color=INK, ms=7, mec="white", mew=0.9, zorder=7)
-        ax.annotate(f"real {fmt_m(base_dy[-1]*1e6)}\nspan [{fmt_m(lo[-1]*1e6)}, {fmt_m(hi[-1]*1e6)}]"
-                    f" over {len(order)} classes", (t[-1], base_dy[-1]), textcoords="offset points",
-                    xytext=(-6, -4), ha="right", va="top", fontsize=8.6, color=INK, weight="bold")
-        if txs:
-            ax.annotate(f"T× {fmt_pb(tx0)}\n(span {min(txs)*12:.1f}–{max(txs)*12:.1f} mo)",
-                        (tx0, 0), textcoords="offset points", xytext=(12, 14), fontsize=8.4,
-                        color=MUTE, weight="bold")
-        ax.text(0.03, 0.06, f"ΔK = {fmt_m(dK)} (mix-independent: every rack 32/20 GPUs)",
-                transform=ax.transAxes, va="bottom", ha="left", fontsize=8, color=MUTE)
+            ax.plot(tx0, 0, "o", color=INK, ms=6, mec="white", mew=0.9, zorder=7)
+        # all readouts consolidated into the upper-left dead space (the curves rise left-to-right, so
+        # nothing is ever drawn there) instead of pinned to the endpoint/crossing, where they collided
+        # with the lines they were labelling.
+        ANCHOR = (0.035, 0.97)
+        ax.annotate(f"real mix:  {fmt_m(base_dy[-1]*1e6)} extra profit at {N_YR:.0f} yr", ANCHOR,
+                    xycoords="axes fraction", va="top", ha="left", fontsize=9.6, color=INK,
+                    weight="bold", zorder=8)
+        ax.annotate(f"span [{fmt_m(lo[-1]*1e6)}, {fmt_m(hi[-1]*1e6)}] over {len(order)} classes\n"
+                    f"● T× = {fmt_pb(tx0)}"
+                    + (f"   (span {min(txs)*12:.1f}–{max(txs)*12:.1f} mo)" if txs else "")
+                    + f"\nΔK = {fmt_m(dK)}  (mix-independent: 32/20 GPUs per rack)",
+                    ANCHOR, xycoords="axes fraction", textcoords="offset points", xytext=(0, -15),
+                    va="top", ha="left", fontsize=8.4, color=MUTE, zorder=8)
         ax.set_title(f"{dev}", fontsize=12.5, weight="bold")
         ax.set_xlabel("years since deployment", fontsize=10)
         ax.set_ylabel("CAP − TDP cumulative net cash flow (M$)", fontsize=10)
