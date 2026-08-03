@@ -40,6 +40,7 @@ import fitlib                                   # noqa: E402
 DATA = os.path.join(PORT, "data")
 F_MAX = fitlib.resolve_f_max(DATA)
 CAP_LO, CAP_HI = 100.0, 250.0                   # measured cap range — never extrapolate
+CLK_FLOOR = 135.0                               # lowest hardware SM clock (H200 wrapper overrides)
 
 # The taxonomy = the paper's II-C production workload classes (trace-measured P:D, eq. (1)
 # rho-bar = sum Lp / sum Ld): Reasoning 0.83 (ServeGen) · Assistant API 7.7 (ServeGen) ·
@@ -104,8 +105,10 @@ def load_curves(wid):
     B = float(drow[0]["batch"])
     # UPDATED first-principles theory (MODEL_AND_RESULTS.zh.md): prefill LINEAR in phi;
     # decode = sum of two rooflines + overhead (three segments). See fitlib.fit_*_theory.
-    preT, pre = fitlib.fit_prefill_theory(Pp, Tp, Fp, F_MAX)
-    decT, dec = fitlib.fit_decode_theory(Pd, Td, Fd, B, F_MAX)
+    # The DVFS side (P_stat, gamma) is the per-GPU calibration of eq. (3), shared by every workload.
+    cal = fitlib.calibrate_power_side(DATA, F_MAX, CLK_FLOOR)
+    preT, pre = fitlib.fit_prefill_theory(Pp, Tp, Fp, F_MAX, cal)
+    decT, dec = fitlib.fit_decode_theory(Pd, Td, Fd, B, F_MAX, cal)
 
     def _pwr_of(x, w):                                          # MEASURED draw as a fn of the fit's power axis
         o = np.argsort(x)                                      # (prefill: axis IS measured draw -> identity;

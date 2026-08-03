@@ -1,8 +1,8 @@
 klass,band,ratio_agg,via_workload,mapping_caveat,opt_tok_s,tdp_tok_s,gain_pct,opt_N_prefill,opt_N_decode,opt_cap_prefill_w,opt_cap_decode_w,opt_w_provisioned,opt_w_measured,tdp_N_prefill,tdp_N_decode,opt_rack_tok_per_j,tdp_rack_tok_per_j,opt_pct_of_cont_bound,constraint_binds
 推理,balanced,0.83,longform-phi3,anchor longform-phi3 dec 4096x8; qwen3think-4b (8192x8) is the closer shape but has no H200 data,11665.1,7955.2,46.6,1,31,304,442,14000,13832,1,19,0.843,0.576,89.6,N_max=32+Np=1
-助手API,prefill-heavy,7.7,translate-qwen3b,translate curves (512x64) stand in for its ~0.7k programmatic requests,274581.9,232059.1,18.3,8,24,566,395,14000,13728,6,14,20.001,16.833,97.7,N_max=32
+助手API,prefill-heavy,7.7,translate-qwen3b,translate curves (512x64) stand in for its ~0.7k programmatic requests,256625.7,223712.0,14.7,8,24,531,406,14000,13745,6,14,18.67,16.228,97.6,N_max=32
 多模态图文,prefill-heavy,9.4,rag-phi3,text-only curves - vision tokens priced as text prefill (no multimodal measurement),111643.6,85225.9,31.0,12,20,541,375,14000,13866,8,12,8.052,6.133,99.0,N_max=32
-对话,prefill-heavy,15.5,code-phi3,anchor code-phi3 for its 2048 ctx (~1.7k accumulated history); B=16 below chat-typical concurrency,103485.7,63681.5,62.5,7,25,642,283,11566,11514,4,16,8.988,4.531,78.8,N_max=32
+对话,prefill-heavy,15.5,code-phi3,anchor code-phi3 for its 2048 ctx (~1.7k accumulated history); B=16 below chat-typical concurrency,103486.8,63681.5,62.5,7,25,642,294,11833,11767,4,16,8.794,4.531,80.1,N_max=32
 长上下文对话,prefill-heavy,35.1,summarize-qwen7b,32k summarize curves vs ~12k real context - decode ceiling conservative (T∝1/C),21502.8,18109.2,18.7,3,29,463,435,14000,13924,2,18,1.544,1.299,99.1,N_max=32
 Agentic工具调用,prefill-heavy,47.2,summarize-qwen7b,32k summarize curves vs ~8.8k per-step context - conservative; full-history re-prefill accounting,27772.6,22835.8,21.6,3,29,607,420,14000,13918,3,17,1.995,1.639,99.1,N_max=32
-代码补全,prefill-heavy,110.7,code-phi3,,255026.2,196177.8,30.0,22,10,524,248,14000,13990,13,7,18.229,14.029,99.4,N_max=32
+代码补全,prefill-heavy,110.7,code-phi3,,253882.7,196177.8,29.4,22,10,521,253,14000,13989,13,7,18.148,14.029,99.5,N_max=32

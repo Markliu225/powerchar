@@ -22,6 +22,7 @@ import curves_lib as V                   # noqa: E402  the shared builder + taxo
 V.DATA = os.path.join(ROOT, "data_h200")
 V.CAP_LO, V.CAP_HI = 200.0, 700.0
 V.F_MAX = V.fitlib.resolve_f_max(V.DATA)
+V.CLK_FLOOR = 345.0                             # H200 lowest SM clock, for the eq. (3) calibration
 
 
 def main():

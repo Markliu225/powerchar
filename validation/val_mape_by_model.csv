@@ -1,0 +1,17 @@
+hw,model,phase,n_shapes,representative,MAPE_med,MAPE_min,MAPE_max,R2_med
+V100,Qwen2.5-1.5B,prefill,1,fastchat-qwen15b,6.95,6.95,6.95,0.9417
+V100,Qwen2.5-1.5B,decode,1,fastchat-qwen15b,3.31,3.31,3.31,0.8768
+V100,Qwen2.5-3B,prefill,1,translate-qwen3b,6.43,6.43,6.43,0.9492
+V100,Qwen2.5-3B,decode,1,translate-qwen3b,2.72,2.72,2.72,0.9352
+V100,Phi-3-mini-4k (3.8B),prefill,4,code-phi3,6.58,1.87,15.11,0.9529
+V100,Phi-3-mini-4k (3.8B),decode,4,code-phi3,3.03,2.61,3.4,0.9355
+V100,Qwen2.5-7B,prefill,2,summarize-qwen7b,3.26,2.65,3.87,0.9766
+V100,Qwen2.5-7B,decode,2,summarize-qwen7b,5.9,1.46,10.34,0.7443
+H200,Qwen2.5-1.5B,prefill,1,fastchat-qwen15b,3.3,3.3,3.3,0.992
+H200,Qwen2.5-1.5B,decode,1,fastchat-qwen15b,4.93,4.93,4.93,0.9737
+H200,Qwen2.5-3B,prefill,1,translate-qwen3b,2.17,2.17,2.17,0.9911
+H200,Qwen2.5-3B,decode,1,translate-qwen3b,9.24,9.24,9.24,0.9422
+H200,Phi-3-mini-4k (3.8B),prefill,4,code-phi3,2.92,1.77,4.13,0.9911
+H200,Phi-3-mini-4k (3.8B),decode,4,code-phi3,4.0,3.36,4.73,0.9866
+H200,Qwen2.5-7B,prefill,2,summarize-qwen7b,7.71,3.42,11.99,0.9662
+H200,Qwen2.5-7B,decode,2,summarize-qwen7b,5.34,3.66,7.02,0.4032

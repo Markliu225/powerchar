@@ -1,8 +1,8 @@
 klass,band,ratio_agg,via_workload,mapping_caveat,pre_sweet_cap_w,pre_tok_per_j_sweet,pre_tok_s_caphi,dec_sweet_cap_w,dec_tok_per_j_sweet,dec_tok_s_caphi,dec_sat_cap_w,pre_fit_R2,dec_fit_R2
-推理,balanced,0.83,longform-phi3,anchor longform-phi3 dec 4096x8; qwen3think-4b (8192x8) is the closer shape but has no H200 data,652,39.294,27305.4,463,0.373,241.7,696,0.981,0.952
-助手API,prefill-heavy,7.7,translate-qwen3b,translate curves (512x64) stand in for its ~0.7k programmatic requests,612,53.366,37093.7,424,3.378,2213.3,695,0.987,0.96
-多模态图文,prefill-heavy,9.4,rag-phi3,text-only curves - vision tokens priced as text prefill (no multimodal measurement),571,15.535,10688.3,556,1.126,759.1,697,0.986,0.964
-对话,prefill-heavy,15.5,code-phi3,anchor code-phi3 for its 2048 ctx (~1.7k accumulated history); B=16 below chat-typical concurrency,586,21.962,15143.0,426,0.344,218.7,696,0.991,0.716
-长上下文对话,prefill-heavy,35.1,summarize-qwen7b,32k summarize curves vs ~12k real context - decode ceiling conservative (T∝1/C),549,15.199,10178.4,626,0.049,33.6,693,0.96,0.97
-Agentic工具调用,prefill-heavy,47.2,summarize-qwen7b,32k summarize curves vs ~8.8k per-step context - conservative; full-history re-prefill accounting,549,15.199,10178.4,626,0.049,33.6,693,0.96,0.97
-代码补全,prefill-heavy,110.7,code-phi3,,586,21.962,15143.0,426,0.344,218.7,696,0.991,0.716
+推理,balanced,0.83,longform-phi3,anchor longform-phi3 dec 4096x8; qwen3think-4b (8192x8) is the closer shape but has no H200 data,648,38.986,27102.9,626,0.371,244.5,670,0.985,0.888
+助手API,prefill-heavy,7.7,translate-qwen3b,translate curves (512x64) stand in for its ~0.7k programmatic requests,648,53.029,37069.9,426,3.327,2141.2,695,0.991,0.963
+多模态图文,prefill-heavy,9.4,rag-phi3,text-only curves - vision tokens priced as text prefill (no multimodal measurement),648,15.334,10719.1,562,1.131,765.0,697,0.993,0.956
+对话,prefill-heavy,15.5,code-phi3,anchor code-phi3 for its 2048 ctx (~1.7k accumulated history); B=16 below chat-typical concurrency,648,21.846,15194.2,626,0.211,142.5,694,0.997,-0.257
+长上下文对话,prefill-heavy,35.1,summarize-qwen7b,32k summarize curves vs ~12k real context - decode ceiling conservative (T∝1/C),648,14.883,10260.3,513,0.05,33.3,692,0.99,0.982
+Agentic工具调用,prefill-heavy,47.2,summarize-qwen7b,32k summarize curves vs ~8.8k per-step context - conservative; full-history re-prefill accounting,648,14.883,10260.3,513,0.05,33.3,692,0.99,0.982
+代码补全,prefill-heavy,110.7,code-phi3,,648,21.846,15194.2,626,0.211,142.5,694,0.997,-0.257
