@@ -27,7 +27,7 @@ HOW THE NUMBERS ARE MADE (mock recipe, deliberately simple and fully disclosed):
    scaled off the H200 series' full-power draw fraction so heavy prefills peg the 575 W limit and
    light decodes idle far below it, exactly as on the real cards.
 
-4. Sweeps simulated on that model + small measurement noise (thr 0.8%, draw 0.6%), clocks
+4. Sweeps simulated on that model + measurement noise (thr 3%, draw 0.6%), clocks
    quantized to the 15 MHz Blackwell step. Decode cap grid: geometric [200..575] W, the same
    density as the H200 sweep. Prefill clock grid 810..3090 MHz at a fixed 575 W cap, with the
    cap-droop (power_limited=True) reproduced at the top of the range.
@@ -108,14 +108,15 @@ def util_temp(draw, phase):
 
 
 def main():
-    cal = fitlib.calibrate_power_side(H200, F_MAX_H200, FLOOR_H200)
+    cal_pre = fitlib.calibrate_power_side(H200, F_MAX_H200, FLOOR_H200, "prefill")
+    cal_dec = fitlib.calibrate_power_side(H200, F_MAX_H200, FLOOR_H200, "decode")
     wids = sorted({f.rsplit("_", 1)[0] for f in os.listdir(H200) if f.endswith("_prefill.csv")})
     for wid in wids:
         Pp, Tp, Fp, Wp, prow = read_h200(os.path.join(H200, f"{wid}_prefill.csv"))
         Pd, Td, Fd, Wd, drow = read_h200(os.path.join(H200, f"{wid}_decode.csv"))
         B = float(drow[0]["batch"])
-        _, pre = fitlib.fit_prefill_theory(Pp, Tp, Fp, F_MAX_H200, cal)
-        _, dec = fitlib.fit_decode_theory(Pd, Td, Fd, B, F_MAX_H200, cal)
+        _, pre = fitlib.fit_prefill_theory(Pp, Tp, Fp, F_MAX_H200, cal_pre)
+        _, dec = fitlib.fit_decode_theory(Pd, Td, Fd, B, F_MAX_H200, cal_dec)
 
         # -- 5090 curve parameters: H200 shape x spec ratios (all rates at each card's own f_max) --
         # prefill: linear in the 5090's own x, with the RATIO enforced at the top of both ranges —
@@ -142,7 +143,7 @@ def main():
                 x, _ = x_at_cap(TDP, chi_pre)
                 limited, clk = True, qclk(x * noise(0.004))
             draw = min(TDP * 1.01, power_of(x, chi_pre)) * noise(0.006)
-            thr = a_pre * x * noise(0.008)
+            thr = a_pre * x * noise(0.03)
             ug, um, t = util_temp(draw, "prefill")
             out.append(dict(phase="prefill", cap_w=int(TDP), throughput_tok_s=round(thr, 1),
                             power_avg_w=round(draw, 1), power_sample_avg_w=round(draw * noise(0.004), 1),
@@ -159,7 +160,7 @@ def main():
         for cap in CAP_GRID:
             x, limited = x_at_cap(cap, chi_dec)
             draw = min(power_of(x, chi_dec), cap * 1.01) * noise(0.006)
-            thr = Xdec(x) * noise(0.008)
+            thr = Xdec(x) * noise(0.03)
             ug, um, t = util_temp(draw, "decode")
             ctx = int(drow[0]["ctx"]); steps = 32
             out.append(dict(phase="decode", cap_w=cap, throughput_tok_s=round(thr, 1),

@@ -31,6 +31,7 @@ W_RACK, N_GPU_MAX = 11500.0, 32                 # Table II; TDP -> exactly 20 of
 SW.DATA = os.path.join(ROOT, "data_5090")
 SW.F_MAX = SW.fitlib.resolve_f_max(SW.DATA)
 SW.P_TDP, SW.CAP_LO, SW.CAP_HI = 575.0, 200.0, 575.0    # caps confined to the swept [200, 575] W
+SW.CLK_FLOOR = 210.0
 SW.sweet_spot.__defaults__ = (SW.CAP_HI,)       # hi= default was bound to 250 at def time
 
 MOCK_TAG = "⚠ MOCK DATA — synthesized from H200 fits x 5090 spec ratios, no measurement"

@@ -8,13 +8,15 @@ implemented (and calibrated in §III) by pt_cap_gpu1/portfolio/fitlib.py:
     power    phi(P) = x(P) = ((P - P_s)/chi)^(1/theta)      the DVFS law, eq. (1)-(2)
 
 CHECK 1 (accuracy of the throughput curve) -- per hardware x workload x phase, predict throughput at
-  every measured power point and score MAPE against the measurement. Reported twice: over ALL swept
-  points (this is the fit the paper's figures and the rack solver actually use) and over the model's
-  stated DOMAIN only. The domain is the DVFS-controlled region: points whose SM clock sits on the
-  hardware floor (135 MHz V100 / 345 MHz H200) are outside it, because there the cap is no longer a
-  frequency knob -- the driver meets it by stalling, and two different throughputs appear at the same
-  clock. Those points are kept in the fit (so the numbers match the rest of the repo) but flagged.
-  -> fig_val_curves.png, val_mape.csv
+  every measured power point in the model's DOMAIN and score MAPE against the measurement. The
+  domain is the cap-controlled DVFS region: fitlib.cap_sweep_mask drops clock-floor points (cap
+  unreachably low; H200 decode) and governor-stall points (draw well below the cap at a mid-range
+  clock; V100's lowest cap on light prefill) at read time -- the same rule the whole repo fits with.
+  Two figures: per MODEL (fig_val_curves.png; bottom row = the MOCK RTX 5090, projection only) and
+  per PRODUCTION CLASS of Table I (fig_val_curves_class.png; Long-context chat = synthetic anchor).
+  The mock row appears in the FIGURES ONLY -- scoring the model on data generated from the model is
+  circular, so no 5090 number enters any CSV/median.
+  -> fig_val_curves.png, fig_val_curves_class.png, val_mape.csv, val_mape_by_model.csv
 
 CHECK 2 (accuracy of the efficiency-optimal power) -- the planner puts the cap near the efficiency
   peak, so the peak itself is validated directly. Efficiency = throughput / MEASURED draw (the same
@@ -37,7 +39,7 @@ CHECK 3 (comparison against simpler analytical forms) -- two baselines fitted to
   reported alongside -- that is the number that decides it.
   -> fig_val_baselines.png, val_baselines.csv
 
-python3 validation/validate_model.py -> 3 PNGs + 3 CSVs in this folder
+python3 validation/validate_model.py -> 4 PNGs + 4 CSVs in this folder
 """
 from __future__ import annotations
 import csv, os, sys
@@ -66,7 +68,7 @@ HW = {
                  note="decode cap-swept 200-700 W; prefill clock-swept at the 700 W cap"),
 }
 FIG_HW = {**HW,
-          "RTX 5090 (MOCK)": dict(data=os.path.join(ROOT, "data_5090"), clk_floor=210.0,
+          "RTX 5090": dict(data=os.path.join(ROOT, "data_5090"), clk_floor=210.0,
                                   note="MOCK: synthesized from the H200 fits x 5090 spec ratios")}
 # In a CAP sweep, points whose SM clock sits on the hardware floor are DROPPED at read time: there
 # the cap is no longer a frequency knob (the driver meets it by stalling), so two different
@@ -142,7 +144,7 @@ def read(path, clk_floor):
     pwr = np.array([float(r["power_avg_w"]) for r in rows])
     cap_swept = np.ptp(cap) > 1e-6
     if cap_swept:
-        k = clk > clk_floor * CLK_FLOOR_TOL
+        k = fitlib.cap_sweep_mask(cap, clk, pwr, clk_floor)
         cap, thr, clk, pwr = cap[k], thr[k], clk[k], pwr[k]
         rows = [r for r, kk in zip(rows, k) if kk]
     P = cap if cap_swept else pwr
@@ -159,8 +161,8 @@ def load(hw, wid):
     """Both phases of one workload: measured arrays, the paper's fit, and the domain mask."""
     cfg, out = FIG_HW[hw], {}
     fmax = cfg["f_max"]
-    cal = fitlib.calibrate_power_side(cfg["data"], fmax, cfg["clk_floor"])
     for phase, suffix in (("prefill", "_prefill.csv"), ("decode", "_decode.csv")):
+        cal = fitlib.calibrate_power_side(cfg["data"], fmax, cfg["clk_floor"], phase)
         P, T, F, W, rows = read(os.path.join(cfg["data"], wid + suffix), cfg["clk_floor"])
         B = float(rows[0]["batch"])
         fn, pr = (fitlib.fit_prefill_theory(P, T, F, fmax, cal) if phase == "prefill"
@@ -211,10 +213,11 @@ def by_model(rows):
     return out
 
 
-def _curve_panel(ax, d, title, subtitle, ylab=None, xlab=True):
+def _curve_panel(ax, d, title, subtitle=None, ylab=None, xlab=True):
     """One measured-vs-predicted panel: both phases on a LOG y-axis (they sit 1-2 orders apart),
     fitted line + measured dots, each phase labelled with its MAPE. Shared by the per-model and the
-    per-workload figures so the two can never drift apart."""
+    per-workload figures so the two can never drift apart. `subtitle` is accepted but not drawn
+    (paper style: no per-panel fine print; the anchor/shape detail lives in the CSVs)."""
     ax.set_yscale("log")
     lo_x = min(d[p]["P"].min() for p in ("prefill", "decode"))
     hi_x = max(d[p]["P"].max() for p in ("prefill", "decode"))
@@ -223,23 +226,21 @@ def _curve_panel(ax, d, title, subtitle, ylab=None, xlab=True):
         g = np.linspace(s["P"].min(), s["P"].max(), 400)
         ax.plot(g, s["fn"](g), color=c, lw=2, zorder=3)
         ax.plot(s["P"], s["T"], "o", ms=5, color=c, mec="white", mew=0.9, zorder=4)
-        ax.annotate(f"{phase[:3]}  MAPE {mape(s['T'], s['fn'](s['P'])):.1f}%",
+        ax.annotate(f"{phase}  MAPE {mape(s['T'], s['fn'](s['P'])):.1f}%",
                     (s["P"][-1], s["T"][-1]), textcoords="offset points", xytext=(-3, 8),
                     ha="right", fontsize=8.4, color=c, weight="bold")
     ax.set_xlim(lo_x - (hi_x - lo_x) * .07, hi_x + (hi_x - lo_x) * .10)
     ys = np.concatenate([d[p]["T"] for p in ("prefill", "decode")])
     ax.set_ylim(ys.min() * 0.32, ys.max() * 4.5)      # headroom so the MAPE labels clear the title
-    ax.set_title(title, fontsize=10.4, color=INK, weight="bold", pad=12)
-    ax.annotate(subtitle, (0.5, 1.012), xycoords="axes fraction", ha="center", va="bottom",
-                fontsize=7.8, color=MUTE)
+    ax.set_title(title, fontsize=10.4, color="black", weight="bold", pad=7)
     ax.grid(alpha=.4, color=GRID, lw=0.7, which="both")
-    ax.tick_params(labelsize=8, colors=MUTE)
+    ax.tick_params(labelsize=8, colors="black")
     [s_.set_visible(False) for s_ in (ax.spines["top"], ax.spines["right"])]
-    [ax.spines[s_].set_color(GRID) for s_ in ("left", "bottom")]
+    [ax.spines[s_].set_color("black") for s_ in ("left", "bottom")]
     if ylab:
-        ax.set_ylabel(ylab, fontsize=10, weight="bold", color=INK)
+        ax.set_ylabel(ylab, fontsize=10, weight="bold", color="black")
     if xlab:
-        ax.set_xlabel("GPU power (W)", fontsize=9.4, color=INK2)
+        ax.set_xlabel("GPU power (W)", fontsize=9.4, color="black")
 
 
 def _phase_legend(fig, y=-0.004, ncol=2):
@@ -263,11 +264,14 @@ def fig_curves(store):
                         ha="center", va="center", fontsize=9.6, color=MUTE)
                 continue
             _curve_panel(ax, store[hw][wid], SHORT[model], shape_label(wid),
-                         ylab=f"{hw}\nthroughput (tok/s, log)" if j == 0 else None, xlab=(i == 1))
+                         ylab=f"{hw}\nthroughput (tok/s, log)" if j == 0 else None,
+                         xlab=(i == len(FIG_HW) - 1))
     _phase_legend(fig, y=-0.012)
     fig.suptitle("Check 1 — throughput-curve accuracy per MODEL: analytical model vs measurement\n"
-                 "each column is one model at its representative swept shape "
-                 "(median decode context among that model's shapes)", fontsize=12.5, color=INK)
+                 "each column is one model at its representative swept shape (median decode context "
+                 "among that model's shapes)  ·  ⚠ bottom row RTX 5090 = MOCK data (synthesized, "
+                 "no measurement — shown for projection only, excluded from every metric)",
+                 fontsize=12.5, color=INK)
     fig.tight_layout(rect=(0, 0.05, 1, 0.88))
     _save(fig, "fig_val_curves.png")
 
@@ -288,9 +292,10 @@ def synth_entry(hw, parts):
     (throughput geometrically — fitlib.synth_points), then fitted with the same theory model. The
     entry is shaped exactly like a measured one, so _curve_panel draws it identically; the figure
     suptitle carries the mock note."""
-    cal = fitlib.calibrate_power_side(FIG_HW[hw]["data"], FIG_HW[hw]["f_max"], FIG_HW[hw]["clk_floor"])
     out = {}
     for phase in ("prefill", "decode"):
+        cal = fitlib.calibrate_power_side(FIG_HW[hw]["data"], FIG_HW[hw]["f_max"],
+                                          FIG_HW[hw]["clk_floor"], phase)
         P, T, F, W = fitlib.synth_points([(d[phase]["P"], d[phase]["T"], d[phase]["F"],
                                            d[phase]["W"]) for d in parts])
         B = float(np.mean([d[phase]["B"] for d in parts]))
@@ -304,8 +309,8 @@ def fig_curves_class(store):
     """The seven production classes of Table I, ordered by prefill-to-decode ratio. Rows = hardware,
     cols = class, so a column compares the two GPUs on the same class."""
     cl = classes()
-    fig, axes = plt.subplots(2, len(cl), figsize=(3.4 * len(cl), 8.2), squeeze=False)
-    for i, hw in enumerate(HW):
+    fig, axes = plt.subplots(len(FIG_HW), len(cl), figsize=(3.4 * len(cl), 12.0), squeeze=False)
+    for i, hw in enumerate(FIG_HW):
         for j, c in enumerate(cl):
             ax = axes[i][j]
             rho = f"{c['rho']:.1f}:1" if c["rho"] >= 1 else f"{c['rho']:.2f}:1"
@@ -317,16 +322,18 @@ def fig_curves_class(store):
             elif len(c["via"]) > 1:                    # synthetic anchor, drawn like any other
                 _curve_panel(ax, synth_entry(hw, [store[hw][v] for v in c["via"]]), title,
                              "anchor mean(" + ", ".join(c["via"]) + ")",
-                             ylab=ylab, xlab=(i == 1))
+                             ylab=ylab, xlab=(i == len(FIG_HW) - 1))
             else:
                 _curve_panel(ax, store[hw][c["via"][0]], title,
                              f"anchor {c['via'][0]}  ·  {shape_label(c['via'][0])}",
-                             ylab=ylab, xlab=(i == 1))
+                             ylab=ylab, xlab=(i == len(FIG_HW) - 1))
     _phase_legend(fig, y=-0.012)
     synth = [c for c in cl if len(c["via"]) > 1]
     note = ("  ·  ⚠ " + ", ".join(c["name"] for c in synth) + " = MOCK anchor (per-power mean of "
             "the " + " & ".join(sorted({v for c in synth for v in c["via"]}))
             + " measurements, fitted like any workload)") if synth else ""
+    note += ("  ·  ⚠ bottom row RTX 5090 = MOCK data (synthesized, no measurement — "
+             "shown for projection only, excluded from every metric)")
     fig.suptitle("Check 1 — throughput-curve accuracy per PRODUCTION WORKLOAD CLASS: "
                  "analytical model vs measurement\n"
                  "the seven classes of Table I, ordered by prefill-to-decode ratio; each takes the "
@@ -478,7 +485,7 @@ def fit_forms(P, T, F, B, fmax, phase):
 
     # A — a single power law over the whole range (the classic DVFS form): X = a * x^p
     coef, *_ = np.linalg.lstsq(np.vstack([np.ones_like(x), np.log(x)]).T, np.log(T), rcond=None)
-    a0, p0_ = float(np.exp(coef[0])), float(coef[1])
+    a0, p0_ = float(np.exp(coef[0])), float(np.clip(coef[1], 1e-3, 12.0))
     rA = least_squares(lambda q: (q[0] * x ** q[1]) / T - 1.0, [a0, p0_],
                        bounds=([1e-9, 1e-3], [np.inf, 12.0]), method="trf", max_nfev=20000)
     aA, pA = (float(v) for v in rA.x)
@@ -635,7 +642,7 @@ def main():
         sys.stdout.reconfigure(encoding="utf-8")
     except AttributeError:
         pass
-    for hw, cfg in HW.items():
+    for hw, cfg in FIG_HW.items():
         cfg["f_max"] = fitlib.resolve_f_max(cfg["data"])
         cfg["wids"] = workloads(cfg["data"])
 

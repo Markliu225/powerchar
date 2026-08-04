@@ -75,19 +75,26 @@ def rel_rmse(y, yhat):
 _CAL_CACHE: dict = {}
 
 
-def calibrate_power_side(data_dir: str, f_max: float, clk_floor: float = 0.0) -> dict:
-    """Per-GPU calibration of (P_stat, gamma), pooled over every workload and phase in data_dir.
+def calibrate_power_side(data_dir: str, f_max: float, clk_floor: float = 0.0,
+                         phase: str | None = None) -> dict:
+    """Per-GPU calibration of (P_stat, gamma), pooled over every workload in data_dir — per PHASE
+    when `phase` is given ("prefill"/"decode"). The paper already keeps separate per-phase
+    efficiencies (eta_C^pre vs eta_C^dec); the EFFECTIVE power-law exponent needs the same split:
+    the fitted gamma absorbs how utilization and voltage residency drift with frequency, and that
+    drift differs by phase (V100: prefill-only gamma ~2.6 vs decode-only ~4.1, while a pooled fit
+    lands at 2.9 and misplaces the prefill efficiency peak by ~30 W; H200's two phases agree, so
+    the split is a no-op there).
 
     Cap-swept series drop points whose SM clock sits on the hardware floor: there the cap can no
     longer set the frequency and the driver meets it by stalling, so the point is not on the DVFS
     curve at all. A locked-clock sweep (cap fixed, clock stepped) keeps every point."""
-    key = (os.path.abspath(data_dir), float(f_max), float(clk_floor))
+    key = (os.path.abspath(data_dir), float(f_max), float(clk_floor), phase)
     if key in _CAL_CACHE:
         return _CAL_CACHE[key]
 
+    pats = [f"*_{phase}.csv"] if phase else ["*_prefill.csv", "*_decode.csv"]
     series = []
-    for path in sorted(glob.glob(os.path.join(data_dir, "*_prefill.csv"))
-                       + glob.glob(os.path.join(data_dir, "*_decode.csv"))):
+    for path in sorted(p for pat in pats for p in glob.glob(os.path.join(data_dir, pat))):
         rows = [r for r in csv.DictReader(open(path)) if float(r["throughput_tok_s"]) > 0]
         if not rows:
             continue
@@ -96,7 +103,7 @@ def calibrate_power_side(data_dir: str, f_max: float, clk_floor: float = 0.0) ->
         pwr = np.array([float(r["power_avg_w"]) for r in rows])
         cap_swept = np.ptp(cap) > 1e-6
         if cap_swept:
-            k = clk > clk_floor * 1.02
+            k = cap_sweep_mask(cap, clk, pwr, clk_floor)
             cap, clk, pwr = cap[k], clk[k], pwr[k]
         if len(clk) < 3:
             continue
@@ -120,11 +127,33 @@ def calibrate_power_side(data_dir: str, f_max: float, clk_floor: float = 0.0) ->
         pass
     cal = dict(P_stat=float(r.x[0]), gamma=float(r.x[1]), phi_min=phi_min,
                n_series=len(series), n_points=int(sum(len(x) for _, x in series)))
-    print(f"POWER-SIDE CALIBRATION {os.path.basename(os.path.normpath(data_dir))}: "
+    print(f"POWER-SIDE CALIBRATION {os.path.basename(os.path.normpath(data_dir))}"
+          f"{' [' + phase + ']' if phase else ''}: "
           f"P_stat={cal['P_stat']:.1f} W  gamma={cal['gamma']:.3f}  phi_min={phi_min:.3f}  "
           f"({cal['n_series']} series, {cal['n_points']} points)")
     _CAL_CACHE[key] = cal
     return cal
+
+
+# ------------------------------------------------------------------ sweep domain
+def cap_sweep_mask(cap, clk, pwr, clk_floor):
+    """Domain mask for a CAP sweep: keep only points where the cap is actually the operating
+    constraint the DVFS law describes. Two failure modes are dropped:
+
+    (a) clock on the hardware floor — the cap is below what DVFS can reach, the driver meets it by
+        stalling, and two different throughputs appear at the same clock (H200 decode, low caps);
+    (b) governor stall — the draw lands well BELOW the cap (< 0.88x) while the clock sits far below
+        the series' top (< 0.9x): the card is neither cap-bound nor work-bound but oscillating, the
+        time-averaged clock overstates the throughput-weighted clock, and X ∝ phi breaks (V100's
+        lowest cap on light prefill: cap 100 W, draw 73 W, clock 441 of 1302 MHz).
+
+    Healthy under-draw — clock at the series top, the workload simply light (H200 summarize decode
+    at high caps) — is kept: that is the saturated plateau, not a pathology. Apply ONLY when the cap
+    is the swept variable; a locked-clock sweep sets the clock directly and every point stands."""
+    cap = np.asarray(cap, float); clk = np.asarray(clk, float); pwr = np.asarray(pwr, float)
+    keep = clk > clk_floor * 1.02
+    keep &= (pwr >= 0.88 * cap) | (clk >= 0.9 * clk.max())
+    return keep
 
 
 # ------------------------------------------------------------------ synthetic anchors

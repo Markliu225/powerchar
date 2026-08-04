@@ -1,8 +1,8 @@
 klass,band,ratio_agg,via_workload,mapping_caveat,pre_sweet_cap_w,pre_tok_per_j_sweet,pre_tok_s_caphi,dec_sweet_cap_w,dec_tok_per_j_sweet,dec_tok_s_caphi,dec_sat_cap_w,pre_fit_R2,dec_fit_R2
-推理,balanced,0.83,longform-phi3,anchor longform-phi3 dec 4096x8; qwen3think-4b (8192x8) is the closer shape but has no H200 data,648,38.986,27102.9,443,0.402,238.7,650,0.985,0.986
-助手API,prefill-heavy,7.7,translate-qwen3b,translate curves (512x64) stand in for its ~0.7k programmatic requests,648,53.029,37069.9,700,3.169,2169.6,696,0.991,0.942
-多模态图文,prefill-heavy,9.4,rag-phi3,"text-only curves - vision tokens priced as text prefill (no multimodal measurement); dec 1024x32 vs ~1.3k effective context, the closest anchor in the set",648,15.334,10719.1,556,1.184,744.6,686,0.993,0.991
-对话,prefill-heavy,15.5,chat-phi3,"anchor chat-phi3 dec 256x64 vs ~1.7k accumulated history - anchor context SHORTER than the class, so the decode ceiling is OPTIMISTIC (T proportional to 1/C)",648,36.167,25002.6,426,3.771,2236.5,675,0.99,0.987
-长上下文对话,prefill-heavy,35.1,chat-phi3+summarize-qwen7b,"SYNTHETIC: geometric mean of the chat-phi3 and summarize-qwen7b curves, no sweep of its own. Effective context ~sqrt(256*32768)=2.9k against a real ~12.2k, so the decode ceiling is OPTIMISTIC by ~4x; summarize-qwen7b alone would be ~2.7x CONSERVATIVE",648,23.197,16013.9,455,0.427,273.7,694,0.99,0.979
-Agentic工具调用,prefill-heavy,47.2,summarize-qwen7b,32k summarize curves vs ~8.7k per-step context - conservative; full-history re-prefill accounting,648,14.883,10260.3,513,0.049,33.2,693,0.99,0.968
-代码补全,prefill-heavy,110.7,code-phi3,,648,21.846,15194.2,426,0.443,274.8,689,0.997,0.976
+推理,balanced,0.83,longform-phi3,anchor longform-phi3 dec 4096x8; qwen3think-4b (8192x8) is the closer shape but has no H200 data,688,39.091,27206.5,434,0.404,238.7,653,0.99,0.989
+助手API,prefill-heavy,7.7,translate-qwen3b,translate curves (512x64) stand in for its ~0.7k programmatic requests,688,53.036,37122.8,685,3.155,2160.2,696,0.994,0.941
+多模态图文,prefill-heavy,9.4,rag-phi3,"text-only curves - vision tokens priced as text prefill (no multimodal measurement); dec 1024x32 vs ~1.3k effective context, the closest anchor in the set",688,15.349,10743.3,429,1.188,744.6,690,0.996,0.99
+对话,prefill-heavy,15.5,chat-phi3,"anchor chat-phi3 dec 256x64 vs ~1.7k accumulated history - anchor context SHORTER than the class, so the decode ceiling is OPTIMISTIC (T proportional to 1/C)",688,36.279,25104.8,426,3.795,2236.5,678,0.993,0.985
+长上下文对话,prefill-heavy,35.1,chat-phi3+summarize-qwen7b,"SYNTHETIC: geometric mean of the chat-phi3 and summarize-qwen7b curves, no sweep of its own. Effective context ~sqrt(256*32768)=2.9k against a real ~12.2k, so the decode ceiling is OPTIMISTIC by ~4x; summarize-qwen7b alone would be ~2.7x CONSERVATIVE",688,23.266,16076.6,445,0.43,273.1,695,0.995,0.973
+Agentic工具调用,prefill-heavy,47.2,summarize-qwen7b,32k summarize curves vs ~8.7k per-step context - conservative; full-history re-prefill accounting,688,14.926,10298.7,497,0.05,33.1,693,0.995,0.961
+代码补全,prefill-heavy,110.7,code-phi3,,688,21.9,15249.3,426,0.446,274.3,690,0.997,0.981

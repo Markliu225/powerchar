@@ -1,33 +1,33 @@
 hw,model,workload,is_representative,phase,n_points,P_lo_w,P_hi_w,MAPE_pct,R2
-V100,Phi-3-mini-4k (3.8B),chat-phi3,False,prefill,8,100,250,15.11,0.8848
-V100,Phi-3-mini-4k (3.8B),chat-phi3,False,decode,8,100,250,3.21,0.9374
-V100,Qwen2.5-7B,classify-qwen7b,False,prefill,8,100,250,2.65,0.9823
-V100,Qwen2.5-7B,classify-qwen7b,False,decode,8,100,250,10.34,0.5529
-V100,Phi-3-mini-4k (3.8B),code-phi3,True,prefill,8,100,250,2.93,0.9862
-V100,Phi-3-mini-4k (3.8B),code-phi3,True,decode,8,100,250,2.85,0.9335
-V100,Qwen2.5-1.5B,fastchat-qwen15b,True,prefill,8,100,250,6.95,0.9417
-V100,Qwen2.5-1.5B,fastchat-qwen15b,True,decode,8,100,250,3.31,0.8768
-V100,Phi-3-mini-4k (3.8B),longform-phi3,False,prefill,8,100,250,10.24,0.9196
-V100,Phi-3-mini-4k (3.8B),longform-phi3,False,decode,8,100,250,3.4,0.8611
-V100,Phi-3-mini-4k (3.8B),rag-phi3,False,prefill,8,100,250,1.87,0.9886
-V100,Phi-3-mini-4k (3.8B),rag-phi3,False,decode,8,100,250,2.61,0.9593
-V100,Qwen2.5-7B,summarize-qwen7b,True,prefill,8,100,250,3.87,0.9709
-V100,Qwen2.5-7B,summarize-qwen7b,True,decode,8,100,250,1.46,0.9357
-V100,Qwen2.5-3B,translate-qwen3b,True,prefill,8,100,250,6.43,0.9492
-V100,Qwen2.5-3B,translate-qwen3b,True,decode,8,100,250,2.72,0.9352
-H200,Phi-3-mini-4k (3.8B),chat-phi3,False,prefill,6,329,692,3.11,0.9896
-H200,Phi-3-mini-4k (3.8B),chat-phi3,False,decode,8,266,700,4.04,0.9873
-H200,Qwen2.5-7B,classify-qwen7b,False,prefill,7,313,700,11.99,0.9427
+V100,Phi-3-mini-4k (3.8B),chat-phi3,False,prefill,7,120,250,2.66,0.9704
+V100,Phi-3-mini-4k (3.8B),chat-phi3,False,decode,8,100,250,0.97,0.9953
+V100,Qwen2.5-7B,classify-qwen7b,False,prefill,8,100,250,4.18,0.9596
+V100,Qwen2.5-7B,classify-qwen7b,False,decode,7,120,250,8.41,-0.0627
+V100,Phi-3-mini-4k (3.8B),code-phi3,True,prefill,8,100,250,3.38,0.9745
+V100,Phi-3-mini-4k (3.8B),code-phi3,True,decode,8,100,250,0.82,0.9949
+V100,Qwen2.5-1.5B,fastchat-qwen15b,True,prefill,7,120,250,3.85,0.8966
+V100,Qwen2.5-1.5B,fastchat-qwen15b,True,decode,8,100,250,1.57,0.9722
+V100,Phi-3-mini-4k (3.8B),longform-phi3,False,prefill,7,120,250,2.53,0.9723
+V100,Phi-3-mini-4k (3.8B),longform-phi3,False,decode,8,100,250,1.24,0.9844
+V100,Phi-3-mini-4k (3.8B),rag-phi3,False,prefill,8,100,250,4.39,0.96
+V100,Phi-3-mini-4k (3.8B),rag-phi3,False,decode,8,100,250,1.89,0.9762
+V100,Qwen2.5-7B,summarize-qwen7b,True,prefill,8,100,250,4.55,0.9476
+V100,Qwen2.5-7B,summarize-qwen7b,True,decode,8,100,250,0.99,0.9773
+V100,Qwen2.5-3B,translate-qwen3b,True,prefill,7,120,250,3.61,0.9207
+V100,Qwen2.5-3B,translate-qwen3b,True,decode,8,100,250,0.93,0.9929
+H200,Phi-3-mini-4k (3.8B),chat-phi3,False,prefill,6,329,692,1.99,0.9934
+H200,Phi-3-mini-4k (3.8B),chat-phi3,False,decode,8,266,700,4.46,0.9849
+H200,Qwen2.5-7B,classify-qwen7b,False,prefill,7,313,700,10.55,0.9533
 H200,Qwen2.5-7B,classify-qwen7b,False,decode,7,313,700,3.66,-0.1622
-H200,Phi-3-mini-4k (3.8B),code-phi3,True,prefill,8,298,696,1.77,0.9965
-H200,Phi-3-mini-4k (3.8B),code-phi3,True,decode,8,266,700,4.73,0.9758
-H200,Qwen2.5-1.5B,fastchat-qwen15b,True,prefill,9,262,704,3.3,0.992
-H200,Qwen2.5-1.5B,fastchat-qwen15b,True,decode,8,266,700,4.93,0.9737
-H200,Phi-3-mini-4k (3.8B),longform-phi3,False,prefill,6,339,696,4.13,0.9846
-H200,Phi-3-mini-4k (3.8B),longform-phi3,False,decode,9,226,700,3.97,0.9858
-H200,Phi-3-mini-4k (3.8B),rag-phi3,False,prefill,10,320,709,2.73,0.9926
-H200,Phi-3-mini-4k (3.8B),rag-phi3,False,decode,8,266,700,3.36,0.9913
-H200,Qwen2.5-7B,summarize-qwen7b,True,prefill,6,346,690,3.42,0.9896
-H200,Qwen2.5-7B,summarize-qwen7b,True,decode,7,313,700,7.02,0.9685
-H200,Qwen2.5-3B,translate-qwen3b,True,prefill,11,338,712,2.17,0.9911
-H200,Qwen2.5-3B,translate-qwen3b,True,decode,7,313,700,9.24,0.9422
+H200,Phi-3-mini-4k (3.8B),code-phi3,True,prefill,8,298,696,2.02,0.9965
+H200,Phi-3-mini-4k (3.8B),code-phi3,True,decode,8,266,700,4.11,0.9806
+H200,Qwen2.5-1.5B,fastchat-qwen15b,True,prefill,9,262,704,4.26,0.9887
+H200,Qwen2.5-1.5B,fastchat-qwen15b,True,decode,8,266,700,5.7,0.9659
+H200,Phi-3-mini-4k (3.8B),longform-phi3,False,prefill,6,339,696,3.07,0.9899
+H200,Phi-3-mini-4k (3.8B),longform-phi3,False,decode,9,226,700,3.47,0.9885
+H200,Phi-3-mini-4k (3.8B),rag-phi3,False,prefill,10,320,709,1.76,0.9962
+H200,Phi-3-mini-4k (3.8B),rag-phi3,False,decode,8,266,700,3.76,0.9898
+H200,Qwen2.5-7B,summarize-qwen7b,True,prefill,6,346,690,2.39,0.9948
+H200,Qwen2.5-7B,summarize-qwen7b,True,decode,7,313,700,7.78,0.9613
+H200,Qwen2.5-3B,translate-qwen3b,True,prefill,11,338,712,1.58,0.994
+H200,Qwen2.5-3B,translate-qwen3b,True,decode,7,313,700,9.25,0.9413

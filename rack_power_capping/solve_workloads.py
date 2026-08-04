@@ -41,6 +41,7 @@ W_RACK = 5000.0        # rack power budget (W)
 N_GPU_MAX = 32         # physical GPU slots per rack (e.g. 4 nodes x 8 V100)
 P_TDP = 250.0          # nameplate cap (W)
 CAP_LO, CAP_HI = 100.0, 250.0    # measured cap range — curves are never evaluated outside it
+CLK_FLOOR = 135.0      # lowest hardware SM clock (per-hardware wrappers override)
 
 # ---- THE workload classification ----------------------------------------------------------------
 # 6 application classes covering the 10 measured workloads, ordered decode-dominant -> pure-prefill.
@@ -71,14 +72,20 @@ ORDERED_IDS = [m for c in WORKLOAD_CLASSES for m in c["members"]]
 # ---- per-workload curves from the portfolio data ------------------------------------------------
 def _read(path):
     """Power axis = the ENFORCED cap when swept (V100, decode); when the cap is held fixed and the
-    SM CLOCK is swept instead (H200 prefill, v-next), fall back to the MEASURED draw power_avg_w."""
+    SM CLOCK is swept instead (H200 prefill, v-next), fall back to the MEASURED draw power_avg_w.
+    Cap sweeps keep only cap-controlled points (fitlib.cap_sweep_mask: drops clock-floor and
+    governor-stall points) — same domain rule as curves_lib and validation."""
     rows = [r for r in csv.DictReader(open(path)) if float(r["throughput_tok_s"]) > 0]
     cap = np.array([float(r["cap_w"]) for r in rows])
+    thr = np.array([float(r["throughput_tok_s"]) for r in rows])
+    clk = np.array([float(r["sm_clk_avg"]) for r in rows])
     pwr = np.array([float(r["power_avg_w"]) for r in rows])   # MEASURED draw (energy-window avg)
-    return (cap if np.ptp(cap) > 1e-6 else pwr,
-            np.array([float(r["throughput_tok_s"]) for r in rows]),
-            np.array([float(r["sm_clk_avg"]) for r in rows]),
-            pwr, rows)
+    cap_swept = np.ptp(cap) > 1e-6
+    if cap_swept:
+        k = fitlib.cap_sweep_mask(cap, clk, pwr, CLK_FLOOR)
+        cap, thr, clk, pwr = cap[k], thr[k], clk[k], pwr[k]
+        rows = [r for r, kk in zip(rows, k) if kk]
+    return (cap if cap_swept else pwr), thr, clk, pwr, rows
 
 
 def _fit_bundle(w, cls, Pp, Tp, Fp, Wp, Pd, Td, Fd, Wd, B):

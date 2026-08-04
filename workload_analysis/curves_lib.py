@@ -104,12 +104,11 @@ def _read(path):
     (decode); when cap is fixed and the SM CLOCK is swept (H200 prefill), the MEASURED draw
     power_avg_w. Measured draw is always returned separately (the tok/J denominator).
 
-    A CAP sweep drops the points whose SM clock sits on the hardware floor (CLK_FLOOR): there the cap
-    can no longer set the frequency and the driver meets it by stalling, so two different throughputs
-    appear at the same clock and the DVFS law of eq. (3) does not describe them at all. Same rule as
-    validation/validate_model.py — keeping them here dragged the whole decode fit down. A LOCKED-CLOCK
-    sweep keeps every point: its lowest clock is a deliberately set operating point, not a failure to
-    enforce, so H200 prefill is untouched (it simply cannot draw less than ~300 W at 345 MHz)."""
+    A CAP sweep keeps only the points where the cap is actually the operating constraint —
+    fitlib.cap_sweep_mask drops clock-floor points (cap unreachably low; H200 decode) and
+    governor-stall points (draw well below the cap at a mid-range clock; V100's lowest cap on light
+    prefill). A LOCKED-CLOCK sweep keeps every point: its lowest clock is a deliberately set
+    operating point, not a failure to enforce."""
     rows = [r for r in csv.DictReader(open(path)) if float(r["throughput_tok_s"]) > 0]
     cap = np.array([float(r["cap_w"]) for r in rows])
     thr = np.array([float(r["throughput_tok_s"]) for r in rows])
@@ -117,7 +116,7 @@ def _read(path):
     pwr = np.array([float(r["power_avg_w"]) for r in rows])   # MEASURED draw (energy-window avg)
     cap_swept = np.ptp(cap) > 1e-6
     if cap_swept:
-        k = clk > CLK_FLOOR * 1.02
+        k = fitlib.cap_sweep_mask(cap, clk, pwr, CLK_FLOOR)
         cap, thr, clk, pwr = cap[k], thr[k], clk[k], pwr[k]
         rows = [r for r, kk in zip(rows, k) if kk]
     return (cap if cap_swept else pwr), thr, clk, pwr, rows
@@ -130,10 +129,12 @@ def load_curves(wid):
     B = float(drow[0]["batch"])
     # UPDATED first-principles theory (MODEL_AND_RESULTS.zh.md): prefill LINEAR in phi;
     # decode = sum of two rooflines + overhead (three segments). See fitlib.fit_*_theory.
-    # The DVFS side (P_stat, gamma) is the per-GPU calibration of eq. (3), shared by every workload.
-    cal = fitlib.calibrate_power_side(DATA, F_MAX, CLK_FLOOR)
-    preT, pre = fitlib.fit_prefill_theory(Pp, Tp, Fp, F_MAX, cal)
-    decT, dec = fitlib.fit_decode_theory(Pd, Td, Fd, B, F_MAX, cal)
+    # The DVFS side (P_stat, gamma) is the per-GPU, per-PHASE calibration of eq. (3), shared by
+    # every workload (per phase because the effective exponent differs between them — see fitlib).
+    preT, pre = fitlib.fit_prefill_theory(Pp, Tp, Fp, F_MAX,
+                                          fitlib.calibrate_power_side(DATA, F_MAX, CLK_FLOOR, "prefill"))
+    decT, dec = fitlib.fit_decode_theory(Pd, Td, Fd, B, F_MAX,
+                                         fitlib.calibrate_power_side(DATA, F_MAX, CLK_FLOOR, "decode"))
 
     def _pwr_of(x, w):                                          # MEASURED draw as a fn of the fit's power axis
         o = np.argsort(x)                                      # (prefill: axis IS measured draw -> identity;
@@ -152,13 +153,14 @@ def synth_curves(parts):
     geometrically — fitlib.synth_points), which is then fitted with the SAME theory model as any
     measured workload. The panel is indistinguishable from a measured one (dots + fit); the figure
     title carries the mock note."""
-    cal = fitlib.calibrate_power_side(DATA, F_MAX, CLK_FLOOR)
     Pp, Tp, Fp, Wp = fitlib.synth_points([(p["pre_x"], p["pre_y"], p["pre_F"], p["pre_pwr"])
                                           for p in parts])
     Pd, Td, Fd, Wd = fitlib.synth_points([(p["dec_x"], p["dec_y"], p["dec_F"], p["dec_pwr"])
                                           for p in parts])
-    preT, pre = fitlib.fit_prefill_theory(Pp, Tp, Fp, F_MAX, cal)
-    decT, dec = fitlib.fit_decode_theory(Pd, Td, Fd, float(parts[0]["b_dec"]), F_MAX, cal)
+    preT, pre = fitlib.fit_prefill_theory(Pp, Tp, Fp, F_MAX,
+                                          fitlib.calibrate_power_side(DATA, F_MAX, CLK_FLOOR, "prefill"))
+    decT, dec = fitlib.fit_decode_theory(Pd, Td, Fd, float(parts[0]["b_dec"]), F_MAX,
+                                         fitlib.calibrate_power_side(DATA, F_MAX, CLK_FLOOR, "decode"))
 
     def _pwr_of(x, w):
         o = np.argsort(x)

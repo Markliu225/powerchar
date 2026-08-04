@@ -41,6 +41,7 @@ W_RACK, N_GPU_MAX = 14000.0, 32                 # 5 kW x (700/250); TDP -> exact
 SW.DATA = os.path.join(ROOT, "data_h200")
 SW.F_MAX = SW.fitlib.resolve_f_max(SW.DATA)
 SW.P_TDP, SW.CAP_LO, SW.CAP_HI = 700.0, 200.0, 700.0
+SW.CLK_FLOOR = 345.0
 SW.sweet_spot.__defaults__ = (SW.CAP_HI,)       # hi= default was bound to 250 at def time
 
 NAME, MAP, BANDS = V.NAME, V.MAP, V.BANDS
