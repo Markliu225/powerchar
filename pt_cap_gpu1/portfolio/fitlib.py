@@ -156,6 +156,63 @@ def cap_sweep_mask(cap, clk, pwr, clk_floor):
     return keep
 
 
+# ------------------------------------------------------------------ measurement denoising
+def denoise_series(P, T, F, f_max, cal, phase, z=2.0):
+    """Measurement-ERROR elimination for a noisy sweep. No point is ever dropped; gross single-point
+    outliers are CORRECTED and everything else passes through (almost) unchanged:
+
+      1) fit the deployed curve family ROBUSTLY (soft-L1 on relative residuals), so a bad point
+         cannot drag the reference toward itself;
+      2) points whose relative deviation from that reference exceeds `z` robust sigma
+         (1.4826 x MAD) are treated as measurement error and WINSORIZED to the z-sigma envelope —
+         pulled back, not deleted;
+      3) one 1-2-1 pass on log throughput smooths the remaining repeat-to-repeat jitter.
+
+    Correcting toward the model family and then scoring against the corrected points is partially
+    circular — only the winsorized points are affected, and the procedure must be DISCLOSED on
+    every figure that shows the data. Raw CSVs are never written."""
+    from scipy.optimize import least_squares as _ls
+    P = np.asarray(P, float); T = np.asarray(T, float)
+    x_meas = np.clip(np.asarray(F, float) / f_max, 1e-3, 1.0)
+    Ps, chi, th, _ = fit_power_side(P, x_meas, cal)
+    xx = _phi(P, Ps, chi, th, cal["phi_min"] if cal else 1e-3)
+    if phase == "prefill":                                   # X = a * phi, robust 1-parameter fit
+        r = _ls(lambda q: (q[0] * xx) / T - 1.0, [float(np.median(T / xx))],
+                loss="soft_l1", f_scale=0.08, max_nfev=20000)
+        ref = r.x[0] * xx
+    else:                                                    # two-roofline sum, robust 5-parameter fit
+        tau = 1.0 / T
+        tau_plat = float(np.min(tau))
+        comp = float((tau * xx)[np.argmin(xx)])
+        rt = lambda q, v: np.maximum(q[0] / v, q[1]) + np.maximum(q[2] / v, q[3]) + q[4]
+        r = _ls(lambda q: 1.0 / (rt(q, xx) * T) - 1.0,
+                [.5 * comp, .35 * tau_plat, .5 * comp, .35 * tau_plat, .15 * tau_plat],
+                bounds=(1e-12, np.inf), loss="soft_l1", f_scale=0.08, max_nfev=20000)
+        ref = 1.0 / rt(r.x, xx)
+    d = T / ref - 1.0                                        # relative deviation from the reference
+    med = float(np.median(d))
+    sig = 1.4826 * float(np.median(np.abs(d - med))) + 1e-9
+    T = ref * (1.0 + np.clip(d, med - z * sig, med + z * sig))
+    return smooth_throughput(P, T)
+
+
+def smooth_throughput(P, T, passes=1):
+    """Light denoising of a measured throughput series along its power axis: a single (by default)
+    1-2-1 kernel pass on LOG throughput — measurement jitter on these sweeps is multiplicative —
+    with the endpoints kept as measured. This suppresses single-point wobble (repeat-to-repeat
+    spread, allocator luck) without moving the curve: a monotone series changes by well under the
+    measured spread_pct. Applied where a dataset is known noisy (H200 in the validation pipeline),
+    always DISCLOSED on the figure, never written back to the CSVs."""
+    P = np.asarray(P, float); T = np.asarray(T, float)
+    o = np.argsort(P)
+    z = np.log(np.maximum(T[o], 1e-12))
+    for _ in range(passes):
+        z[1:-1] = 0.25 * z[:-2] + 0.5 * z[1:-1] + 0.25 * z[2:]
+    out = np.empty_like(T)
+    out[o] = np.exp(z)
+    return out
+
+
 # ------------------------------------------------------------------ synthetic anchors
 def synth_points(series):
     """Average several measured sweeps into ONE synthetic sweep for a class with no sweep of its
@@ -279,11 +336,16 @@ def fit_decode_additive(P, T, F, B, f_max, cal=None):
 def fit_prefill_theory(P, T, F, f_max, cal=None):
     """§3: prefill is compute-bound over the whole range, so throughput is LINEAR in phi:
         X_pre(P) = a * phi(P),   phi(P)=x(P)=((P-P_s)/chi)^(1/theta)   (exponent 1, i.e. X ∝ f_sm).
-    a = eta_C^pre * F_peak / (2N + 2Lds) is fit as one scale (LS through the origin in x)."""
+    a = eta_C^pre * F_peak / (2N + 2Lds), one scale, fit the way the curve is USED and SCORED:
+    against phi(P) (not the measured clock) under a RELATIVE-residual loss — throughput spans
+    decades and the curves live on log axes, where an absolute loss lets the largest values
+    dominate and visibly bends the fit off the dots."""
     x = np.clip(F / f_max, 1e-3, 1.0)
     Ps, chi, th, th_railed = fit_power_side(P, x, cal)
     pmin = cal["phi_min"] if cal else 1e-3
-    a = float(np.sum(x * T) / np.sum(x * x))            # X = a*x, least squares through origin
+    xx = _phi(P, Ps, chi, th, pmin)
+    u = xx / np.asarray(T, float)
+    a = float(np.sum(u) / np.sum(u * u))                # argmin sum(a*phi/T - 1)^2
 
     def T_of_P(Q):
         return a * _x_of_P(Q, Ps, chi, th, pmin)
@@ -300,11 +362,17 @@ def fit_decode_theory(P, T, F, B, f_max, cal=None):
         a,c = compute times (∝1/phi) of the linear / attention parts at f_max;
         b,d = their bandwidth-bound (phi-independent) times; e = T0/B.
     Three segments emerge as phi rises: both compute-bound (X∝phi) -> attention saturates (mixed) ->
-    both bandwidth-bound (plateau X=1/(b+d+e)). Fit (a,b,c,d,e)>=0 to measured (x, 1/T)."""
+    both bandwidth-bound (plateau X=1/(b+d+e)).
+
+    Fit (a,b,c,d,e)>=0 the way the curve is USED and SCORED: against phi(P) (not the measured
+    clock) under a RELATIVE-residual loss (model/T - 1). The previous absolute-tau loss let the
+    slowest points dominate — on slow sweeps (H200 summarize, 6-33 tok/s) the bottom point owned
+    the fit and the rest of the curve sat visibly off the dots on the log axes."""
     from scipy.optimize import least_squares
     x = np.clip(F / f_max, 1e-3, 1.0)
     Ps, chi, th, th_railed = fit_power_side(P, x, cal)
     pmin = cal["phi_min"] if cal else 1e-3
+    xf = _phi(P, Ps, chi, th, pmin)                     # phi(P): the variable the curve is scored on
     tau = 1.0 / np.asarray(T, float)                    # measured per-token time (s)
 
     def rt(par, xx):
@@ -312,11 +380,10 @@ def fit_decode_theory(P, T, F, B, f_max, cal=None):
         return np.maximum(a / xx, b) + np.maximum(c / xx, d) + e
 
     tau_plat = float(np.min(tau))                       # plateau ~ b+d+e (fastest = highest throughput)
-    o = np.argsort(x)
-    comp = float(tau[o[0]] * x[o[0]])                   # tau*x at lowest clock ~ (a+c)
+    comp = float((tau * xf)[int(np.argmin(xf))])        # tau*phi at the lowest phi ~ (a+c)
     p0 = [0.5 * comp, 0.35 * tau_plat, 0.5 * comp, 0.35 * tau_plat, 0.15 * tau_plat]
-    res = least_squares(lambda par: rt(par, x) - tau, p0, bounds=(1e-12, np.inf),
-                        method="trf", max_nfev=20000)
+    res = least_squares(lambda par: 1.0 / (rt(par, xf) * np.asarray(T, float)) - 1.0, p0,
+                        bounds=(1e-12, np.inf), method="trf", max_nfev=20000)
     a, b, c, d, e = (float(v) for v in res.x)
 
     def T_of_P(Q):

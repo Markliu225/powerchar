@@ -1,17 +1,17 @@
 hw,model,phase,n_shapes,representative,MAPE_med,MAPE_min,MAPE_max,R2_med
-V100,Qwen2.5-1.5B,prefill,1,fastchat-qwen15b,3.85,3.85,3.85,0.8966
-V100,Qwen2.5-1.5B,decode,1,fastchat-qwen15b,1.57,1.57,1.57,0.9722
-V100,Qwen2.5-3B,prefill,1,translate-qwen3b,3.61,3.61,3.61,0.9207
-V100,Qwen2.5-3B,decode,1,translate-qwen3b,0.93,0.93,0.93,0.9929
-V100,Phi-3-mini-4k (3.8B),prefill,4,code-phi3,3.02,2.53,4.39,0.9714
-V100,Phi-3-mini-4k (3.8B),decode,4,code-phi3,1.1,0.82,1.89,0.9897
-V100,Qwen2.5-7B,prefill,2,summarize-qwen7b,4.37,4.18,4.55,0.9536
-V100,Qwen2.5-7B,decode,2,summarize-qwen7b,4.7,0.99,8.41,0.4573
-H200,Qwen2.5-1.5B,prefill,1,fastchat-qwen15b,4.26,4.26,4.26,0.9887
-H200,Qwen2.5-1.5B,decode,1,fastchat-qwen15b,5.7,5.7,5.7,0.9659
-H200,Qwen2.5-3B,prefill,1,translate-qwen3b,1.58,1.58,1.58,0.994
-H200,Qwen2.5-3B,decode,1,translate-qwen3b,9.25,9.25,9.25,0.9413
-H200,Phi-3-mini-4k (3.8B),prefill,4,code-phi3,2.0,1.76,3.07,0.9948
-H200,Phi-3-mini-4k (3.8B),decode,4,code-phi3,3.94,3.47,4.46,0.9867
-H200,Qwen2.5-7B,prefill,2,summarize-qwen7b,6.47,2.39,10.55,0.9741
-H200,Qwen2.5-7B,decode,2,summarize-qwen7b,5.72,3.66,7.78,0.3996
+V100,Qwen2.5-1.5B,prefill,1,fastchat-qwen15b,3.85,3.85,3.85,0.8947
+V100,Qwen2.5-1.5B,decode,1,fastchat-qwen15b,0.68,0.68,0.68,0.9947
+V100,Qwen2.5-3B,prefill,1,translate-qwen3b,3.4,3.4,3.4,0.9184
+V100,Qwen2.5-3B,decode,1,translate-qwen3b,0.33,0.33,0.33,0.9988
+V100,Phi-3-mini-4k (3.8B),prefill,4,code-phi3,2.74,2.46,3.76,0.9719
+V100,Phi-3-mini-4k (3.8B),decode,4,code-phi3,0.36,0.23,0.57,0.9984
+V100,Qwen2.5-7B,prefill,2,summarize-qwen7b,3.92,3.54,4.3,0.9516
+V100,Qwen2.5-7B,decode,2,summarize-qwen7b,4.38,0.33,8.43,0.478
+H200,Qwen2.5-1.5B,prefill,1,fastchat-qwen15b,3.55,3.55,3.55,0.9846
+H200,Qwen2.5-1.5B,decode,1,fastchat-qwen15b,1.42,1.42,1.42,0.9959
+H200,Qwen2.5-3B,prefill,1,translate-qwen3b,1.71,1.71,1.71,0.9934
+H200,Qwen2.5-3B,decode,1,translate-qwen3b,1.97,1.97,1.97,0.9939
+H200,Phi-3-mini-4k (3.8B),prefill,4,code-phi3,2.17,1.91,2.42,0.9938
+H200,Phi-3-mini-4k (3.8B),decode,4,code-phi3,1.7,0.8,2.45,0.9978
+H200,Qwen2.5-7B,prefill,2,summarize-qwen7b,5.76,2.43,9.1,0.9594
+H200,Qwen2.5-7B,decode,2,summarize-qwen7b,2.45,0.72,4.18,0.9816

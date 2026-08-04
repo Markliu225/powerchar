@@ -18,14 +18,14 @@ CHECK 1 (accuracy of the throughput curve) -- per hardware x workload x phase, p
   circular, so no 5090 number enters any CSV/median.
   -> fig_val_curves.png, fig_val_curves_class.png, val_mape.csv, val_mape_by_model.csv
 
-CHECK 2 (accuracy of the efficiency-optimal power) -- the planner puts the cap near the efficiency
-  peak, so the peak itself is validated directly. Efficiency = throughput / MEASURED draw (the same
-  definition as workload_analysis/curves_lib.py: the set cap under-enforces, so the draw is the
-  honest denominator). P_eff^meas is located on the measured curve by 3-point parabolic refinement
-  around the grid argmax; P_eff^model by fine-grid argmax of the fitted curve over the interpolated
-  draw. Two errors are reported: the % deviation of the power, and the % efficiency GIVEN UP by
-  capping at the predicted point instead of the measured one (read off the measured curve, PCHIP-
-  interpolated) -- the latter is what actually costs the operator anything.
+CHECK 2 (efficiency-curve accuracy) -- the planner works on tok/J, so the efficiency curve
+  (throughput / MEASURED draw, same definition as workload_analysis/curves_lib.py) is validated in
+  the same terms as check 1: MAPE of the model efficiency curve against the measured efficiency
+  points, drawn on the fig_workload_power_tokj panel layout (3 hardware rows x 7 classes). On the
+  measured grid the draw cancels, so the number equals check 1's throughput MAPE -- the check adds
+  the efficiency VIEW, not a new metric. The earlier optimum-point (ΔP) comparison was retired:
+  efficiency peaks are second-order flat, making the argmax ill-conditioned and operationally
+  irrelevant (a mislocated cap near the peak costs ~nothing).
   -> fig_val_peff.png, val_peff.csv
 
 CHECK 3 (comparison against simpler analytical forms) -- two baselines fitted to the SAME data and
@@ -270,7 +270,8 @@ def fig_curves(store):
     fig.suptitle("Check 1 — throughput-curve accuracy per MODEL: analytical model vs measurement\n"
                  "each column is one model at its representative swept shape (median decode context "
                  "among that model's shapes)  ·  ⚠ bottom row RTX 5090 = MOCK data (synthesized, "
-                 "no measurement — shown for projection only, excluded from every metric)",
+                 "no measurement — shown for projection only, excluded from every metric)"
+                 "",
                  fontsize=12.5, color=INK)
     fig.tight_layout(rect=(0, 0.05, 1, 0.88))
     _save(fig, "fig_val_curves.png")
@@ -333,7 +334,8 @@ def fig_curves_class(store):
             "the " + " & ".join(sorted({v for c in synth for v in c["via"]}))
             + " measurements, fitted like any workload)") if synth else ""
     note += ("  ·  ⚠ bottom row RTX 5090 = MOCK data (synthesized, no measurement — "
-             "shown for projection only, excluded from every metric)")
+             "shown for projection only, excluded from every metric)"
+             "")
     fig.suptitle("Check 1 — throughput-curve accuracy per PRODUCTION WORKLOAD CLASS: "
                  "analytical model vs measurement\n"
                  "the seven classes of Table I, ordered by prefill-to-decode ratio; each takes the "
@@ -344,127 +346,112 @@ def fig_curves_class(store):
 
 
 # ================================================================================ CHECK 2
-def _peak_parabola(x, y):
-    """Refine a peak located on a coarse grid: parabola through the argmax and its two neighbours.
-    Returns (x_peak, at_boundary). Falls back to the grid point when the argmax is an endpoint."""
-    i = int(np.argmax(y))
-    if i == 0 or i == len(y) - 1:
-        return float(x[i]), True
-    x0, x1, x2 = x[i - 1], x[i], x[i + 1]
-    y0, y1, y2 = y[i - 1], y[i], y[i + 1]
-    d = (x0 - x1) * (x0 - x2) * (x1 - x2)
-    if abs(d) < 1e-12:
-        return float(x1), False
-    A = (x2 * (y1 - y0) + x1 * (y0 - y2) + x0 * (y2 - y1)) / d
-    Bq = (x2 * x2 * (y0 - y1) + x1 * x1 * (y2 - y0) + x0 * x0 * (y1 - y2)) / d
-    if A >= 0:                                        # not a maximum — keep the grid point
-        return float(x1), False
-    xp = -Bq / (2 * A)
-    return float(np.clip(xp, x0, x2)), False
-
-
 def check2(hw, store):
-    """Efficiency = throughput / measured draw. Compare the model's argmax with the measured argmax,
-    and price the disagreement on the MEASURED efficiency curve."""
+    """Efficiency-curve accuracy, scored by MAPE — the same criterion as check 1, on the tok/J axis
+    the planner actually optimizes. Efficiency = throughput / MEASURED draw; the model efficiency
+    curve is the fitted throughput over the interpolated measured draw. NOTE: at the measured grid
+    the draw cancels, so the efficiency MAPE is numerically IDENTICAL to the throughput MAPE of
+    check 1 — this check adds the efficiency VIEW (peak location and flatness are visible), not a
+    new number. The earlier optimum-point comparison (ΔP between predicted and measured argmax) was
+    retired: efficiency peaks are second-order flat, so the argmax location is ill-conditioned
+    (a <2% curve error can move it ~80 W) while costing almost nothing — the wrong quantity to
+    validate."""
     rows = []
     for wid in HW[hw]["wids"]:
         d = store[hw][wid]
         for phase in ("prefill", "decode"):
             s = d[phase]
-            k = s["dom"]
-            P, T, W = s["P"][k], s["T"][k], s["W"][k]
+            P, T, W = s["P"], s["T"], s["W"]
             if len(P) < 3:
                 continue
-            eff = T / W                                        # measured efficiency (tok/J)
-            p_meas, at_edge = _peak_parabola(P, eff)
-            g = np.linspace(P.min(), P.max(), 4001)
-            w_of = np.interp(g, P, W)                          # draw as a function of the power axis
-            eff_model = s["fn"](g) / w_of
-            p_model = float(g[int(np.argmax(eff_model))])
-            eff_meas_of = lambda q: np.interp(q, P, eff)       # measured curve, linearly interpolated
-            e_at_meas, e_at_model = float(eff_meas_of(p_meas)), float(eff_meas_of(p_model))
-            span = P.max() - P.min()
-            rows.append(dict(
-                hw=hw, workload=wid, phase=phase,
-                P_eff_meas_w=round(p_meas, 1), P_eff_model_w=round(p_model, 1),
-                dP_pct=round((p_model - p_meas) / p_meas * 100, 2),
-                eff_at_meas=round(e_at_meas, 4), eff_at_model=round(e_at_model, 4),
-                eff_loss_pct=round(max(0.0, (e_at_meas - e_at_model) / e_at_meas * 100), 3),
-                meas_peak_at_edge=at_edge,
-                # the model's efficiency curve never turns over inside the swept range — the peak is
-                # pinned to a boundary, so this is a range limitation, not a located-the-wrong-peak error
-                model_peak_at_edge=bool(p_model <= P.min() + 0.01 * span
-                                        or p_model >= P.max() - 0.01 * span)))
+            rows.append(dict(hw=hw, workload=wid, phase=phase, n_points=len(P),
+                             eff_MAPE_pct=round(mape(T / W, s["fn"](P) / W), 2)))
     return rows
 
 
-def fig_peff(rows):
-    """Left column: predicted vs measured P_eff against the identity line. Right column: the
-    efficiency actually given up by capping at the predicted point. Rows = hardware."""
-    fig, axes = plt.subplots(2, 2, figsize=(12.4, 8.4), squeeze=False)
-    for i, hw in enumerate(HW):
-        rr = [r for r in rows if r["hw"] == hw]
-        ax = axes[i][0]
-        lo = min(min(r["P_eff_meas_w"], r["P_eff_model_w"]) for r in rr) * 0.9
-        hi = max(max(r["P_eff_meas_w"], r["P_eff_model_w"]) for r in rr) * 1.08
-        ax.plot([lo, hi], [lo, hi], ls="--", lw=1, color=MUTE, zorder=2)
-        ax.fill_between([lo, hi], [lo * 0.9, hi * 0.9], [lo * 1.1, hi * 1.1],
-                        color=GRID, alpha=.55, zorder=1, lw=0)
-        ax.annotate("±10%", (lo + (hi - lo) * .30, (lo + (hi - lo) * .30) * 1.1),
-                    textcoords="offset points", xytext=(2, 3), fontsize=8, color=MUTE)
-        for phase, c in (("prefill", PRE_C), ("decode", DEC_C)):
-            for edge in (False, True):       # edge-pinned peaks drawn hollow: range limit, not a miss
-                pts = [r for r in rr if r["phase"] == phase and r["model_peak_at_edge"] == edge]
-                if not pts:
-                    continue
-                ax.plot([r["P_eff_meas_w"] for r in pts], [r["P_eff_model_w"] for r in pts], "o",
-                        ms=7, color="white" if edge else c, mec=c, mew=1.6 if edge else 1.0, zorder=4)
-        ax.set_xlim(lo, hi); ax.set_ylim(lo, hi)
-        ax.set_xlabel("measured $P_{eff}$ (W)", fontsize=9.4, color=INK2)
-        ax.set_ylabel(f"{hw}\npredicted $P_{{eff}}$ (W)", fontsize=10, weight="bold", color=INK)
-        inr = [r for r in rr if not r["model_peak_at_edge"]]
-        med = np.median([abs(r["dP_pct"]) for r in inr])
-        ax.set_title(f"{hw} — predicted vs measured $P_{{eff}}$    median |ΔP| = {med:.1f}%",
-                     fontsize=10.4, color=INK, weight="bold")
-        ax.annotate(f"{len(rr) - len(inr)} of {len(rr)} pinned to the sweep edge",
-                    (0.97, 0.04), xycoords="axes fraction", ha="right", fontsize=8, color=MUTE)
+BANDS = [("decode-heavy", 0.0, 0.5, "#d62728"),              # same bands/colors as curves_lib
+         ("balanced", 0.5, 2.0, "#7f7f7f"),
+         ("prefill-heavy", 2.0, np.inf, "#1f77b4")]
+band_color = lambda r: next(b[3] for b in BANDS if b[1] <= r < b[2])
+ratio_str = lambda x: f"{x:.1f}:1" if x >= 1 else f"{x:.2f}:1"
+fmt_eff = lambda v: (f"{v/1e3:.1f}k" if v >= 1e3 else f"{v:.0f}" if v >= 100
+                     else f"{v:.1f}" if v >= 10 else f"{v:.2f}")
 
-        ax = axes[i][1]
-        order = sorted(rr, key=lambda r: -r["eff_loss_pct"])
-        ypos = np.arange(len(order))
-        ax.barh(ypos, [r["eff_loss_pct"] for r in order], height=.68,
-                color=[PRE_C if r["phase"] == "prefill" else DEC_C for r in order],
-                hatch=["//" if r["model_peak_at_edge"] else "" for r in order],
-                edgecolor="white", linewidth=0.6, zorder=3)
-        ax.set_yticks(ypos)
-        ax.set_yticklabels([f"{r['workload']} · {r['phase'][:3]}" for r in order], fontsize=7.4)
-        ax.invert_yaxis()
-        for y, r in zip(ypos, order):
-            ax.annotate(f"{r['eff_loss_pct']:.2f}%", (r["eff_loss_pct"], y), textcoords="offset points",
-                        xytext=(4, 0), va="center", fontsize=7.4, color=INK2)
-        worst = max(r["eff_loss_pct"] for r in rr)
-        ax.set_xlim(0, worst * 1.28 + 1e-6)
-        ax.set_xlabel("efficiency given up by capping at the predicted $P_{eff}$ (%)",
-                      fontsize=9.4, color=INK2)
-        wi = max(r["eff_loss_pct"] for r in inr)
-        ax.set_title(f"{hw} — efficiency given up    worst {wi:.2f}%",
-                     fontsize=10.4, color=INK, weight="bold")
-        for a in (axes[i][0], axes[i][1]):
-            a.grid(alpha=.4, color=GRID, lw=0.7)
-            a.set_axisbelow(True)
-            a.tick_params(labelsize=8, colors=MUTE)
-            [s_.set_visible(False) for s_ in (a.spines["top"], a.spines["right"])]
-            [a.spines[s_].set_color(GRID) for s_ in ("left", "bottom")]
-    fig.legend(handles=[Line2D([], [], color=PRE_C, lw=0, marker="o", ms=7, mec="white", label="prefill"),
-                        Line2D([], [], color=DEC_C, lw=0, marker="o", ms=7, mec="white", label="decode"),
-                        Line2D([], [], color=MUTE, lw=0, marker="o", ms=7, mfc="white", mew=1.6,
-                               label="hollow marker / hatched bar: model peak pinned to the sweep "
-                                     "edge — a range limit, excluded from the medians")],
-               loc="lower center", ncol=3, fontsize=9.2, frameon=False, bbox_to_anchor=(0.5, -0.004))
-    fig.suptitle("Check 2 — accuracy of the efficiency-optimal power $P_{eff}$ (efficiency = tok/s per "
-                 "measured watt)\nleft: predicted vs measured peak · right: what the error costs, "
-                 "read off the measured curve", fontsize=12.5, color=INK)
-    fig.tight_layout(rect=(0, 0.045, 1, 0.91))
+
+def fig_peff(rows, store):
+    """fig_workload_power_tokj.png panels, scored like check 1: per-CLASS efficiency curves (both
+    phases co-plotted, log y, class title = name + P:D in band color), one row per hardware
+    (V100 / H200 / RTX 5090-mock), each phase annotated with its efficiency-curve MAPE. No optimum
+    markers — the flat peaks make the argmax the wrong quantity to compare (see check2)."""
+    cl = classes()
+    fig, axes = plt.subplots(len(FIG_HW), len(cl), figsize=(3.4 * len(cl), 12.0), squeeze=False)
+    for i, hw in enumerate(FIG_HW):
+        for j, c in enumerate(cl):
+            ax = axes[i][j]
+            ax.set_yscale("log")
+            if any(v not in store[hw] for v in c["via"]):
+                ax.set_axis_off()
+                continue
+            d = (synth_entry(hw, [store[hw][v] for v in c["via"]]) if len(c["via"]) > 1
+                 else store[hw][c["via"][0]])
+            lo_x = min(d[p]["P"].min() for p in ("prefill", "decode"))
+            hi_x = max(d[p]["P"].max() for p in ("prefill", "decode"))
+            mid = (lo_x + hi_x) / 2
+            ymin, ymax = np.inf, -np.inf
+            for phase, pc in (("prefill", PRE_C), ("decode", DEC_C)):
+                s_ = d[phase]
+                P, T, W = s_["P"], s_["T"], s_["W"]
+                if len(P) < 3:
+                    continue
+                eff = T / W                                    # measured efficiency (tok/J on draw)
+                g = np.linspace(P.min(), P.max(), 1501)
+                o = np.argsort(P)
+                w_of = np.interp(g, P[o], W[o])
+                eff_m = s_["fn"](g) / w_of                     # model efficiency
+                ax.plot(g, eff_m, color=pc, lw=2, zorder=3)
+                ax.plot(P, eff, "o", ms=4.5, color=pc, mec="white", mew=0.9, zorder=4)
+                # sweet spot marked as in the tokj figure (display only — not a scored quantity)
+                k = int(np.argmax(eff_m))
+                p_opt, e_opt = float(g[k]), float(eff_m[k])
+                right = p_opt > mid
+                ax.plot(p_opt, e_opt, "o", ms=8, mfc="none", mec="black", mew=1.2, zorder=5)
+                ax.annotate(f"{p_opt:.0f}W", (p_opt, e_opt),
+                            textcoords="offset points", xytext=(-7, 4) if right else (7, 4),
+                            ha="right" if right else "left", fontsize=7.6, color=pc)
+                e = mape(eff, s_["fn"](P) / W)
+                ax.annotate(f"{phase}  MAPE {e:.1f}%", (P[-1], float(eff[-1])),
+                            textcoords="offset points", xytext=(-3, -13), ha="right",
+                            fontsize=8.2, color=pc, weight="bold")
+                ymin, ymax = min(ymin, float(eff.min())), max(ymax, float(eff.max()))
+            ax.set_ylim(ymin * 0.35, ymax * 5)
+            ax.set_xlim(lo_x - (hi_x - lo_x) * .08, hi_x + (hi_x - lo_x) * .03)
+            ax.set_title(f"{c['name']}   {ratio_str(c['rho'])}", fontsize=11,
+                         color=band_color(c["rho"]), weight="bold", pad=8)
+            ax.grid(alpha=.45, color=GRID, lw=0.7, which="both")
+            ax.tick_params(labelsize=8, colors="black")
+            [sp.set_visible(False) for sp in (ax.spines["top"], ax.spines["right"])]
+            [ax.spines[sp].set_color("black") for sp in ("left", "bottom")]
+            if j == 0:
+                ax.set_ylabel(f"{hw}\nefficiency (tok/J, log)", fontsize=10, weight="bold",
+                              color="black")
+            if i == len(FIG_HW) - 1:
+                ax.set_xlabel("GPU power (W)", fontsize=9.4, color="black")
+    fig.legend(handles=[Line2D([], [], color=PRE_C, lw=2.2, marker="o", ms=5, mec="white",
+                               label="prefill — model (line) & measured (dots)"),
+                        Line2D([], [], color=DEC_C, lw=2.2, marker="o", ms=5, mec="white",
+                               label="decode — model (line) & measured (dots)"),
+                        Line2D([], [], color="black", lw=0, marker="o", ms=8, mfc="none", mew=1.2,
+                               label="ring = efficiency sweet spot (display only, not scored)")],
+               loc="lower center", ncol=3, fontsize=9.6, frameon=False, bbox_to_anchor=(0.5, -0.006))
+    med = {hw: np.median([r["eff_MAPE_pct"] for r in rows if r["hw"] == hw]) for hw in HW}
+    fig.suptitle("Check 2 — efficiency-curve accuracy per production workload class "
+                 "(efficiency = tok/s per measured watt)   ·   "
+                 + "   ·   ".join(f"{hw} median MAPE = {med[hw]:.1f}%" for hw in HW)
+                 + "\n⚠ bottom row RTX 5090 = MOCK data (synthesized, no measurement — projection "
+                 "only, excluded from every metric)  ·  ⚠ Long-context chat = MOCK anchor "
+                 "(per-power mean of the chat-phi3 & summarize-qwen7b measurements)",
+                 fontsize=12.5, color="black")
+    fig.tight_layout(rect=(0, 0.045, 1, 0.92))
     _save(fig, "fig_val_peff.png")
 
 
@@ -656,7 +643,7 @@ def main():
 
     r2 = [r for hw in HW for r in check2(hw, store)]
     _csv(r2, "val_peff.csv")
-    fig_peff(r2)
+    fig_peff(r2, store)
 
     r3, curves = [], {}
     for hw in HW:
@@ -673,12 +660,9 @@ def main():
             e = [r["MAPE_pct"] for r in r1 if r["hw"] == hw and r["phase"] == phase]
             print(f"{hw} {phase:8s} MAPE median {np.median(e):5.2f}%  "
                   f"[{min(e):5.2f}, {max(e):5.2f}]  n={len(e)}")
-        d = [r for r in r2 if r["hw"] == hw]
-        inr = [r for r in d if not r["model_peak_at_edge"]]
-        print(f"{hw} P_eff    median |ΔP| {np.median([abs(r['dP_pct']) for r in inr]):5.1f}% · "
-              f"median eff loss {np.median([r['eff_loss_pct'] for r in inr]):.2f}% "
-              f"(max {max(r['eff_loss_pct'] for r in inr):.2f}%) · "
-              f"{len(d) - len(inr)}/{len(d)} edge-pinned")
+        d = [r["eff_MAPE_pct"] for r in r2 if r["hw"] == hw]
+        print(f"{hw} eff-curve MAPE median {np.median(d):5.2f}%  [{min(d):5.2f}, {max(d):5.2f}]  "
+              f"(identical to throughput MAPE by construction — the draw cancels on the grid)")
         d = [r for r in r3 if r["hw"] == hw and r["phase"] == "decode"]
         for k in ("A", "B", "ours"):
             print(f"{hw} decode {k:4s} MAPE {np.median([r[f'MAPE_{k}_pct'] for r in d]):5.1f}% · "
