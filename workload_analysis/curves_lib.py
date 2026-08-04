@@ -50,15 +50,24 @@ CLK_FLOOR = 135.0                               # lowest hardware SM clock (H200
 NAME = {"推理": "Reasoning", "助手API": "Assistant API", "多模态图文": "Multimodal",
         "对话": "Chat (dialogue)", "长上下文对话": "Long-context chat",
         "Agentic工具调用": "Agentic tool-use", "代码补全": "Code completion"}
-# class -> measured workload whose curves it maps onto, chosen by NEAREST DECODE-CONTEXT scale
-# (the decode ceiling T ∝ 1/C is what the anchor must reproduce; the class SHAPE rho-bar enters
-# the solver separately via Lp/Ld). All anchors exist on BOTH V100 and H200.
+# class -> measured workload whose curves it maps onto. ONE anchor per class, none shared, so every
+# class rests on its own sweep. Anchors are matched on request SHAPE (prompt-heavy vs decode-heavy,
+# and the context scale each phase actually sees), not on decode context alone. Mirrored in
+# workload_classes.csv (via_workload column) — keep the two in step.
+# All anchors exist on BOTH V100 and H200. fastchat-qwen15b anchors no class; it stays in the
+# validation set only.
+# A tuple value is a BLEND: the class has no sweep of its own and takes the GEOMETRIC mean of the
+# named anchors' curves. Geometric, not arithmetic: the two decode ceilings sit two orders of
+# magnitude apart (256 vs 32768 ctx), so an arithmetic mean would land within 0.4% of the faster
+# anchor and would not be a blend at all; on the log axis these curves live on, the geometric mean
+# is the midpoint.
 MAP = {"推理": "longform-phi3",            # ~2.8k eff. ctx, decode-dominant -> dec 4096x8 anchor
        "助手API": "translate-qwen3b",      # ~0.7k total -> 512x64
-       "多模态图文": "rag-phi3",           # ~1.4k -> dec 1024x32 (vision tokens priced as text)
-       "对话": "code-phi3",                # ~1.7k accumulated history -> dec 2048x16
-       "长上下文对话": "summarize-qwen7b", # ~12k -> 32k anchor (conservative ceiling)
-       "Agentic工具调用": "summarize-qwen7b",  # ~8.8k per-step re-prefill -> 32k (conservative)
+       "多模态图文": "rag-phi3",           # ~1.3k eff. ctx -> dec 1024x32 (vision tokens priced as text)
+       "对话": "chat-phi3",                # short accumulated history, high concurrency -> dec 256x64
+       "长上下文对话": ("chat-phi3", "summarize-qwen7b"),   # blend: rho-bar 35.1 sits between the
+                                           # Chat (15.5) and Agentic (47.2) anchors
+       "Agentic工具调用": "summarize-qwen7b",  # ~8.7k per-step re-prefill -> 32k (conservative)
        "代码补全": "code-phi3"}            # its own Azure-trace basis, dec 2048x16
 # P:D bands, same thresholds & colors as fig_workload_pd.png (color follows the band entity)
 BANDS = [("decode-heavy", 0.0, 0.5, "#d62728"),
@@ -70,10 +79,15 @@ INK, INK2, MUTE, GRID = "#0b0b0b", "#52514e", "#898781", "#e1e0d9"
 # classes whose anchor mapping carries a scale/accounting caveat (starred in the figures)
 CAVEAT = {"推理": "anchor longform-phi3 dec 4096x8; qwen3think-4b (8192x8) is the closer shape but has no H200 data",
           "助手API": "translate curves (512x64) stand in for its ~0.7k programmatic requests",
-          "多模态图文": "text-only curves - vision tokens priced as text prefill (no multimodal measurement)",
-          "对话": "anchor code-phi3 for its 2048 ctx (~1.7k accumulated history); B=16 below chat-typical concurrency",
-          "长上下文对话": "32k summarize curves vs ~12k real context - decode ceiling conservative (T∝1/C)",
-          "Agentic工具调用": "32k summarize curves vs ~8.8k per-step context - conservative; full-history re-prefill accounting"}
+          "多模态图文": "text-only curves - vision tokens priced as text prefill (no multimodal measurement); "
+                        "dec 1024x32 vs ~1.3k effective context, the closest anchor in the set",
+          "对话": "anchor chat-phi3 dec 256x64 vs ~1.7k accumulated history - anchor context SHORTER than "
+                  "the class, so the decode ceiling is OPTIMISTIC (T proportional to 1/C)",
+          "长上下文对话": "SYNTHETIC: geometric mean of the chat-phi3 and summarize-qwen7b curves, no sweep of "
+                          "its own. Effective context ~sqrt(256*32768)=2.9k against a real ~12.2k, so the decode "
+                          "ceiling is OPTIMISTIC by ~4x; summarize-qwen7b alone would be ~2.7x CONSERVATIVE",
+          "Agentic工具调用": "32k summarize curves vs ~8.7k per-step context - conservative; "
+                             "full-history re-prefill accounting"}
 
 FOOT = ("lines = model fits, dots = measured  ·  title = class P:D, colored by band "
         "(red decode-heavy · gray balanced · blue prefill-heavy)  ·  "
@@ -88,14 +102,25 @@ fmt = lambda v: (f"{v/1e3:.1f}k" if v >= 1e3 else f"{v:.0f}" if v >= 100
 def _read(path):
     """(power_axis, throughput, sm_clk, measured_draw, rows). Power axis = ENFORCED cap when swept
     (decode); when cap is fixed and the SM CLOCK is swept (H200 prefill), the MEASURED draw
-    power_avg_w. Measured draw is always returned separately (the tok/J denominator)."""
+    power_avg_w. Measured draw is always returned separately (the tok/J denominator).
+
+    A CAP sweep drops the points whose SM clock sits on the hardware floor (CLK_FLOOR): there the cap
+    can no longer set the frequency and the driver meets it by stalling, so two different throughputs
+    appear at the same clock and the DVFS law of eq. (3) does not describe them at all. Same rule as
+    validation/validate_model.py — keeping them here dragged the whole decode fit down. A LOCKED-CLOCK
+    sweep keeps every point: its lowest clock is a deliberately set operating point, not a failure to
+    enforce, so H200 prefill is untouched (it simply cannot draw less than ~300 W at 345 MHz)."""
     rows = [r for r in csv.DictReader(open(path)) if float(r["throughput_tok_s"]) > 0]
     cap = np.array([float(r["cap_w"]) for r in rows])
     thr = np.array([float(r["throughput_tok_s"]) for r in rows])
     clk = np.array([float(r["sm_clk_avg"]) for r in rows])
     pwr = np.array([float(r["power_avg_w"]) for r in rows])   # MEASURED draw (energy-window avg)
-    P = cap if np.ptp(cap) > 1e-6 else pwr
-    return P, thr, clk, pwr, rows
+    cap_swept = np.ptp(cap) > 1e-6
+    if cap_swept:
+        k = clk > CLK_FLOOR * 1.02
+        cap, thr, clk, pwr = cap[k], thr[k], clk[k], pwr[k]
+        rows = [r for r, kk in zip(rows, k) if kk]
+    return (cap if cap_swept else pwr), thr, clk, pwr, rows
 
 
 def load_curves(wid):
@@ -115,10 +140,45 @@ def load_curves(wid):
         return lambda q: np.interp(np.asarray(q, float), x[o], w[o])   # decode: cap axis -> map cap to draw)
     return dict(Tpre=lambda q: np.maximum(preT(np.clip(np.asarray(q, float), CAP_LO, CAP_HI)), 1e-9),
                 Tdec=lambda q: np.maximum(decT(np.clip(np.asarray(q, float), CAP_LO, CAP_HI)), 1e-9),
-                pre_x=Pp, pre_y=Tp, dec_x=Pd, dec_y=Td,
+                pre_x=Pp, pre_y=Tp, dec_x=Pd, dec_y=Td, pre_F=Fp, dec_F=Fd,
                 pre_pwr=Wp, dec_pwr=Wd, pre_pwr_of=_pwr_of(Pp, Wp), dec_pwr_of=_pwr_of(Pd, Wd),
                 pre_rng=(float(Pp.min()), float(Pp.max())), dec_rng=(float(Pd.min()), float(Pd.max())),
                 pre=pre, dec=dec, ctx=drow[0]["ctx"], b_dec=drow[0]["batch"])
+
+
+def synth_curves(parts):
+    """A SYNTHETIC (mock) anchor for a class with no sweep of its own: the sources' MEASURED points
+    are rank-paired along the power axis and averaged into one synthetic sweep (throughput
+    geometrically — fitlib.synth_points), which is then fitted with the SAME theory model as any
+    measured workload. The panel is indistinguishable from a measured one (dots + fit); the figure
+    title carries the mock note."""
+    cal = fitlib.calibrate_power_side(DATA, F_MAX, CLK_FLOOR)
+    Pp, Tp, Fp, Wp = fitlib.synth_points([(p["pre_x"], p["pre_y"], p["pre_F"], p["pre_pwr"])
+                                          for p in parts])
+    Pd, Td, Fd, Wd = fitlib.synth_points([(p["dec_x"], p["dec_y"], p["dec_F"], p["dec_pwr"])
+                                          for p in parts])
+    preT, pre = fitlib.fit_prefill_theory(Pp, Tp, Fp, F_MAX, cal)
+    decT, dec = fitlib.fit_decode_theory(Pd, Td, Fd, float(parts[0]["b_dec"]), F_MAX, cal)
+
+    def _pwr_of(x, w):
+        o = np.argsort(x)
+        return lambda q: np.interp(np.asarray(q, float), x[o], w[o])
+    return dict(Tpre=lambda q: np.maximum(preT(np.clip(np.asarray(q, float), CAP_LO, CAP_HI)), 1e-9),
+                Tdec=lambda q: np.maximum(decT(np.clip(np.asarray(q, float), CAP_LO, CAP_HI)), 1e-9),
+                pre_x=Pp, pre_y=Tp, dec_x=Pd, dec_y=Td, pre_F=Fp, dec_F=Fd,
+                pre_pwr=Wp, dec_pwr=Wd, pre_pwr_of=_pwr_of(Pp, Wp), dec_pwr_of=_pwr_of(Pd, Wd),
+                pre_rng=(float(Pp.min()), float(Pp.max())), dec_rng=(float(Pd.min()), float(Pd.max())),
+                pre=pre, dec=dec, ctx="synthetic", b_dec=parts[0]["b_dec"])
+
+
+def resolve(entry, cache):
+    """MAP entry -> curve bundle. A str is a measured anchor, a tuple is a synthetic one built from
+    the named measured sweeps (rank-paired point average, then fitted like a measurement)."""
+    if isinstance(entry, tuple):
+        return synth_curves([resolve(e, cache) for e in entry])
+    if entry not in cache:
+        cache[entry] = load_curves(entry)
+    return cache[entry]
 
 
 def _phase_series(cv, phase, metric, g):
@@ -168,19 +228,29 @@ def build_power_figs(ratios_path, out_dir, hw, xlab):
     """Per-use-case-class panels (both phases co-plotted, LOG y) for throughput and tok/J, + the
     per-class CSV. Reads DATA/F_MAX/CAP_* module globals (H200 overrides them), so one implementation
     serves both hardwares."""
+    have = lambda e: all(os.path.exists(os.path.join(DATA, f"{w}_prefill.csv"))
+                         for w in (e if isinstance(e, tuple) else (e,)))
     rows = list(csv.DictReader(open(ratios_path, encoding="utf-8")))
     classes = sorted([dict(klass=r["klass"], r=float(r["ratio_agg"])) for r in rows
-                      if os.path.exists(os.path.join(DATA, f"{MAP[r['klass']]}_prefill.csv"))],
+                      if have(MAP[r["klass"]])],
                      key=lambda c: c["r"])       # decode-heavy -> prefill-heavy
-    curves = {wid: load_curves(wid) for wid in sorted({MAP[c["klass"]] for c in classes})}
+    cache = {}
+    curves = {MAP[c["klass"]]: resolve(MAP[c["klass"]], cache) for c in classes}
     g = np.linspace(CAP_LO, CAP_HI, 1501)
     n = len(classes); ncol = 4; nrow = int(np.ceil(n / ncol))   # 7 classes -> balanced 4+3
+    # classes on a synthetic anchor are flagged in the FIGURE TITLE only — the panel itself is
+    # drawn exactly like a measured one (that is the point of the synthetic sweep)
+    synth = [c["klass"] for c in classes if isinstance(MAP[c["klass"]], tuple)]
+    note = ("\n⚠ MOCK anchor: " + ", ".join(NAME[k] for k in synth) + " has no sweep of its own — "
+            "its points are the per-power mean of the "
+            + " & ".join(sorted({w for k in synth for w in MAP[k]}))
+            + " measurements, fitted like any workload") if synth else ""
 
     for metric, fname, ylab, ttl in [
         ("T", "fig_workload_power_throughput.png", "throughput (tok/s, log)",
-         f"Power vs throughput on {hw} — prefill & decode per production workload class"),
+         f"Power vs throughput on {hw} — prefill & decode per production workload class" + note),
         ("E", "fig_workload_power_tokj.png", "efficiency (tok/J, log)",
-         f"Power vs energy efficiency (tok/J) on {hw} — rings mark each phase's sweet spot")]:
+         f"Power vs energy efficiency (tok/J) on {hw} — rings mark each phase's sweet spot" + note)]:
         fig, axes = plt.subplots(nrow, ncol, figsize=(14.5, 3.9 * nrow), squeeze=False)
         axes = axes.ravel()
         for j, cl in enumerate(classes):
@@ -197,7 +267,7 @@ def build_power_figs(ratios_path, out_dir, hw, xlab):
                    loc="lower right", bbox_to_anchor=(0.97, 0.10), fontsize=10.5, frameon=False)
         fig.suptitle(ttl, fontsize=13, color=INK)
         fig.text(0.5, 0.008, FOOT, ha="center", fontsize=7.2, color=INK2)
-        fig.tight_layout(rect=(0, 0.035, 1, 0.945))
+        fig.tight_layout(rect=(0, 0.035, 1, 0.925 if note else 0.945))
         fig.savefig(os.path.join(out_dir, fname), dpi=130, bbox_inches="tight")
         plt.close(fig)
         print("wrote", os.path.join(out_dir, fname))
@@ -216,8 +286,10 @@ def _write_csv(classes, curves, out_dir, g):
         Ep, Ed = Tp / cv["pre_pwr_of"](gp), Td / cv["dec_pwr_of"](gd)   # tok/J on MEASURED draw
         ip, id_ = int(np.argmax(Ep)), int(np.argmax(Ed))
         d_sat = float(gd[int(np.argmax(Td >= 0.995 * Td[-1]))])
+        e = MAP[cl["klass"]]
         out.append({"klass": cl["klass"], "band": band_of(cl["r"])[0], "ratio_agg": cl["r"],
-                    "via_workload": MAP[cl["klass"]], "mapping_caveat": CAVEAT.get(cl["klass"], ""),
+                    "via_workload": "+".join(e) if isinstance(e, tuple) else e,
+                    "mapping_caveat": CAVEAT.get(cl["klass"], ""),
                     "pre_sweet_cap_w": round(float(gp[ip])), "pre_tok_per_j_sweet": round(float(Ep[ip]), 3),
                     "pre_tok_s_caphi": round(float(Tp[-1]), 1),
                     "dec_sweet_cap_w": round(float(gd[id_])), "dec_tok_per_j_sweet": round(float(Ed[id_]), 3),

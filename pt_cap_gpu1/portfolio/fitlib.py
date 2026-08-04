@@ -127,6 +127,28 @@ def calibrate_power_side(data_dir: str, f_max: float, clk_floor: float = 0.0) ->
     return cal
 
 
+# ------------------------------------------------------------------ synthetic anchors
+def synth_points(series):
+    """Average several measured sweeps into ONE synthetic sweep for a class with no sweep of its
+    own. Points are paired by RANK along the power axis (the sweeps share a grid layout, not exact
+    values); power, clock and draw take the arithmetic mean, throughput the GEOMETRIC mean — the
+    sources sit orders of magnitude apart, and an arithmetic mean of throughputs would collapse
+    onto the faster source. The result is fitted downstream exactly like a measured workload.
+
+    series: list of (P, T, F, W) tuples. Returns (P, T, F, W) of the synthetic sweep."""
+    n = min(len(s[0]) for s in series)
+    srt = []
+    for P, T, F, W in series:
+        o = np.argsort(np.asarray(P, float))
+        idx = o[np.round(np.linspace(0, len(o) - 1, n)).astype(int)]
+        srt.append([np.asarray(a, float)[idx] for a in (P, T, F, W)])
+    Pm = np.mean([s[0] for s in srt], axis=0)
+    Tg = np.exp(np.mean([np.log(np.maximum(s[1], 1e-12)) for s in srt], axis=0))
+    Fm = np.mean([s[2] for s in srt], axis=0)
+    Wm = np.mean([s[3] for s in srt], axis=0)
+    return Pm, Tg, Fm, Wm
+
+
 def _phi(Q, Ps, chi, th, phi_min):
     Q = np.asarray(Q, float)
     return np.clip(np.maximum((Q - Ps) / chi, 1e-12) ** (1.0 / th), phi_min, 1.0)

@@ -48,11 +48,14 @@ def main():
     classes = sorted([dict(klass=r["klass"], r=float(r["ratio_agg"])) for r in rows],
                      key=lambda c: c["r"])      # decode-heavy -> prefill-heavy
     by_id = {w["id"]: w for w in SW.PORTFOLIO}  # curves via THE canonical loader; Lp/Ld overridden
-    base = {wid: SW.load_workload(by_id[wid]) for wid in sorted(set(MAP.values()))}
+    flat = sorted({w for e in MAP.values() for w in (e if isinstance(e, tuple) else (e,))})
+    base = {wid: SW.load_workload(by_id[wid]) for wid in flat}
+    anchor = lambda e: (SW.blend_workload([base[w] for w in e]) if isinstance(e, tuple)
+                        else base[e])          # tuple entry = synthetic geometric-mean anchor
 
     recs, out = [], []
     for cl in classes:
-        c = {**base[MAP[cl["klass"]]], "Lp": cl["r"], "Ld": 1.0}
+        c = {**anchor(MAP[cl["klass"]]), "Lp": cl["r"], "Ld": 1.0}
         o, t, ceil = SW.solve_opt(c), SW.solve_tdp(c), SW.cont_bound(c)
         binds = []
         if o["Np"] + o["Nd"] >= SW.N_GPU_MAX:
@@ -68,7 +71,7 @@ def main():
         recs.append(dict(cl=cl, o=o, t=t))
         cav = CAVEAT.get(cl["klass"], "")
         out.append({"klass": cl["klass"], "band": band_of(cl["r"])[0], "ratio_agg": cl["r"],
-                    "via_workload": MAP[cl["klass"]], "mapping_caveat": cav,
+                    "via_workload": (lambda e: "+".join(e) if isinstance(e, tuple) else e)(MAP[cl["klass"]]), "mapping_caveat": cav,
                     "opt_tok_s": round(o["tot"], 1), "tdp_tok_s": round(t["tot"], 1),
                     "gain_pct": round(100 * (o["tot"] / t["tot"] - 1), 1),
                     "opt_N_prefill": o["Np"], "opt_N_decode": o["Nd"],

@@ -81,11 +81,9 @@ def _read(path):
             pwr, rows)
 
 
-def load_workload(w):
-    """Fit both phases of one workload in CAP space; return curve functions + fit metadata."""
-    Pp, Tp, Fp, Wp, _ = _read(os.path.join(DATA, f"{w['id']}_prefill.csv"))
-    Pd, Td, Fd, Wd, rows = _read(os.path.join(DATA, f"{w['id']}_decode.csv"))
-    B = float(rows[0]["batch"])
+def _fit_bundle(w, cls, Pp, Tp, Fp, Wp, Pd, Td, Fd, Wd, B):
+    """Fit both phases from point arrays and assemble the solver's curve bundle — shared by the
+    measured loader and the synthetic-anchor builder so the two can never drift."""
     preT, pre = fitlib.fit_prefill_unified(Pp, Tp, Fp, F_MAX)
     decT, dec = fitlib.fit_decode_additive(Pd, Td, Fd, B, F_MAX)
 
@@ -101,10 +99,33 @@ def load_workload(w):
     g = np.linspace(CAP_LO, CAP_HI, 1501)
     td = Tdec(g)
     p_dec_hi = float(g[int(np.argmax(td >= 0.995 * td[-1]))])
-    cls = CLASS_OF[w["id"]]
     return dict(w=w, cls=cls, Tpre=Tpre, Tdec=Tdec, pre=pre, dec=dec, p_dec_hi=p_dec_hi,
                 pre_pwr_of=_pwr_of(Pp, Wp), dec_pwr_of=_pwr_of(Pd, Wd),   # tok/J denominator = measured draw
-                Lp=float(cls["pd"][0]), Ld=float(cls["pd"][1]))
+                Lp=float(cls["pd"][0]), Ld=float(cls["pd"][1]),
+                raw=(Pp, Tp, Fp, Wp, Pd, Td, Fd, Wd, B))
+
+
+def load_workload(w):
+    """Fit both phases of one workload in CAP space; return curve functions + fit metadata."""
+    Pp, Tp, Fp, Wp, _ = _read(os.path.join(DATA, f"{w['id']}_prefill.csv"))
+    Pd, Td, Fd, Wd, rows = _read(os.path.join(DATA, f"{w['id']}_decode.csv"))
+    return _fit_bundle(w, CLASS_OF[w["id"]], Pp, Tp, Fp, Wp, Pd, Td, Fd, Wd,
+                       float(rows[0]["batch"]))
+
+
+def blend_workload(parts):
+    """A SYNTHETIC anchor for a class with no sweep of its own: the sources' MEASURED points are
+    rank-paired along the power axis and averaged into one synthetic sweep (throughput
+    geometrically — the sources sit orders of magnitude apart, an arithmetic mean would collapse
+    onto the faster one; fitlib.synth_points), then fitted EXACTLY like a measured workload.
+    Same dict shape as load_workload, so the solver cannot tell the difference."""
+    Pp, Tp, Fp, Wp = fitlib.synth_points([p["raw"][:4] for p in parts])
+    Pd, Td, Fd, Wd = fitlib.synth_points([p["raw"][4:8] for p in parts])
+    B = float(np.exp(np.mean([np.log(p["raw"][8]) for p in parts])))
+    out = _fit_bundle(dict(id="+".join(p["w"]["id"] for p in parts)), parts[0]["cls"],
+                      Pp, Tp, Fp, Wp, Pd, Td, Fd, Wd, B)
+    out["Lp"], out["Ld"] = parts[0]["Lp"], parts[0]["Ld"]
+    return out
 
 
 def sweet_spot(Tfun, pwr_of, hi=CAP_HI):

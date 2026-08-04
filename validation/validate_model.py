@@ -55,12 +55,19 @@ import fitlib                                                        # noqa: E40
 import portfolio                                                     # noqa: E402  the workload table
 
 # ---- hardware under test ------------------------------------------------------------------------
+# HW drives the CHECKS (MAPE tables, P_eff, baselines): measured hardware only. FIG_HW adds the
+# MOCK RTX 5090 row to the two Check-1 curve FIGURES — synthesized data (data_5090/make_mock_5090.py)
+# never enters the metric CSVs, because scoring the model against data generated FROM the model is
+# circular; the row exists to show the projected curves alongside the measured cards.
 HW = {
     "V100": dict(data=os.path.join(ROOT, "pt_cap_gpu1", "portfolio", "data"), clk_floor=135.0,
                  note="cap-swept 100-250 W, both phases"),
     "H200": dict(data=os.path.join(ROOT, "data_h200"), clk_floor=345.0,
                  note="decode cap-swept 200-700 W; prefill clock-swept at the 700 W cap"),
 }
+FIG_HW = {**HW,
+          "RTX 5090 (MOCK)": dict(data=os.path.join(ROOT, "data_5090"), clk_floor=210.0,
+                                  note="MOCK: synthesized from the H200 fits x 5090 spec ratios")}
 # In a CAP sweep, points whose SM clock sits on the hardware floor are DROPPED at read time: there
 # the cap is no longer a frequency knob (the driver meets it by stalling), so two different
 # throughputs appear at the same clock and no X=f(phi) model can describe them. V100 loses none;
@@ -150,7 +157,7 @@ def workloads(data):
 
 def load(hw, wid):
     """Both phases of one workload: measured arrays, the paper's fit, and the domain mask."""
-    cfg, out = HW[hw], {}
+    cfg, out = FIG_HW[hw], {}
     fmax = cfg["f_max"]
     cal = fitlib.calibrate_power_side(cfg["data"], fmax, cfg["clk_floor"])
     for phase, suffix in (("prefill", "_prefill.csv"), ("decode", "_decode.csv")):
@@ -204,56 +211,129 @@ def by_model(rows):
     return out
 
 
+def _curve_panel(ax, d, title, subtitle, ylab=None, xlab=True):
+    """One measured-vs-predicted panel: both phases on a LOG y-axis (they sit 1-2 orders apart),
+    fitted line + measured dots, each phase labelled with its MAPE. Shared by the per-model and the
+    per-workload figures so the two can never drift apart."""
+    ax.set_yscale("log")
+    lo_x = min(d[p]["P"].min() for p in ("prefill", "decode"))
+    hi_x = max(d[p]["P"].max() for p in ("prefill", "decode"))
+    for phase, c in (("prefill", PRE_C), ("decode", DEC_C)):
+        s = d[phase]
+        g = np.linspace(s["P"].min(), s["P"].max(), 400)
+        ax.plot(g, s["fn"](g), color=c, lw=2, zorder=3)
+        ax.plot(s["P"], s["T"], "o", ms=5, color=c, mec="white", mew=0.9, zorder=4)
+        ax.annotate(f"{phase[:3]}  MAPE {mape(s['T'], s['fn'](s['P'])):.1f}%",
+                    (s["P"][-1], s["T"][-1]), textcoords="offset points", xytext=(-3, 8),
+                    ha="right", fontsize=8.4, color=c, weight="bold")
+    ax.set_xlim(lo_x - (hi_x - lo_x) * .07, hi_x + (hi_x - lo_x) * .10)
+    ys = np.concatenate([d[p]["T"] for p in ("prefill", "decode")])
+    ax.set_ylim(ys.min() * 0.32, ys.max() * 4.5)      # headroom so the MAPE labels clear the title
+    ax.set_title(title, fontsize=10.4, color=INK, weight="bold", pad=12)
+    ax.annotate(subtitle, (0.5, 1.012), xycoords="axes fraction", ha="center", va="bottom",
+                fontsize=7.8, color=MUTE)
+    ax.grid(alpha=.4, color=GRID, lw=0.7, which="both")
+    ax.tick_params(labelsize=8, colors=MUTE)
+    [s_.set_visible(False) for s_ in (ax.spines["top"], ax.spines["right"])]
+    [ax.spines[s_].set_color(GRID) for s_ in ("left", "bottom")]
+    if ylab:
+        ax.set_ylabel(ylab, fontsize=10, weight="bold", color=INK)
+    if xlab:
+        ax.set_xlabel("GPU power (W)", fontsize=9.4, color=INK2)
+
+
+def _phase_legend(fig, y=-0.004, ncol=2):
+    fig.legend(handles=[Line2D([], [], color=PRE_C, lw=2.2, marker="o", ms=5, mec="white",
+                               label="prefill — model (line) & measured (dots)"),
+                        Line2D([], [], color=DEC_C, lw=2.2, marker="o", ms=5, mec="white",
+                               label="decode — model (line) & measured (dots)")],
+               loc="lower center", ncol=ncol, fontsize=9.8, frameon=False, bbox_to_anchor=(0.5, y))
+
+
 def fig_curves(store):
-    """Measured points vs predicted curve, both phases co-plotted on a LOG y-axis (they sit 1-2
-    orders apart). Rows = hardware, COLS = the MODELS under test, each shown at its representative
-    swept shape. Out-of-domain points hollow."""
-    fig, axes = plt.subplots(2, len(MODEL_ORDER), figsize=(16.5, 7.8), squeeze=False)
-    for i, hw in enumerate(HW):
+    """Rows = hardware, cols = the MODELS under test, each at its representative swept shape."""
+    fig, axes = plt.subplots(len(FIG_HW), len(MODEL_ORDER), figsize=(16.5, 11.4), squeeze=False)
+    for i, hw in enumerate(FIG_HW):
         for j, model in enumerate(MODEL_ORDER):
             ax = axes[i][j]
-            wid = representative(model, HW[hw]["wids"])
+            wid = representative(model, FIG_HW[hw]["wids"])
             if wid is None:                       # this model was not measured on this hardware
                 ax.set_axis_off()
                 ax.text(0.5, 0.5, f"{SHORT[model]}\nnot measured on {hw}", transform=ax.transAxes,
                         ha="center", va="center", fontsize=9.6, color=MUTE)
                 continue
-            d = store[hw][wid]
-            ax.set_yscale("log")
-            lo_x = min(d[p]["P"].min() for p in ("prefill", "decode"))
-            hi_x = max(d[p]["P"].max() for p in ("prefill", "decode"))
-            for phase, c in (("prefill", PRE_C), ("decode", DEC_C)):
-                s = d[phase]
-                g = np.linspace(s["P"].min(), s["P"].max(), 400)
-                ax.plot(g, s["fn"](g), color=c, lw=2, zorder=3)
-                ax.plot(s["P"], s["T"], "o", ms=5, color=c, mec="white", mew=0.9, zorder=4)
-                ax.annotate(f"{phase[:3]}  MAPE {mape(s['T'], s['fn'](s['P'])):.1f}%",
-                            (s["P"][-1], s["T"][-1]), textcoords="offset points", xytext=(-3, 8),
-                            ha="right", fontsize=8.6, color=c, weight="bold")
-            ax.set_xlim(lo_x - (hi_x - lo_x) * .07, hi_x + (hi_x - lo_x) * .10)
-            ys = np.concatenate([d[p]["T"] for p in ("prefill", "decode")])
-            ax.set_ylim(ys.min() * 0.32, ys.max() * 4.5)   # headroom so the MAPE labels clear the title
-            ax.set_title(f"{SHORT[model]}", fontsize=10.6, color=INK, weight="bold", pad=12)
-            ax.annotate(shape_label(wid), (0.5, 1.012), xycoords="axes fraction", ha="center",
-                        va="bottom", fontsize=8, color=MUTE)
-            ax.grid(alpha=.4, color=GRID, lw=0.7, which="both")
-            ax.tick_params(labelsize=8, colors=MUTE)
-            [s_.set_visible(False) for s_ in (ax.spines["top"], ax.spines["right"])]
-            [ax.spines[s_].set_color(GRID) for s_ in ("left", "bottom")]
-            if j == 0:
-                ax.set_ylabel(f"{hw}\nthroughput (tok/s, log)", fontsize=10, weight="bold", color=INK)
-            if i == 1:
-                ax.set_xlabel("GPU power (W)", fontsize=9.4, color=INK2)
-    fig.legend(handles=[Line2D([], [], color=PRE_C, lw=2.2, marker="o", ms=5, mec="white",
-                              label="prefill — model (line) & measured (dots)"),
-                        Line2D([], [], color=DEC_C, lw=2.2, marker="o", ms=5, mec="white",
-                               label="decode — model (line) & measured (dots)")],
-               loc="lower center", ncol=2, fontsize=9.8, frameon=False, bbox_to_anchor=(0.5, -0.012))
+            _curve_panel(ax, store[hw][wid], SHORT[model], shape_label(wid),
+                         ylab=f"{hw}\nthroughput (tok/s, log)" if j == 0 else None, xlab=(i == 1))
+    _phase_legend(fig, y=-0.012)
     fig.suptitle("Check 1 — throughput-curve accuracy per MODEL: analytical model vs measurement\n"
                  "each column is one model at its representative swept shape "
                  "(median decode context among that model's shapes)", fontsize=12.5, color=INK)
     fig.tight_layout(rect=(0, 0.05, 1, 0.88))
     _save(fig, "fig_val_curves.png")
+
+
+def classes():
+    """The paper's seven PRODUCTION workload classes (Table I) and the measured curve each is anchored
+    to, read from workload_classes.csv — the single source of truth shared with curves_lib.py.
+    A '+' in via_workload marks a SYNTHETIC anchor: the geometric mean of the named sweeps, used where
+    a class has no sweep of its own."""
+    path = os.path.join(ROOT, "workload_analysis", "workload_classes.csv")
+    rows = list(csv.DictReader(open(path, encoding="utf-8")))
+    return sorted([dict(klass=r["klass"], name=r["name_en"], rho=float(r["ratio_agg"]),
+                        via=r["via_workload"].split("+")) for r in rows], key=lambda c: c["rho"])
+
+
+def synth_entry(hw, parts):
+    """A synthetic anchor as a store entry: the sources' measured points rank-paired and averaged
+    (throughput geometrically — fitlib.synth_points), then fitted with the same theory model. The
+    entry is shaped exactly like a measured one, so _curve_panel draws it identically; the figure
+    suptitle carries the mock note."""
+    cal = fitlib.calibrate_power_side(FIG_HW[hw]["data"], FIG_HW[hw]["f_max"], FIG_HW[hw]["clk_floor"])
+    out = {}
+    for phase in ("prefill", "decode"):
+        P, T, F, W = fitlib.synth_points([(d[phase]["P"], d[phase]["T"], d[phase]["F"],
+                                           d[phase]["W"]) for d in parts])
+        B = float(np.mean([d[phase]["B"] for d in parts]))
+        fn, pr = (fitlib.fit_prefill_theory(P, T, F, FIG_HW[hw]["f_max"], cal) if phase == "prefill"
+                  else fitlib.fit_decode_theory(P, T, F, B, FIG_HW[hw]["f_max"], cal))
+        out[phase] = dict(P=P, T=T, F=F, W=W, B=B, fn=fn, pr=pr, dom=np.ones(len(P), bool))
+    return out
+
+
+def fig_curves_class(store):
+    """The seven production classes of Table I, ordered by prefill-to-decode ratio. Rows = hardware,
+    cols = class, so a column compares the two GPUs on the same class."""
+    cl = classes()
+    fig, axes = plt.subplots(2, len(cl), figsize=(3.4 * len(cl), 8.2), squeeze=False)
+    for i, hw in enumerate(HW):
+        for j, c in enumerate(cl):
+            ax = axes[i][j]
+            rho = f"{c['rho']:.1f}:1" if c["rho"] >= 1 else f"{c['rho']:.2f}:1"
+            title, ylab = f"{c['name']}   {rho}", (f"{hw}\nthroughput (tok/s, log)" if j == 0 else None)
+            if any(v not in store[hw] for v in c["via"]):
+                ax.set_axis_off()
+                ax.text(0.5, 0.5, f"{c['name']}\nanchor not measured on {hw}",
+                        transform=ax.transAxes, ha="center", va="center", fontsize=9.2, color=MUTE)
+            elif len(c["via"]) > 1:                    # synthetic anchor, drawn like any other
+                _curve_panel(ax, synth_entry(hw, [store[hw][v] for v in c["via"]]), title,
+                             "anchor mean(" + ", ".join(c["via"]) + ")",
+                             ylab=ylab, xlab=(i == 1))
+            else:
+                _curve_panel(ax, store[hw][c["via"][0]], title,
+                             f"anchor {c['via'][0]}  ·  {shape_label(c['via'][0])}",
+                             ylab=ylab, xlab=(i == 1))
+    _phase_legend(fig, y=-0.012)
+    synth = [c for c in cl if len(c["via"]) > 1]
+    note = ("  ·  ⚠ " + ", ".join(c["name"] for c in synth) + " = MOCK anchor (per-power mean of "
+            "the " + " & ".join(sorted({v for c in synth for v in c["via"]}))
+            + " measurements, fitted like any workload)") if synth else ""
+    fig.suptitle("Check 1 — throughput-curve accuracy per PRODUCTION WORKLOAD CLASS: "
+                 "analytical model vs measurement\n"
+                 "the seven classes of Table I, ordered by prefill-to-decode ratio; each takes the "
+                 "measured sweep whose context scale is closest to its own" + note,
+                 fontsize=13, color=INK)
+    fig.tight_layout(rect=(0, 0.05, 1, 0.89))
+    _save(fig, "fig_val_curves_class.png")
 
 
 # ================================================================================ CHECK 2
@@ -559,12 +639,13 @@ def main():
         cfg["f_max"] = fitlib.resolve_f_max(cfg["data"])
         cfg["wids"] = workloads(cfg["data"])
 
-    store = {hw: {wid: load(hw, wid) for wid in HW[hw]["wids"]} for hw in HW}
+    store = {hw: {wid: load(hw, wid) for wid in FIG_HW[hw]["wids"]} for hw in FIG_HW}
 
     r1 = [r for hw in HW for r in check1(hw, store)]
     _csv(r1, "val_mape.csv")
     _csv(by_model(r1), "val_mape_by_model.csv")     # TABLE 3: by model x phase
     fig_curves(store)
+    fig_curves_class(store)
 
     r2 = [r for hw in HW for r in check2(hw, store)]
     _csv(r2, "val_peff.csv")

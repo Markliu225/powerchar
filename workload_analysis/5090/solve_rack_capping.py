@@ -1,20 +1,12 @@
-"""Rack power capping per use-case class on H200: OPT vs TDP under physical constraints.
+"""Rack power capping per use-case class on RTX 5090 — ⚠ MOCK DATA (synthesized, no measurement).
 
-Same pipeline as ../solve_rack_capping.py (V100), retargeted at the H200 dataset and an
-H200-scaled rack scenario. Solver AND curve construction are imported from the canonical
-rack_power_capping/solve_workloads.py; this file only retargets its scenario globals
-(the functions read them at call time) and overrides Lp/Ld with each class's measured ratio.
+Same pipeline as the V100/H200 versions, retargeted at the MOCK data_5090/ dataset (see
+data_5090/make_mock_5090.py for how it was synthesized from the H200 fits). Solver AND curve
+construction come from the canonical rack_power_capping/solve_workloads.py.
 
-SCENARIO (H200-scaled from the V100 5 kW / 32-slot experiment, disclosed on the figure):
-  W_RACK   = 14 kW   -- the V100 budget scaled by the TDP ratio 700/250, so the slot-wall
-                        tension is identical: nameplate TDP affords exactly 20 of 32 slots
-  N_GPU_MAX = 32 slots;  P_TDP = 700 W;  caps confined to the MEASURED [200, 700] W
-  decode never above its saturation cap (0.995 of T at 700 W), integer GPUs, >=1 per phase
-
-Solved for the 7 PRODUCTION workload classes of workload_classes.csv (the paper's II-C
-trace-based taxonomy, rho-bar 0.83..110.7). All 7 anchors (longform/translate/rag/code/summarize)
-have H200 data; classes whose anchor lacked data would be skipped automatically (subtitle names
-any). H200 prefill is clock-swept (power axis = measured draw), decode cap-swept.
+SCENARIO (Table II): W_RACK = 11.5 kW, N_GPU_MAX = 32 slots, P_TDP = 575 W, caps confined to the
+swept [200, 575] W. TDP provisioning affords exactly 20 of 32 slots (11500/575), the same
+slot-wall tension as the V100/H200 scenarios.
 
 python3 solve_rack_capping.py -> fig_workload_rack_capping.png + workload_rack_capping.csv
 """
@@ -32,17 +24,16 @@ ROOT = os.path.dirname(PARENT)
 sys.path.insert(0, os.path.join(ROOT, "rack_power_capping"))
 sys.path.insert(0, PARENT)
 import solve_workloads as SW                    # noqa: E402  THE rack solver (also adds fitlib)
-import curves_lib as V                   # noqa: E402  shared taxonomy / mapping / caveats
+import curves_lib as V                          # noqa: E402  shared taxonomy / mapping / caveats
 
-# ---- retarget the canonical solver at the H200 dataset + scenario ------------------------------
-# SW's functions read DATA / F_MAX / P_TDP / CAP_LO / CAP_HI as module globals at call time;
-# W_RACK / N_GPU_MAX are def-time default args, so they are passed explicitly below.
-W_RACK, N_GPU_MAX = 14000.0, 32                 # 5 kW x (700/250); TDP -> exactly 20 of 32 slots
-SW.DATA = os.path.join(ROOT, "data_h200")
+# ---- retarget the canonical solver at the MOCK 5090 dataset + Table II scenario ----------------
+W_RACK, N_GPU_MAX = 11500.0, 32                 # Table II; TDP -> exactly 20 of 32 slots
+SW.DATA = os.path.join(ROOT, "data_5090")
 SW.F_MAX = SW.fitlib.resolve_f_max(SW.DATA)
-SW.P_TDP, SW.CAP_LO, SW.CAP_HI = 700.0, 200.0, 700.0
+SW.P_TDP, SW.CAP_LO, SW.CAP_HI = 575.0, 200.0, 575.0    # caps confined to the swept [200, 575] W
 SW.sweet_spot.__defaults__ = (SW.CAP_HI,)       # hi= default was bound to 250 at def time
 
+MOCK_TAG = "⚠ MOCK DATA — synthesized from H200 fits x 5090 spec ratios, no measurement"
 NAME, MAP, BANDS = V.NAME, V.MAP, V.BANDS
 CAVEAT = V.CAVEAT                               # single source: II-C taxonomy (curves_lib)
 band_of = lambda r: next(b for b in BANDS if b[1] <= r < b[2])
@@ -58,7 +49,7 @@ def main():
     avail = lambda e: all(os.path.exists(os.path.join(SW.DATA, f"{w}_prefill.csv"))
                           for w in (e if isinstance(e, tuple) else (e,)))
     classes = sorted([dict(klass=r["klass"], r=float(r["ratio_agg"])) for r in rows
-                      if avail(MAP[r["klass"]])], key=lambda c: c["r"])   # skip classes whose anchor lacks H200 data
+                      if avail(MAP[r["klass"]])], key=lambda c: c["r"])
     by_id = {w["id"]: w for w in SW.PORTFOLIO}  # curves via THE canonical loader; Lp/Ld overridden
     flat = sorted({w for c in classes for e in (MAP[c["klass"]],)
                    for w in (e if isinstance(e, tuple) else (e,))})
@@ -79,8 +70,6 @@ def main():
             binds.append("Np=1")
         if o["Nd"] == 1 and c["Ld"] < c["Lp"]:
             binds.append("Nd=1")
-        # rack tok/J on the MEASURED draw (Σ per-GPU power_avg_w at the chosen caps), not the
-        # provisioned cap sum — consistent with the tok/J efficiency curves (power, not the set cap)
         mw = lambda r: r["Np"] * float(c["pre_pwr_of"](r["p_p"])) + r["Nd"] * float(c["dec_pwr_of"](r["p_d"]))
         o_mw, t_mw = mw(o), mw(t)
         recs.append(dict(cl=cl, o=o, t=t))
@@ -115,14 +104,13 @@ def main():
 
     fig, ax = plt.subplots(2, 1, figsize=(13, 10.5), gridspec_kw={"height_ratios": [1.15, 1]})
 
-    # (a) throughput normalized to TDP — LINEAR, bar heights show the true gain
     a = ax[0]
     wdt = 0.38
     rel = [r["o"]["tot"] / r["t"]["tot"] for r in recs]
     a.bar(x - wdt / 2, rel, wdt, color=GREEN,
-          label="OPT — caps float, <=14 kW (decode capped at saturation), slot-aware")
+          label="OPT — caps float, <=11.5 kW (decode capped at saturation), slot-aware")
     a.bar(x + wdt / 2, [1.0] * len(recs), wdt, color=RED,
-          label="TDP baseline (= 1.0, every GPU @700 W)")
+          label="TDP baseline (= 1.0, every GPU @575 W)")
     for i, r in enumerate(recs):
         a.annotate(f"+{100 * (rel[i] - 1):.0f}%", (x[i] - wdt / 2, rel[i]),
                    textcoords="offset points", xytext=(0, 4), ha="center", fontsize=8.5,
@@ -134,17 +122,16 @@ def main():
     for b in bounds:
         a.axvline(b, color="lightgray", lw=0.9, zorder=0)
     a.set_xticks(x); a.set_xticklabels(lab, fontsize=8)
-    for tick, r in zip(a.get_xticklabels(), recs):   # label color = P:D band (fig_workload_pd)
+    for tick, r in zip(a.get_xticklabels(), recs):
         tick.set_color(band_of(r["cl"]["r"])[3])
     a.set_ylim(0, max(rel) * 1.27)
     a.set_ylabel("rack throughput relative to TDP baseline (linear)")
-    a.set_title(f"Rack throughput per use-case class on H200 — OPT vs TDP, normalized to TDP   "
-                f"({W_RACK/1e3:.0f} kW, <= {N_GPU_MAX} GPU slots, caps in "
+    a.set_title(f"Rack throughput per use-case class on RTX 5090 — OPT vs TDP, normalized to TDP   "
+                f"({W_RACK/1e3:.1f} kW, <= {N_GPU_MAX} GPU slots, caps in "
                 f"[{SW.CAP_LO:.0f},{SW.CAP_HI:.0f}] W)\nbar heights show the TRUE gain; "
                 "absolute tok/s printed on the bars (classes span orders of magnitude)")
     a.legend(fontsize=9, loc="upper left"); a.grid(alpha=.3, axis="y")
 
-    # (b) GPU count change: TDP (left, light) vs OPT (right, solid), stacked prefill/decode
     a = ax[1]
     NpT = [r["t"]["Np"] for r in recs]; NdT = [r["t"]["Nd"] for r in recs]
     NpO = [r["o"]["Np"] for r in recs]; NdO = [r["o"]["Nd"] for r in recs]
@@ -166,17 +153,14 @@ def main():
     a.set_xticks(x); a.set_xticklabels(lab, fontsize=8)
     for tick, r in zip(a.get_xticklabels(), recs):
         tick.set_color(band_of(r["cl"]["r"])[3])
-    a.set_ylabel(f"GPUs in the {W_RACK/1e3:.0f} kW rack")
+    a.set_ylabel(f"GPUs in the {W_RACK/1e3:.1f} kW rack")
     n_wall = sum(1 for r in recs if r["o"]["Np"] + r["o"]["Nd"] >= N_GPU_MAX)
     n_min = min(r["o"]["Np"] + r["o"]["Nd"] for r in recs)
-    present = {r["cl"]["klass"] for r in recs}
-    dropped = [NAME[r["klass"]] for r in rows if r["klass"] not in present]
-    drop_note = f"  ·  {', '.join(dropped)} omitted (no H200 data)" if dropped else \
-                f"  ·  all {len(recs)}/7 production classes present"
-    a.set_title("GPU count & phase split per class — left bar TDP (every GPU @700 W), right bar "
-                f"OPT (Np+Nd @pre/dec cap W)\nsame 14 kW: TDP affords 20 GPUs; OPT hits the "
-                f"32-slot wall in {n_wall}/{len(recs)} classes (min fleet {n_min}); "
-                f"split follows the TOKEN-COST ratio{drop_note}")
+    n_tdp, n_floor = int(W_RACK // SW.P_TDP), int(W_RACK // SW.CAP_LO)
+    a.set_title(f"GPU count & phase split per class — left bar TDP (every GPU @{SW.P_TDP:.0f} W), "
+                f"right bar OPT (Np+Nd @pre/dec cap W)\nsame {W_RACK/1e3:.1f} kW: TDP affords "
+                f"{n_tdp} GPUs; the {SW.CAP_LO:.0f} W cap floor bounds OPT at {n_floor}; slot wall "
+                f"hit in {n_wall}/{len(recs)} classes (min fleet {n_min})")
     a.legend(handles=[Patch(fc=BLUE, label="prefill GPUs (OPT)"),
                       Patch(fc=ORANGE, label="decode GPUs (OPT)"),
                       Patch(fc=BLUE_LT, label="prefill GPUs (TDP)"),
@@ -185,13 +169,13 @@ def main():
     a.grid(alpha=.3, axis="y")
     a.set_ylim(0, N_GPU_MAX * 1.3)
 
-    fig.suptitle("H200 rack power capping by production workload class — trace P:D ratios on the "
-                 "mapped workload curves", fontsize=14)
+    fig.suptitle(f"{MOCK_TAG}\nRTX 5090 rack power capping by production workload class — "
+                 "trace P:D ratios on the mapped workload curves", fontsize=13.5, color="#b00020")
     fig.text(0.5, 0.005,
              "classes ordered decode-heavy -> prefill-heavy; label color = P:D band (red decode-heavy / "
              "gray balanced / blue prefill-heavy)\n"
              "P:D = trace aggregate ratio (ServeGen NSDI'26 · DynamoLLM-Azure'24 HPCA'25 · Mooncake FAST'25)"
-             "  ·  scenario scaled from the V100 experiment by the TDP ratio 700/250 (5 kW -> 14 kW, same 32 slots)",
+             "  ·  MOCK dataset: data_5090/make_mock_5090.py (H200 fits x 5090 spec ratios)",
              ha="center", fontsize=7.4, color=INK2)
     fig.tight_layout(rect=(0, 0.015, 1, 1))
     outp = os.path.join(HERE, "fig_workload_rack_capping.png")
@@ -208,4 +192,8 @@ def main():
 
 
 if __name__ == "__main__":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except AttributeError:
+        pass
     main()

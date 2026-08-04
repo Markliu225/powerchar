@@ -37,6 +37,9 @@
     (每类 2×4 面板,prefill/decode 两相,log-y)· `workload_power_curves.csv`
   - `solve_rack_capping.py`(优化内核 import 自 `../../rack_power_capping/solve_workloads.py`)
     → `fig_workload_rack_capping.png` · `workload_rack_capping.csv`
+- `5090/` —— **⚠ MOCK 同款产物**(RTX 5090:11.5 kW / ≤32 槽 / cap 扫描 200–575 W)。数据集
+  [`../data_5090/`](../data_5090/) 由 H200 拟合曲线按 5090 规格比合成(`make_mock_5090.py`,
+  **无任何实测**),图题均带 MOCK 标注;硬件到手后重测即可原位替换
 - `plot_profit_model.py` —— **论文经济模型**(式 (1)–(15))按 II-C 七类混合核算 CAP vs TDP 的
   **累计净现金流**(起点 −K,末端 = Φ(n)):混合 w_j = **研究查证的请求份额 r_j**(ServeGen 实测
   请求量、Copilot/Cursor 补全规模、OpenRouter 份额;逐类置信度见 ECONOMICS.md §3)× 各类 trace
