@@ -45,7 +45,8 @@ from matplotlib.lines import Line2D
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 # ---- economic parameters shared across the whole figure set (paper §5) ------------------------
-C_G = {"V100": 2500.0, "H200": 27000.0}   # $/GPU deployed (per-device; sticker incl. server share)
+C_G = {"V100": 2500.0, "RTX 5090": 3500.0, "H200": 27000.0}   # $/GPU deployed (sticker incl.
+# server share; 5090: ~$2k street + chassis/network share — MOCK platform, see data_5090/)
 N_YR = 5.0                 # service life n (paper: 4-6 yr)
 SALVAGE = 0.0              # S, conservative baseline
 ELEC = 0.10               # e, $/kWh
@@ -92,7 +93,9 @@ R_SHARE = {"对话": 30.0,            # [med]  ChatGPT-scale consumer chat, dilu
 # -----------------------------------------------------------------------------------------------
 
 DEV = {"V100": dict(csv="v100", budget_kw=5.0, tdp_w=250),
+       "RTX 5090": dict(csv="5090", budget_kw=11.5, tdp_w=575),   # MOCK data (data_5090/)
        "H200": dict(csv="h200", budget_kw=14.0, tdp_w=700)}
+DEVS = list(DEV)
 NAME = {"推理": "Reasoning", "助手API": "Assistant API", "多模态图文": "Multimodal",
         "对话": "Chat (dialogue)", "长上下文对话": "Long-context chat",
         "Agentic工具调用": "Agentic tool-use", "代码补全": "Code completion"}
@@ -194,9 +197,9 @@ fmt_pb = lambda t: "—" if t is None else (f"{t:.1f} yr" if t >= 1 else f"{t*12
 # ---- GROUP 1: 2 (device) x 4 (decay) net-cash-flow panels --------------------------------------
 def fig_group1(dev_cl):
     t = np.linspace(0, N_YR, 600)
-    fig, axes = plt.subplots(2, len(DECAYS), figsize=(19, 8.3), sharey="row", sharex=True)
+    fig, axes = plt.subplots(len(DEVS), len(DECAYS), figsize=(19, 12.0), sharey="row", sharex=True)
     rows = []
-    for i, dev in enumerate(("V100", "H200")):
+    for i, dev in enumerate(DEVS):
         cl = dev_cl[dev]
         for j, lam in enumerate(DECAYS):
             ax = axes[i, j]
@@ -226,7 +229,7 @@ def fig_group1(dev_cl):
             ax.grid(alpha=.35, color=GRID, lw=0.7)
             ax.tick_params(labelsize=8.5, colors=MUTE)
             [s.set_visible(False) for s in (ax.spines["top"], ax.spines["right"])]
-            if i == 1:
+            if i == len(DEVS) - 1:
                 ax.set_xlabel("years since deployment", fontsize=9.5, color=MUTE)
             rows.append(dict(view="decay", device=dev, lambda_pct=round(lam * 100),
                              cap_K_usd=round(cl["CAP"]["K"]), tdp_K_usd=round(cl["TDP"]["K"]),
@@ -249,7 +252,8 @@ def fig_group1(dev_cl):
              f"(reasoning/agentic \\${5*PRICE_SCALE:.2f}/\\${25*PRICE_SCALE:.2f} · long-ctx \\${3*PRICE_SCALE:.2f}/\\${15*PRICE_SCALE:.2f} · "
              f"chat/multimodal \\${2*PRICE_SCALE:.2f}/\\${10*PRICE_SCALE:.2f} · API/completion \\${1*PRICE_SCALE:.2f}/\\${5*PRICE_SCALE:.2f} per Mtok; "
              f"blended \\${dev_cl['V100']['CAP']['pi']*1e6:.2f}) · "
-             f"c_g \\${C_G['V100']:,.0f}(V100)/\\${C_G['H200']:,.0f}(H200)  ·  100% util, SLO not priced",
+             "c_g " + "/".join(f"\\${C_G[d]:,.0f} {d}" for d in DEVS)
+             + "  ·  100% util, SLO not priced  ·  ⚠ RTX 5090 row = MOCK data",
              ha="center", fontsize=7.5, color=MUTE)
     fig.tight_layout(rect=(0, 0.045, 1, 0.94))
     out = os.path.join(HERE, "fig_profit_model.png")
@@ -267,7 +271,8 @@ def fig_group2(classes_by_dev, w0):
     t = np.linspace(0, N_YR, 600)
     lam = MID_DECAY
     INK = "#0b0b0b"
-    fig, axes = plt.subplots(1, 2, figsize=(14.5, 6.2), sharex=True)
+    fig, axes = plt.subplots(1, len(DEVS), figsize=(20, 7.2), sharex=True,
+                             gridspec_kw=dict(wspace=0.24))
     rows = []
     # one color per class (both its +20% and −20% share the color) so it is visually obvious that
     # EVERY class is perturbed, not just one; order/colors shared across both panels, by demand share.
@@ -280,7 +285,7 @@ def fig_group2(classes_by_dev, w0):
         cl = cluster(dev, classes, w)
         return (cashflow(cl["CAP"], lam, t) - cashflow(cl["TDP"], lam, t)) / 1e6, cl
 
-    for ax, dev in zip(axes, ("V100", "H200")):
+    for ax, dev in zip(axes, DEVS):
         classes = classes_by_dev[dev]
         base_dy, base_cl = dcf(dev, classes, w0)
         dK = base_cl["CAP"]["K"] - base_cl["TDP"]["K"]
@@ -302,25 +307,16 @@ def fig_group2(classes_by_dev, w0):
         band = np.array(curves)
         lo, hi = band.min(0), band.max(0)
         ax.fill_between(t, lo, hi, color="#9a9a9a", alpha=.16, zorder=1, lw=0)   # sensitivity envelope
-        ax.plot(t, base_dy, color=INK, lw=2.0, zorder=6, label="real mix (measured proportions)")
+        ax.plot(t, base_dy, color=INK, lw=1.3, zorder=6, label="real mix (measured proportions)")
         ax.axhline(0, color="k", ls="--", lw=0.8)
 
         tx0 = first_cross(t, base_dy)
         if tx0 is not None:
             ax.plot(tx0, 0, "o", color=INK, ms=6, mec="white", mew=0.9, zorder=7)
-        # all readouts consolidated into the upper-left dead space (the curves rise left-to-right, so
-        # nothing is ever drawn there) instead of pinned to the endpoint/crossing, where they collided
-        # with the lines they were labelling.
-        ANCHOR = (0.035, 0.97)
-        ax.annotate(f"real mix:  {fmt_m(base_dy[-1]*1e6)} extra profit at {N_YR:.0f} yr", ANCHOR,
-                    xycoords="axes fraction", va="top", ha="left", fontsize=9.6, color=INK,
-                    weight="bold", zorder=8)
-        ax.annotate(f"span [{fmt_m(lo[-1]*1e6)}, {fmt_m(hi[-1]*1e6)}] over {len(order)} classes\n"
-                    f"● T× = {fmt_pb(tx0)}"
-                    + (f"   (span {min(txs)*12:.1f}–{max(txs)*12:.1f} mo)" if txs else "")
-                    + f"\nΔK = {fmt_m(dK)}  (mix-independent: 32/20 GPUs per rack)",
-                    ANCHOR, xycoords="axes fraction", textcoords="offset points", xytext=(0, -15),
-                    va="top", ha="left", fontsize=8.4, color=MUTE, zorder=8)
+        # no in-panel text — every readout lives in profit_model.csv / ECONOMICS.md; the y-range is
+        # clamped to the band (plus margin) so the curve fan fills the panel instead of huddling
+        y_pad = (hi[-1] - min(0.0, float(-dK / 1e6))) * 0.08
+        ax.set_ylim(min(float(-dK / 1e6), float(lo.min())) - y_pad, float(hi.max()) + y_pad)
         ax.set_title(f"{dev}", fontsize=12.5, weight="bold")
         ax.set_xlabel("years since deployment", fontsize=10)
         ax.set_ylabel("CAP − TDP cumulative net cash flow (M$)", fontsize=10)
@@ -330,12 +326,13 @@ def fig_group2(classes_by_dev, w0):
 
     # shared legend: bold real-mix line + one swatch per perturbed class (share % in the label)
     shr = lambda k: f"{w0[k]*100:.0f}%" if w0[k] >= 0.01 else "<1%"
-    handles = [Line2D([], [], color=INK, lw=3.1, label="base mix (request shares × trace tokens)")]
+    handles = [Line2D([], [], color=INK, lw=1.6, label="base mix (request shares × trace tokens)")]
     handles += [Line2D([], [], color=ccol[k], lw=2.2,
                        label=f"{NAME[k].split(' (')[0]} {shr(k)}  (±{MIX_SHIFT*100:.0f}%)")
                 for k in order]
-    fig.legend(handles=handles, loc="lower center", ncol=5, fontsize=8.2, frameon=False,
-               bbox_to_anchor=(0.5, -0.015))
+    fig.legend(handles=handles, loc="lower center", ncol=4, fontsize=9.5, frameon=False,
+               columnspacing=2.0, handletextpad=0.8, labelspacing=0.7,
+               bbox_to_anchor=(0.5, -0.02))
     fig.suptitle(
         f"Mix sensitivity — CAP vs TDP net-cash-flow difference, λ = {MID_DECAY*100:.0f} %/yr   "
         f"(real mixed workload; starts at −ΔK, zero-crossing = T×, end value = extra net profit)\n"
@@ -356,10 +353,10 @@ def main():
     except AttributeError:
         pass
     w = load_mix()
-    classes_by_dev = {dev: load(dev) for dev in ("V100", "H200")}
-    dev_cl = {dev: cluster(dev, classes_by_dev[dev], w) for dev in ("V100", "H200")}
+    classes_by_dev = {dev: load(dev) for dev in DEVS}
+    dev_cl = {dev: cluster(dev, classes_by_dev[dev], w) for dev in DEVS}
 
-    for dev in ("V100", "H200"):
+    for dev in DEVS:
         cl = dev_cl[dev]
         print(f"\n{dev}: {cl['CAP']['n_racks']:.0f} racks/{CLUSTER_MW:.0f} MW · "
               f"CAP {cl['CAP']['m']:.0f} GPU K={fmt_m(cl['CAP']['K'])} · TDP {cl['TDP']['m']:.0f} GPU K={fmt_m(cl['TDP']['K'])}")
@@ -375,7 +372,7 @@ def main():
     rows2 = fig_group2(classes_by_dev, w)
 
     print(f"\nmix sensitivity (λ={MID_DECAY*100:.0f}%, each class ±{MIX_SHIFT*100:.0f}% one at a time):")
-    for dev in ("V100", "H200"):
+    for dev in DEVS:
         rr = [r for r in rows2 if r["device"] == dev]
         ends = [r["dPhi_n_usd"] for r in rr]
         txs = [r["T_cross_yr"] for r in rr if r["T_cross_yr"] != ""]
