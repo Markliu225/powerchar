@@ -1,6 +1,6 @@
 hw,model,workload,is_representative,phase,n_points,P_lo_w,P_hi_w,MAPE_pct,R2
 V100,Phi-3-mini-4k (3.8B),chat-phi3,False,prefill,7,120,250,2.74,0.9711
-V100,Phi-3-mini-4k (3.8B),chat-phi3,False,decode,8,100,250,0.23,0.9995
+V100,Phi-3-mini-4k (3.8B),chat-phi3,False,decode,8,100,250,0.57,0.9978
 V100,Qwen2.5-7B,classify-qwen7b,False,prefill,8,100,250,3.54,0.9565
 V100,Qwen2.5-7B,classify-qwen7b,False,decode,7,120,250,8.43,-0.04
 V100,Phi-3-mini-4k (3.8B),code-phi3,True,prefill,8,100,250,2.73,0.9735
@@ -16,18 +16,18 @@ V100,Qwen2.5-7B,summarize-qwen7b,True,decode,8,100,250,0.33,0.9961
 V100,Qwen2.5-3B,translate-qwen3b,True,prefill,7,120,250,3.4,0.9184
 V100,Qwen2.5-3B,translate-qwen3b,True,decode,8,100,250,0.33,0.9988
 H200,Phi-3-mini-4k (3.8B),chat-phi3,False,prefill,6,329,692,1.91,0.9927
-H200,Phi-3-mini-4k (3.8B),chat-phi3,False,decode,8,266,700,2.01,0.9968
+H200,Phi-3-mini-4k (3.8B),chat-phi3,False,decode,8,266,700,2.0,0.9972
 H200,Qwen2.5-7B,classify-qwen7b,False,prefill,7,313,700,9.1,0.9264
-H200,Qwen2.5-7B,classify-qwen7b,False,decode,7,313,700,0.72,0.98
+H200,Qwen2.5-7B,classify-qwen7b,False,decode,7,313,700,0.53,0.986
 H200,Phi-3-mini-4k (3.8B),code-phi3,True,prefill,8,298,696,2.28,0.9963
-H200,Phi-3-mini-4k (3.8B),code-phi3,True,decode,8,266,700,0.8,0.9994
+H200,Phi-3-mini-4k (3.8B),code-phi3,True,decode,8,266,700,0.82,0.9993
 H200,Qwen2.5-1.5B,fastchat-qwen15b,True,prefill,9,262,704,3.55,0.9846
-H200,Qwen2.5-1.5B,fastchat-qwen15b,True,decode,8,266,700,1.42,0.9959
+H200,Qwen2.5-1.5B,fastchat-qwen15b,True,decode,8,266,700,0.89,0.9989
 H200,Phi-3-mini-4k (3.8B),longform-phi3,False,prefill,6,339,696,2.42,0.9879
 H200,Phi-3-mini-4k (3.8B),longform-phi3,False,decode,9,226,700,1.4,0.9987
 H200,Phi-3-mini-4k (3.8B),rag-phi3,False,prefill,10,320,709,2.06,0.9949
-H200,Phi-3-mini-4k (3.8B),rag-phi3,False,decode,8,266,700,2.45,0.9954
+H200,Phi-3-mini-4k (3.8B),rag-phi3,False,decode,8,266,700,1.99,0.9978
 H200,Qwen2.5-7B,summarize-qwen7b,True,prefill,6,346,690,2.43,0.9924
 H200,Qwen2.5-7B,summarize-qwen7b,True,decode,7,313,700,4.18,0.9833
 H200,Qwen2.5-3B,translate-qwen3b,True,prefill,11,338,712,1.71,0.9934
-H200,Qwen2.5-3B,translate-qwen3b,True,decode,7,313,700,1.97,0.9939
+H200,Qwen2.5-3B,translate-qwen3b,True,decode,7,313,700,3.06,0.9811
