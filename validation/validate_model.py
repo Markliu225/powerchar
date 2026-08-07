@@ -227,20 +227,21 @@ def _curve_panel(ax, d, title, subtitle=None, ylab=None, xlab=True):
         ax.plot(g, s["fn"](g), color=c, lw=2, zorder=3)
         ax.plot(s["P"], s["T"], "o", ms=5, color=c, mec="white", mew=0.9, zorder=4)
         ax.annotate(f"{phase}  MAPE {mape(s['T'], s['fn'](s['P'])):.1f}%",
-                    (s["P"][-1], s["T"][-1]), textcoords="offset points", xytext=(-3, 8),
-                    ha="right", fontsize=8.4, color=c, weight="bold")
+                    (s["P"][-1], s["T"][-1]), textcoords="offset points", xytext=(-3, 9),
+                    ha="right", fontsize=14, color=c, weight="bold")
     ax.set_xlim(lo_x - (hi_x - lo_x) * .07, hi_x + (hi_x - lo_x) * .10)
     ys = np.concatenate([d[p]["T"] for p in ("prefill", "decode")])
     ax.set_ylim(ys.min() * 0.32, ys.max() * 4.5)      # headroom so the MAPE labels clear the title
-    ax.set_title(title, fontsize=10.4, color="black", weight="bold", pad=7)
+    ax.set_title(title, fontsize=16, color="black", weight="bold", pad=8)
     ax.grid(alpha=.4, color=GRID, lw=0.7, which="both")
-    ax.tick_params(labelsize=8, colors="black")
+    ax.tick_params(labelsize=14, colors="black")
+    ax.xaxis.set_major_locator(plt.MaxNLocator(5))   # fewer, bigger x labels — they used to collide
     [s_.set_visible(False) for s_ in (ax.spines["top"], ax.spines["right"])]
     [ax.spines[s_].set_color("black") for s_ in ("left", "bottom")]
     if ylab:
-        ax.set_ylabel(ylab, fontsize=10, weight="bold", color="black")
+        ax.set_ylabel(ylab, fontsize=16, weight="bold", color="black")
     if xlab:
-        ax.set_xlabel("GPU power (W)", fontsize=9.4, color="black")
+        ax.set_xlabel("GPU power (W)", fontsize=15, color="black")
 
 
 def _phase_legend(fig, y=-0.004, ncol=2):
@@ -248,12 +249,12 @@ def _phase_legend(fig, y=-0.004, ncol=2):
                                label="prefill — model (line) & measured (dots)"),
                         Line2D([], [], color=DEC_C, lw=2.2, marker="o", ms=5, mec="white",
                                label="decode — model (line) & measured (dots)")],
-               loc="lower center", ncol=ncol, fontsize=9.8, frameon=False, bbox_to_anchor=(0.5, y))
+               loc="lower center", ncol=ncol, fontsize=16, frameon=False, bbox_to_anchor=(0.5, y))
 
 
 def fig_curves(store):
     """Rows = hardware, cols = the MODELS under test, each at its representative swept shape."""
-    fig, axes = plt.subplots(len(FIG_HW), len(MODEL_ORDER), figsize=(16.5, 11.4), squeeze=False)
+    fig, axes = plt.subplots(len(FIG_HW), len(MODEL_ORDER), figsize=(19.5, 13.4), squeeze=False)
     for i, hw in enumerate(FIG_HW):
         for j, model in enumerate(MODEL_ORDER):
             ax = axes[i][j]
@@ -261,19 +262,19 @@ def fig_curves(store):
             if wid is None:                       # this model was not measured on this hardware
                 ax.set_axis_off()
                 ax.text(0.5, 0.5, f"{SHORT[model]}\nnot measured on {hw}", transform=ax.transAxes,
-                        ha="center", va="center", fontsize=9.6, color=MUTE)
+                        ha="center", va="center", fontsize=15, color=MUTE)
                 continue
             _curve_panel(ax, store[hw][wid], SHORT[model], shape_label(wid),
                          ylab=f"{hw}\nthroughput (tok/s, log)" if j == 0 else None,
                          xlab=(i == len(FIG_HW) - 1))
     _phase_legend(fig, y=-0.012)
     fig.suptitle("Check 1 — throughput-curve accuracy per MODEL: analytical model vs measurement\n"
-                 "each column is one model at its representative swept shape (median decode context "
-                 "among that model's shapes)  ·  ⚠ bottom row RTX 5090 = MOCK data (synthesized, "
-                 "no measurement — shown for projection only, excluded from every metric)"
-                 "",
-                 fontsize=12.5, color=INK)
-    fig.tight_layout(rect=(0, 0.05, 1, 0.88))
+                 "each column is one model at its representative swept shape\n"
+                 "(median decode context among that model's shapes)\n"
+                 "⚠ bottom row RTX 5090 = MOCK data (synthesized, no measurement — "
+                 "shown for projection only, excluded from every metric)",
+                 fontsize=17.5, color=INK)
+    fig.tight_layout(rect=(0, 0.05, 1, 0.985))   # tight_layout already reserves the suptitle itself
     _save(fig, "fig_val_curves.png")
 
 
@@ -310,7 +311,7 @@ def fig_curves_class(store):
     """The seven production classes of Table I, ordered by prefill-to-decode ratio. Rows = hardware,
     cols = class, so a column compares the two GPUs on the same class."""
     cl = classes()
-    fig, axes = plt.subplots(len(FIG_HW), len(cl), figsize=(3.4 * len(cl), 12.0), squeeze=False)
+    fig, axes = plt.subplots(len(FIG_HW), len(cl), figsize=(4.45 * len(cl), 14.0), squeeze=False)
     for i, hw in enumerate(FIG_HW):
         for j, c in enumerate(cl):
             ax = axes[i][j]
@@ -319,7 +320,7 @@ def fig_curves_class(store):
             if any(v not in store[hw] for v in c["via"]):
                 ax.set_axis_off()
                 ax.text(0.5, 0.5, f"{c['name']}\nanchor not measured on {hw}",
-                        transform=ax.transAxes, ha="center", va="center", fontsize=9.2, color=MUTE)
+                        transform=ax.transAxes, ha="center", va="center", fontsize=15, color=MUTE)
             elif len(c["via"]) > 1:                    # synthetic anchor, drawn like any other
                 _curve_panel(ax, synth_entry(hw, [store[hw][v] for v in c["via"]]), title,
                              "anchor mean(" + ", ".join(c["via"]) + ")",
@@ -330,18 +331,17 @@ def fig_curves_class(store):
                              ylab=ylab, xlab=(i == len(FIG_HW) - 1))
     _phase_legend(fig, y=-0.012)
     synth = [c for c in cl if len(c["via"]) > 1]
-    note = ("  ·  ⚠ " + ", ".join(c["name"] for c in synth) + " = MOCK anchor (per-power mean of "
+    note = ("\n⚠ " + ", ".join(c["name"] for c in synth) + " = MOCK anchor (per-power mean of "
             "the " + " & ".join(sorted({v for c in synth for v in c["via"]}))
             + " measurements, fitted like any workload)") if synth else ""
-    note += ("  ·  ⚠ bottom row RTX 5090 = MOCK data (synthesized, no measurement — "
-             "shown for projection only, excluded from every metric)"
-             "")
+    note += ("\n⚠ bottom row RTX 5090 = MOCK data (synthesized, no measurement — "
+             "shown for projection only, excluded from every metric)")
     fig.suptitle("Check 1 — throughput-curve accuracy per PRODUCTION WORKLOAD CLASS: "
                  "analytical model vs measurement\n"
                  "the seven classes of Table I, ordered by prefill-to-decode ratio; each takes the "
                  "measured sweep whose context scale is closest to its own" + note,
-                 fontsize=13, color=INK)
-    fig.tight_layout(rect=(0, 0.05, 1, 0.89))
+                 fontsize=18, color=INK)
+    fig.tight_layout(rect=(0, 0.05, 1, 0.985))   # tight_layout already reserves the suptitle itself
     _save(fig, "fig_val_curves_class.png")
 
 
@@ -369,10 +369,6 @@ def check2(hw, store):
     return rows
 
 
-BANDS = [("decode-heavy", 0.0, 0.5, "#d62728"),              # same bands/colors as curves_lib
-         ("balanced", 0.5, 2.0, "#7f7f7f"),
-         ("prefill-heavy", 2.0, np.inf, "#1f77b4")]
-band_color = lambda r: next(b[3] for b in BANDS if b[1] <= r < b[2])
 ratio_str = lambda x: f"{x:.1f}:1" if x >= 1 else f"{x:.2f}:1"
 fmt_eff = lambda v: (f"{v/1e3:.1f}k" if v >= 1e3 else f"{v:.0f}" if v >= 100
                      else f"{v:.1f}" if v >= 10 else f"{v:.2f}")
@@ -384,7 +380,7 @@ def fig_peff(rows, store):
     (V100 / H200 / RTX 5090-mock), each phase annotated with its efficiency-curve MAPE. No optimum
     markers — the flat peaks make the argmax the wrong quantity to compare (see check2)."""
     cl = classes()
-    fig, axes = plt.subplots(len(FIG_HW), len(cl), figsize=(3.4 * len(cl), 12.0), squeeze=False)
+    fig, axes = plt.subplots(len(FIG_HW), len(cl), figsize=(4.45 * len(cl), 14.0), squeeze=False)
     for i, hw in enumerate(FIG_HW):
         for j, c in enumerate(cl):
             ax = axes[i][j]
@@ -416,42 +412,44 @@ def fig_peff(rows, store):
                 right = p_opt > mid
                 ax.plot(p_opt, e_opt, "o", ms=8, mfc="none", mec="black", mew=1.2, zorder=5)
                 ax.annotate(f"{p_opt:.0f}W", (p_opt, e_opt),
-                            textcoords="offset points", xytext=(-7, 4) if right else (7, 4),
-                            ha="right" if right else "left", fontsize=7.6, color=pc)
+                            textcoords="offset points", xytext=(-8, 6) if right else (8, 6),
+                            ha="right" if right else "left", fontsize=13, color=pc)
                 e = mape(eff, s_["fn"](P) / W)
                 ax.annotate(f"{phase}  MAPE {e:.1f}%", (P[-1], float(eff[-1])),
-                            textcoords="offset points", xytext=(-3, -13), ha="right",
-                            fontsize=8.2, color=pc, weight="bold")
+                            textcoords="offset points", xytext=(-3, -19), ha="right",
+                            fontsize=14, color=pc, weight="bold")
                 ymin, ymax = min(ymin, float(eff.min())), max(ymax, float(eff.max()))
             ax.set_ylim(ymin * 0.35, ymax * 5)
             ax.set_xlim(lo_x - (hi_x - lo_x) * .08, hi_x + (hi_x - lo_x) * .03)
-            ax.set_title(f"{c['name']}   {ratio_str(c['rho'])}", fontsize=11,
-                         color=band_color(c["rho"]), weight="bold", pad=8)
+            ax.set_title(f"{c['name']}   {ratio_str(c['rho'])}", fontsize=16,
+                         color="black", weight="bold", pad=8)   # same style as _curve_panel
             ax.grid(alpha=.45, color=GRID, lw=0.7, which="both")
-            ax.tick_params(labelsize=8, colors="black")
+            ax.tick_params(labelsize=14, colors="black")
+            ax.xaxis.set_major_locator(plt.MaxNLocator(5))   # fewer, bigger x labels
             [sp.set_visible(False) for sp in (ax.spines["top"], ax.spines["right"])]
             [ax.spines[sp].set_color("black") for sp in ("left", "bottom")]
             if j == 0:
-                ax.set_ylabel(f"{hw}\nefficiency (tok/J, log)", fontsize=10, weight="bold",
+                ax.set_ylabel(f"{hw}\nefficiency (tok/J, log)", fontsize=16, weight="bold",
                               color="black")
             if i == len(FIG_HW) - 1:
-                ax.set_xlabel("GPU power (W)", fontsize=9.4, color="black")
+                ax.set_xlabel("GPU power (W)", fontsize=15, color="black")
     fig.legend(handles=[Line2D([], [], color=PRE_C, lw=2.2, marker="o", ms=5, mec="white",
                                label="prefill — model (line) & measured (dots)"),
                         Line2D([], [], color=DEC_C, lw=2.2, marker="o", ms=5, mec="white",
                                label="decode — model (line) & measured (dots)"),
                         Line2D([], [], color="black", lw=0, marker="o", ms=8, mfc="none", mew=1.2,
                                label="ring = efficiency sweet spot (display only, not scored)")],
-               loc="lower center", ncol=3, fontsize=9.6, frameon=False, bbox_to_anchor=(0.5, -0.006))
+               loc="lower center", ncol=3, fontsize=16, frameon=False, bbox_to_anchor=(0.5, -0.006))
     med = {hw: np.median([r["eff_MAPE_pct"] for r in rows if r["hw"] == hw]) for hw in HW}
     fig.suptitle("Check 2 — efficiency-curve accuracy per production workload class "
                  "(efficiency = tok/s per measured watt)   ·   "
                  + "   ·   ".join(f"{hw} median MAPE = {med[hw]:.1f}%" for hw in HW)
                  + "\n⚠ bottom row RTX 5090 = MOCK data (synthesized, no measurement — projection "
-                 "only, excluded from every metric)  ·  ⚠ Long-context chat = MOCK anchor "
+                 "only, excluded from every metric)"
+                 "\n⚠ Long-context chat = MOCK anchor "
                  "(per-power mean of the chat-phi3 & summarize-qwen7b measurements)",
-                 fontsize=12.5, color="black")
-    fig.tight_layout(rect=(0, 0.045, 1, 0.92))
+                 fontsize=18, color="black")
+    fig.tight_layout(rect=(0, 0.05, 1, 0.985))   # tight_layout already reserves the suptitle itself
     _save(fig, "fig_val_peff.png")
 
 

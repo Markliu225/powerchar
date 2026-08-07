@@ -103,7 +103,7 @@ def main():
     fmt_tok = lambda v: f"{v/1e3:.0f}k" if v >= 9500 else (f"{v/1e3:.1f}k" if v >= 1000
                                                            else f"{v:.0f}")
 
-    fig, ax = plt.subplots(2, 1, figsize=(13, 10.5), gridspec_kw={"height_ratios": [1.15, 1]})
+    fig, ax = plt.subplots(2, 1, figsize=(17, 13.5), gridspec_kw={"height_ratios": [1.15, 1]})
 
     a = ax[0]
     wdt = 0.38
@@ -114,21 +114,21 @@ def main():
           label="TDP")
     for i, r in enumerate(recs):
         a.annotate(f"+{100 * (rel[i] - 1):.0f}%", (x[i] - wdt / 2, rel[i]),
-                   textcoords="offset points", xytext=(0, 4), ha="center", fontsize=11,
+                   textcoords="offset points", xytext=(0, 6), ha="center", fontsize=16,
                    color=GREEN, weight="bold")
         a.text(x[i] - wdt / 2, rel[i] / 2, f"{fmt_tok(r['o']['tot'])} tok/s", rotation=90,
-               ha="center", va="center", fontsize=9.5, color="white", weight="bold")
+               ha="center", va="center", fontsize=14.5, color="white", weight="bold")
         a.text(x[i] + wdt / 2, 0.5, f"{fmt_tok(r['t']['tot'])} tok/s", rotation=90,
-               ha="center", va="center", fontsize=9.5, color="white", weight="bold")
+               ha="center", va="center", fontsize=14.5, color="white", weight="bold")
     for b in bounds:
         a.axvline(b, color="lightgray", lw=0.9, zorder=0)
-    a.set_xticks(x); a.set_xticklabels(lab, fontsize=11)
+    a.set_xticks(x); a.set_xticklabels(lab, fontsize=16)
     for tick, r in zip(a.get_xticklabels(), recs):
         tick.set_color(band_of(r["cl"]["r"])[3])
-    a.set_ylim(0, max(rel) * 1.27)
-    a.set_ylabel("rack throughput relative to TDP baseline (linear)", fontsize=12)
-    a.set_title("(a) Rack throughput — Power Capping vs TDP", fontsize=13)
-    a.legend(fontsize=10.5, loc="upper left"); a.tick_params(axis="y", labelsize=11); a.grid(alpha=.3, axis="y")
+    a.set_ylim(0, max(rel) * 1.38)
+    a.set_ylabel("rack throughput relative to TDP baseline (linear)", fontsize=17)
+    a.set_title("(a) Rack throughput — Power Capping vs TDP", fontsize=18)
+    a.legend(fontsize=15.5, loc="upper left"); a.tick_params(axis="y", labelsize=16); a.grid(alpha=.3, axis="y")
 
     a = ax[1]
     NpT = [r["t"]["Np"] for r in recs]; NdT = [r["t"]["Nd"] for r in recs]
@@ -138,41 +138,41 @@ def main():
     a.bar(x + wdt / 2, NpO, wdt, color=BLUE)
     a.bar(x + wdt / 2, NdO, wdt, bottom=NpO, color=ORANGE)
     a.axhline(N_GPU_MAX, color="k", ls="--", lw=1.2)
-    a.text(-0.42, N_GPU_MAX + 3.6, f"physical slot limit N_max={N_GPU_MAX}",
-           ha="left", fontsize=11, weight="bold")
+    a.text(-0.42, N_GPU_MAX + 6.4, f"physical slot limit N_max={N_GPU_MAX}",
+           ha="left", fontsize=16, weight="bold")
     for b in bounds:
         a.axvline(b, color="lightgray", lw=0.9, zorder=0)
     for i, r in enumerate(recs):
         a.text(i - wdt / 2, NpT[i] + NdT[i] + 0.7, f"{NpT[i]}+{NdT[i]}", ha="center",
-               fontsize=10, color=INK2)
+               fontsize=15, color=INK2)
         a.text(i + wdt / 2, NpO[i] + NdO[i] + 0.7,
                f"{NpO[i]}+{NdO[i]}\n@{r['o']['p_p']:.0f}/{r['o']['p_d']:.0f}W",
-               ha="center", fontsize=10)
-    a.set_xticks(x); a.set_xticklabels(lab, fontsize=11)
+               ha="center", fontsize=15)
+    a.set_xticks(x); a.set_xticklabels(lab, fontsize=16)
     for tick, r in zip(a.get_xticklabels(), recs):
         tick.set_color(band_of(r["cl"]["r"])[3])
-    a.set_ylabel(f"GPUs in the {W_RACK/1e3:.1f} kW rack", fontsize=12)
+    a.set_ylabel(f"GPUs in the {W_RACK/1e3:.1f} kW rack", fontsize=17)
     n_wall = sum(1 for r in recs if r["o"]["Np"] + r["o"]["Nd"] >= N_GPU_MAX)
     n_min = min(r["o"]["Np"] + r["o"]["Nd"] for r in recs)
     n_tdp, n_floor = int(W_RACK // SW.P_TDP), int(W_RACK // SW.CAP_LO)
-    a.set_title("(b) GPU count and phase split", fontsize=13)
+    a.set_title("(b) GPU count and phase split", fontsize=18)
     a.legend(handles=[Patch(fc=BLUE, label="prefill GPUs (Power Capping)"),
                       Patch(fc=ORANGE, label="decode GPUs (Power Capping)"),
                       Patch(fc=BLUE_LT, label="prefill GPUs (TDP)"),
                       Patch(fc=ORANGE_LT, label="decode GPUs (TDP)")],
-             fontsize=11, loc="upper right", ncols=2)
-    a.tick_params(axis="y", labelsize=11); a.grid(alpha=.3, axis="y")
-    a.set_ylim(0, N_GPU_MAX * 1.3)
+             fontsize=15.5, loc="upper right", ncols=2)
+    a.tick_params(axis="y", labelsize=16); a.grid(alpha=.3, axis="y")
+    a.set_ylim(0, N_GPU_MAX * 1.48)
 
     fig.suptitle(f"{MOCK_TAG}\nRTX 5090 rack power capping by production workload class — "
-                 "trace P:D ratios on the mapped workload curves", fontsize=13.5, color="#b00020")
+                 "trace P:D ratios on the mapped workload curves", fontsize=18.5, color="#b00020")
     fig.text(0.5, 0.005,
              "classes ordered decode-heavy -> prefill-heavy; label color = P:D band (red decode-heavy / "
              "gray balanced / blue prefill-heavy)\n"
              "P:D = trace aggregate ratio (ServeGen NSDI'26 · DynamoLLM-Azure'24 HPCA'25 · Mooncake FAST'25)"
              "  ·  MOCK dataset: data_5090/make_mock_5090.py (H200 fits x 5090 spec ratios)",
-             ha="center", fontsize=9, color=INK2)
-    fig.tight_layout(rect=(0, 0.015, 1, 1))
+             ha="center", fontsize=14, color=INK2)
+    fig.tight_layout(rect=(0, 0.06, 1, 1))
     outp = os.path.join(HERE, "fig_workload_rack_capping.png")
     fig.savefig(outp, dpi=130, bbox_inches="tight")
     print(f"wrote {os.path.basename(outp)}")
