@@ -212,8 +212,10 @@ def fig_group1(dev_cl):
             if tx is not None:
                 yx = float(np.interp(tx, t, yc))
                 ax.plot(tx, yx, "o", color=GOLD, ms=8, mec="white", mew=0.9, zorder=6)
-                ax.annotate(f"T× {fmt_pb(tx)}", (tx, yx), textcoords="offset points",
-                            xytext=(8, -2), fontsize=8.6, color=GOLD, weight="bold", va="top")
+                # curves rise left-to-right, so the upper-left corner never holds a curve —
+                # both readouts live there instead of hugging the lines they describe
+                ax.annotate(f"T× {fmt_pb(tx)}", (0.05, 0.83), xycoords="axes fraction",
+                            fontsize=13, color=GOLD, weight="bold", va="top")
             phi_c = float(cashflow(cl["CAP"], lam, N_YR)); phi_t = float(cashflow(cl["TDP"], lam, N_YR))
             g = phi_c / phi_t
             if phi_c > 0 and phi_t > 0:                        # ratio only meaningful when both profit
@@ -221,41 +223,42 @@ def fig_group1(dev_cl):
             else:                                              # unprofitable: show signed extra, capping worse
                 gtxt = f"CAP {fmt_m(phi_c-phi_t)} vs TDP" + ("\n(both lose)" if phi_t < 0 else "")
                 gcol = RED
-            ax.annotate(gtxt, (t[-1], (yc[-1] + yt[-1]) / 2), textcoords="offset points",
-                        xytext=(-6, 0), ha="right", fontsize=8.8, color=gcol, weight="bold")
+            ax.annotate(gtxt, (0.05, 0.95), xycoords="axes fraction",
+                        fontsize=13.5, color=gcol, weight="bold", va="top")
             if i == 0:
                 ax.set_title(f"λ = {lam*100:.0f} %/yr" + ("  (no decay)" if lam == 0 else ""),
-                             fontsize=11.5, weight="bold")
+                             fontsize=15.5, weight="bold")
             ax.grid(alpha=.35, color=GRID, lw=0.7)
-            ax.tick_params(labelsize=8.5, colors=MUTE)
+            ax.tick_params(labelsize=16, colors=MUTE)
             [s.set_visible(False) for s in (ax.spines["top"], ax.spines["right"])]
             if i == len(DEVS) - 1:
-                ax.set_xlabel("years since deployment", fontsize=9.5, color=MUTE)
+                ax.set_xlabel("years since deployment", fontsize=20, color=MUTE)
             rows.append(dict(view="decay", device=dev, lambda_pct=round(lam * 100),
                              cap_K_usd=round(cl["CAP"]["K"]), tdp_K_usd=round(cl["TDP"]["K"]),
                              cap_Phi_n_usd=round(float(cashflow(cl["CAP"], lam, N_YR))),
                              tdp_Phi_n_usd=round(float(cashflow(cl["TDP"], lam, N_YR))),
                              T_cross_yr=round(tx, 3) if tx is not None else "",
                              G_end_ratio=round(g, 3)))
-        axes[i, 0].set_ylabel(f"{dev}\ncumulative net cash flow (M$)", fontsize=10.5, weight="bold")
-    axes[0, 0].legend(loc="lower right", fontsize=9, frameon=False)
+        axes[i, 0].set_ylabel(f"{dev}", fontsize=21, weight="bold")
+    axes[0, 0].legend(loc="lower right", fontsize=13, frameon=False)
     fig.suptitle(
         "Cumulative net cash flow — POWER CAP vs TDP, mixed workload, "
         f"{CLUSTER_MW:.0f} MW cluster over {N_YR:.0f} yr   (rows = device · cols = token-price decay λ)\n"
         "CF(t) = revenue(price ↓ at λ) − electricity − maintenance − upfront capex; starts at −K, "
         "ends at accrual profit Φ(n).  ● T× = crossover = extra-capex payback · G = Φ_CAP(n)/Φ_TDP(n)",
-        fontsize=12)
+        fontsize=16)
     fig.text(0.5, 0.008,
              f"mixed workload (per-class racks summed, N_j ∝ w_j/X_j; w = est. request shares × trace tokens/req, 7 II-C classes)  ·  "
-             f"n={N_YR:.0f} yr S=0 · e=\\${ELEC:.2f}/kWh × PUE {PUE} · μ={MU:.0%} · "
+             f"n={N_YR:.0f} yr S=0 · e=\\${ELEC:.2f}/kWh × PUE {PUE} · μ={MU:.0%}\n"
              f"per-class 2026 tier price × {PRICE_SCALE:.3g} small-model haircut "
              f"(reasoning/agentic \\${5*PRICE_SCALE:.2f}/\\${25*PRICE_SCALE:.2f} · long-ctx \\${3*PRICE_SCALE:.2f}/\\${15*PRICE_SCALE:.2f} · "
              f"chat/multimodal \\${2*PRICE_SCALE:.2f}/\\${10*PRICE_SCALE:.2f} · API/completion \\${1*PRICE_SCALE:.2f}/\\${5*PRICE_SCALE:.2f} per Mtok; "
              f"blended \\${dev_cl['V100']['CAP']['pi']*1e6:.2f}) · "
              "c_g " + "/".join(f"\\${C_G[d]:,.0f} {d}" for d in DEVS)
              + "  ·  100% util, SLO not priced  ·  ⚠ RTX 5090 row = MOCK data",
-             ha="center", fontsize=7.5, color=MUTE)
-    fig.tight_layout(rect=(0, 0.045, 1, 0.94))
+             ha="center", fontsize=11.5, color=MUTE)
+    fig.supylabel("cumulative net cash flow (M$)", fontsize=20)
+    fig.tight_layout(rect=(0.025, 0.045, 1, 0.94))
     out = os.path.join(HERE, "fig_profit_model.png")
     fig.savefig(out, dpi=130, bbox_inches="tight")
     plt.close(fig)
@@ -317,11 +320,11 @@ def fig_group2(classes_by_dev, w0):
         # clamped to the band (plus margin) so the curve fan fills the panel instead of huddling
         y_pad = (hi[-1] - min(0.0, float(-dK / 1e6))) * 0.08
         ax.set_ylim(min(float(-dK / 1e6), float(lo.min())) - y_pad, float(hi.max()) + y_pad)
-        ax.set_title(f"{dev}", fontsize=12.5, weight="bold")
-        ax.set_xlabel("years since deployment", fontsize=10)
-        ax.set_ylabel("CAP − TDP cumulative net cash flow (M$)", fontsize=10)
+        ax.set_title(f"{dev}", fontsize=16.5, weight="bold")
+        ax.set_xlabel("years since deployment", fontsize=20)
+        ax.set_ylabel("CAP − TDP net cash flow (M$)", fontsize=20)
         ax.grid(alpha=.3, color=GRID, lw=0.7)
-        ax.tick_params(labelsize=8.5, colors=MUTE)
+        ax.tick_params(labelsize=16, colors=MUTE)
         [s.set_visible(False) for s in (ax.spines["top"], ax.spines["right"])]
 
     # shared legend: bold real-mix line + one swatch per perturbed class (share % in the label)
@@ -330,16 +333,16 @@ def fig_group2(classes_by_dev, w0):
     handles += [Line2D([], [], color=ccol[k], lw=2.2,
                        label=f"{NAME[k].split(' (')[0]} {shr(k)}  (±{MIX_SHIFT*100:.0f}%)")
                 for k in order]
-    fig.legend(handles=handles, loc="lower center", ncol=4, fontsize=9.5, frameon=False,
+    fig.legend(handles=handles, loc="lower center", ncol=4, fontsize=13.5, frameon=False,
                columnspacing=2.0, handletextpad=0.8, labelspacing=0.7,
-               bbox_to_anchor=(0.5, -0.02))
+               bbox_to_anchor=(0.5, -0.085))
     fig.suptitle(
         f"Mix sensitivity — CAP vs TDP net-cash-flow difference, λ = {MID_DECAY*100:.0f} %/yr   "
         f"(real mixed workload; starts at −ΔK, zero-crossing = T×, end value = extra net profit)\n"
         f"each of the {len(order)} classes' demand share perturbed ±{MIX_SHIFT*100:.0f}% one at a time "
         "(color = perturbed class, both directions), renormalized (price & per-class rack counts re-solved)",
-        fontsize=11.5)
-    fig.tight_layout(rect=(0, 0.10, 1, 0.9))
+        fontsize=15.5)
+    fig.tight_layout(rect=(0, 0.15, 1, 0.88))
     out = os.path.join(HERE, "fig_profit_mix.png")
     fig.savefig(out, dpi=130, bbox_inches="tight")
     plt.close(fig)
