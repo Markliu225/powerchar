@@ -12,8 +12,10 @@ CHECK 1 (accuracy of the throughput curve) -- per hardware x workload x phase, p
   domain is the cap-controlled DVFS region: fitlib.cap_sweep_mask drops clock-floor points (cap
   unreachably low; H200 decode) and governor-stall points (draw well below the cap at a mid-range
   clock; V100's lowest cap on light prefill) at read time -- the same rule the whole repo fits with.
-  Two figures: per MODEL (fig_val_curves.png; bottom row = the MOCK RTX 5090, projection only) and
-  per PRODUCTION CLASS of Table I (fig_val_curves_class.png; Long-context chat = synthetic anchor).
+  Two figures, both laid out ONE PANEL PER HARDWARE x PHASE (rows = V100 / H200 / RTX 5090, cols =
+  prefill / decode), every series of a panel drawn together and direct-labelled with its own MAPE:
+  per MODEL (fig_val_curves.png; bottom row = the MOCK RTX 5090, projection only) and per
+  PRODUCTION CLASS of Table I (fig_val_curves_class.png; Long-context chat = synthetic anchor).
   The mock row appears in the FIGURES ONLY -- scoring the model on data generated from the model is
   circular, so no 5090 number enters any CSV/median.
   -> fig_val_curves.png, fig_val_curves_class.png, val_mape.csv, val_mape_by_model.csv
@@ -21,7 +23,8 @@ CHECK 1 (accuracy of the throughput curve) -- per hardware x workload x phase, p
 CHECK 2 (efficiency-curve accuracy) -- the planner works on tok/J, so the efficiency curve
   (throughput / MEASURED draw, same definition as workload_analysis/curves_lib.py) is validated in
   the same terms as check 1: MAPE of the model efficiency curve against the measured efficiency
-  points, drawn on the fig_workload_power_tokj panel layout (3 hardware rows x 7 classes). On the
+  points, drawn on check 1's layout (hardware rows x prefill/decode columns, all seven classes
+  together in a panel, ringed at the sweet spot). On the
   measured grid the draw cancels, so the number equals check 1's throughput MAPE -- the check adds
   the efficiency VIEW, not a new metric. The earlier optimum-point (ΔP) comparison was retired:
   efficiency peaks are second-order flat, making the argmax ill-conditioned and operationally
@@ -111,13 +114,20 @@ def representative(model, wids):
     return c[len(c) // 2] if c else None
 
 
-def shape_label(wid):
-    w = WL[wid]
-    return (f"prefill {w['prefill_seq_len']}×{w['prefill_batch']}  ·  "
-            f"decode {w['decode_ctx']}×{w['decode_batch']}")
-
 # ---- palette (repo fleet colors; the 3-form trio validated for CVD separation & contrast) --------
-PRE_C, DEC_C = "#1f77b4", "#ff7f0e"                 # phase identity, same as curves_lib.py
+# All three curve figures are laid out per HARDWARE x PHASE (one panel each), so every series of a
+# panel — all models, or all seven classes — is drawn together and hue must carry SERIES identity;
+# the phase is the panel, named in its title, so the repo's prefill/decode color pair does not apply
+# here (it still does in curves_lib.py, where the two phases share a panel). With the in-panel
+# labels reduced to the MAPE alone, this key is the ONLY thing naming a curve, so it has to hold up:
+# slots come from the validated categorical
+# order: every adjacent pair clears the CVD and normal-vision separation floors. Identity is
+# repeated by MARKER SHAPE and by the direct end-of-curve label, so no curve rests on hue alone —
+# which is also the relief the three sub-3:1-contrast slots of the 7-color set require.
+MODEL_C = ["#2a78d6", "#eb6834", "#4a3aa7", "#008300"]                # 4 models; all >= 3:1 on white
+CLASS_C = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7"]  # 7 classes
+MARKERS = ["o", "s", "^", "D", "v", "P", "X"]
+MARG = 0.02                                 # axes-fraction margin the stacked labels keep at top/bottom
 FORM_C = {"ours": "#1f77b4", "A": "#cc6600", "B": "#9467bd"}
 # distinct dash patterns as well as hue: below the ceiling B coincides with A exactly, and with one
 # pattern the hidden curve reads as "missing" rather than "identical"
@@ -213,68 +223,151 @@ def by_model(rows):
     return out
 
 
-def _curve_panel(ax, d, title, subtitle=None, ylab=None, xlab=True):
-    """One measured-vs-predicted panel: both phases on a LOG y-axis (they sit 1-2 orders apart),
-    fitted line + measured dots, each phase labelled with its MAPE. Shared by the per-model and the
-    per-workload figures so the two can never drift apart. `subtitle` is accepted but not drawn
-    (paper style: no per-panel fine print; the anchor/shape detail lives in the CSVs)."""
+def _label_column(ax, items, right, fontsize):
+    """The direct labels ('<series>  MAPE x.x%') that carry check 1's number onto the figure. With
+    every series of a hardware x phase in ONE panel, end-of-curve labels would pile into each other
+    exactly where the curves bunch, so they go in a COLUMN reserved to the right of the plotted
+    range instead: each label starts level with its own curve's last point, is bumped up until it
+    clears the label below by a line height, and keeps a hairline leader back to that point. Column
+    width is estimated from the longest string (bold sans advance ~0.54 em) and taken out of the
+    x-axis, so nothing ever lands on top of a curve. `items` = (x_end, y_end, text, color); `right`
+    = the last data x. Everything is computed from the limits, no renderer needed — safe to call
+    before tight_layout."""
+    x0, _ = ax.get_xlim()
+    w_pt = ax.get_position().width * ax.figure.get_figwidth() * 72.0
+    frac = min(0.46, (max(len(t) for _, _, t, _ in items) * fontsize * 0.54 + 20) / w_pt)
+    ax.set_xlim(x0, x0 + (right - x0) / (1.0 - frac))             # the column is pure axis padding
+    col = right + (ax.get_xlim()[1] - x0) * 0.022                 # left edge of the label column
+    y0, y1 = ax.get_ylim()
+    span = np.log10(y1) - np.log10(y0)
+    to_f = lambda y: (np.log10(y) - np.log10(y0)) / span
+    to_y = lambda f: 10.0 ** (np.log10(y0) + f * span)
+    h_pt = ax.get_position().height * ax.figure.get_figheight() * 72.0
+    gap = fontsize * 1.55 / h_pt                                  # one line height, in axes fraction
+    if len(items) > 1:                       # never demand more headroom than the panel has to give
+        gap = min(gap, (1.0 - 2 * MARG) / (len(items) - 1))
+    order = sorted(range(len(items)), key=lambda i: items[i][1])
+    at, top = {}, -np.inf
+    for i in order:
+        at[i] = top = max(to_f(items[i][1]), top + gap)
+    over = at[order[-1]] - (1.0 - MARG)
+    if over > 0:                             # stack ran past the top: slide it down as a rigid block
+        for i in at:
+            at[i] -= over
+    for i, (x, y, txt, c) in enumerate(items):
+        yl = to_y(at[i])
+        ax.plot([x, col], [y, yl], color=c, lw=0.9, alpha=0.5, zorder=5, clip_on=False)
+        ax.annotate(txt, (col, yl), textcoords="offset points", xytext=(4, 0), ha="left",
+                    va="center", fontsize=fontsize, color=c, weight="bold", zorder=6,
+                    annotation_clip=False,
+                    bbox=dict(boxstyle="square,pad=0.12", fc="white", ec="none", alpha=0.85))
+
+
+def thr_series(lab, s, c, mk):
+    """One THROUGHPUT series for a panel: model curve on a fine grid, the measured points, and the
+    model at those points (what the MAPE is scored on)."""
+    g = np.linspace(s["P"].min(), s["P"].max(), 400)
+    return dict(label=lab, color=c, marker=mk, P=s["P"], Y=s["T"], gx=g, gy=s["fn"](g),
+                yhat=s["fn"](s["P"]))
+
+
+def eff_series(lab, s, c, mk):
+    """One EFFICIENCY series: throughput / MEASURED draw (same definition as curves_lib.py), so the
+    model curve is the fitted throughput over the interpolated draw. `ring` marks that curve's peak
+    — display only, never scored: the peaks are second-order flat, which makes the argmax
+    ill-conditioned (see check2)."""
+    P, T, W = s["P"], s["T"], s["W"]
+    g = np.linspace(P.min(), P.max(), 1501)
+    o = np.argsort(P)
+    gy = s["fn"](g) / np.interp(g, P[o], W[o])
+    k = int(np.argmax(gy))
+    return dict(label=lab, color=c, marker=mk, P=P, Y=T / W, gx=g, gy=gy, yhat=s["fn"](P) / W,
+                ring=(float(g[k]), float(gy[k])))
+
+
+def _series_panel(ax, series, title, ylab=None, xlab=True, fontsize=18.0):
+    """One hardware x phase panel carrying EVERY series at once — all models, or all seven classes,
+    on throughput (check 1) or on efficiency (check 2). `series` is a list of the dicts built by
+    thr_series / eff_series. Model line + measured markers per series on a LOG y-axis (the series
+    sit one to three orders apart), each direct-labelled in the right-hand column with its own MAPE
+    — the label carries the NUMBER only; which curve it belongs to is read from the colour + marker
+    key under the figure, so seven names never have to be crammed into a panel. Shared by all three
+    curve figures so they can never drift apart."""
     ax.set_yscale("log")
-    lo_x = min(d[p]["P"].min() for p in ("prefill", "decode"))
-    hi_x = max(d[p]["P"].max() for p in ("prefill", "decode"))
-    for phase, c in (("prefill", PRE_C), ("decode", DEC_C)):
-        s = d[phase]
-        g = np.linspace(s["P"].min(), s["P"].max(), 400)
-        ax.plot(g, s["fn"](g), color=c, lw=2, zorder=3)
-        ax.plot(s["P"], s["T"], "o", ms=5, color=c, mec="white", mew=0.9, zorder=4)
-        ax.annotate(f"{phase}  MAPE {mape(s['T'], s['fn'](s['P'])):.1f}%",
-                    (s["P"][-1], s["T"][-1]), textcoords="offset points", xytext=(-3, 9),
-                    ha="right", fontsize=14, color=c, weight="bold")
-    ax.set_xlim(lo_x - (hi_x - lo_x) * .07, hi_x + (hi_x - lo_x) * .10)
-    ys = np.concatenate([d[p]["T"] for p in ("prefill", "decode")])
-    ax.set_ylim(ys.min() * 0.32, ys.max() * 4.5)      # headroom so the MAPE labels clear the title
-    ax.set_title(title, fontsize=16, color="black", weight="bold", pad=8)
+    lo_x = min(float(e["P"].min()) for e in series)
+    hi_x = max(float(e["P"].max()) for e in series)
+    labels = []
+    for e in series:
+        ax.plot(e["gx"], e["gy"], color=e["color"], lw=2.1, zorder=3)
+        ax.plot(e["P"], e["Y"], marker=e["marker"], ls="none", ms=5.4, color=e["color"],
+                mec="white", mew=0.8, zorder=4)
+        if e.get("ring"):                    # efficiency sweet spot, drawn but never scored
+            ax.plot(*e["ring"], marker="o", ls="none", ms=9, mfc="none", mec="black", mew=1.2,
+                    zorder=5)
+        labels.append((float(e["P"][-1]), float(e["Y"][-1]),
+                       f"MAPE {mape(e['Y'], e['yhat']):.1f}%", e["color"]))
+    ys = np.concatenate([e["Y"] for e in series])
+    right = hi_x + (hi_x - lo_x) * .02
+    ax.set_xlim(lo_x - (hi_x - lo_x) * .06, right)
+    ax.set_ylim(ys.min() * 0.55, ys.max() * (1.9 if len(series) <= 4 else 2.6))  # room for the stack
+    ticks = [t for t in plt.MaxNLocator(6).tick_values(lo_x, hi_x) if ax.get_xlim()[0] <= t <= right]
+    _label_column(ax, labels, right, fontsize)   # widens xlim: the tick list is fixed first, so the
+    ax.set_xticks(ticks)                         # reserved column never grows its own ticks/gridlines
+    ax.set_title(title, fontsize=23, color="black", weight="bold", pad=9)
     ax.grid(alpha=.4, color=GRID, lw=0.7, which="both")
-    ax.tick_params(labelsize=14, colors="black")
-    ax.xaxis.set_major_locator(plt.MaxNLocator(5))   # fewer, bigger x labels — they used to collide
+    ax.tick_params(labelsize=19, colors="black")
     [s_.set_visible(False) for s_ in (ax.spines["top"], ax.spines["right"])]
     [ax.spines[s_].set_color("black") for s_ in ("left", "bottom")]
-    if ylab:
-        ax.set_ylabel(ylab, fontsize=16, weight="bold", color="black")
+    ax.spines["bottom"].set_bounds(ax.get_xlim()[0], right)  # stop the axis where the data stops —
+    if ylab:                                                 # the label column is margin, not range
+        ax.set_ylabel(ylab, fontsize=21, weight="bold", color="black")
     if xlab:
-        ax.set_xlabel("GPU power (W)", fontsize=15, color="black")
+        ax.set_xlabel("GPU power (W)", fontsize=20, color="black")
 
 
-def _phase_legend(fig, y=-0.004, ncol=2):
-    fig.legend(handles=[Line2D([], [], color=PRE_C, lw=2.2, marker="o", ms=5, mec="white",
-                               label="prefill — model (line) & measured (dots)"),
-                        Line2D([], [], color=DEC_C, lw=2.2, marker="o", ms=5, mec="white",
-                               label="decode — model (line) & measured (dots)")],
-               loc="lower center", ncol=ncol, fontsize=16, frameon=False, bbox_to_anchor=(0.5, y))
+def _series_legend(fig, entries, ncol=4, y=-0.010, fontsize=21, extra=()):
+    """The figure's only identity key now that the in-panel labels are MAPE-only: color + marker ->
+    series, named by WHAT THE SERIES IS (model, or workload class + its P:D) and nothing else — the
+    sweep each one is anchored to is CSV/prose detail, not figure furniture. `entries` = list of
+    (label, color, marker); `extra` = ready-made handles appended at the end (the sweet-spot ring)."""
+    fig.legend(handles=[Line2D([], [], color=c, lw=2.6, marker=mk, ms=11, mec="white", mew=0.8,
+                               label=lab) for lab, c, mk in entries] + list(extra),
+               loc="lower center", ncol=ncol, fontsize=fontsize, frameon=False,
+               bbox_to_anchor=(0.5, y))
 
 
 def fig_curves(store):
-    """Rows = hardware, cols = the MODELS under test, each at its representative swept shape."""
-    fig, axes = plt.subplots(len(FIG_HW), len(MODEL_ORDER), figsize=(19.5, 13.4), squeeze=False)
+    """Rows = hardware, cols = PHASE; each panel holds ALL MODELS under test, every one at its
+    representative swept shape and direct-labelled with its own MAPE. Reading a panel answers 'how
+    well does the analytical model track this card in this phase, across the model sizes' — the
+    per-model / per-phase detail behind it is in val_mape.csv."""
+    picks = {hw: [(m, representative(m, FIG_HW[hw]["wids"])) for m in MODEL_ORDER] for hw in FIG_HW}
+    fig, axes = plt.subplots(len(FIG_HW), 2, figsize=(19.6, 16.4), squeeze=False)
     for i, hw in enumerate(FIG_HW):
-        for j, model in enumerate(MODEL_ORDER):
+        for j, phase in enumerate(("prefill", "decode")):
             ax = axes[i][j]
-            wid = representative(model, FIG_HW[hw]["wids"])
-            if wid is None:                       # this model was not measured on this hardware
-                ax.set_axis_off()
-                ax.text(0.5, 0.5, f"{SHORT[model]}\nnot measured on {hw}", transform=ax.transAxes,
-                        ha="center", va="center", fontsize=15, color=MUTE)
-                continue
-            _curve_panel(ax, store[hw][wid], SHORT[model], shape_label(wid),
-                         ylab=f"{hw}\nthroughput (tok/s, log)" if j == 0 else None,
-                         xlab=(i == len(FIG_HW) - 1))
-    _phase_legend(fig, y=-0.012)
+            series = [thr_series(SHORT[m], store[hw][wid][phase], MODEL_C[k], MARKERS[k])
+                      for k, (m, wid) in enumerate(picks[hw]) if wid is not None]
+            _series_panel(ax, series, f"{hw} — {phase}",
+                          ylab=f"{hw}\nthroughput (tok/s, log)" if j == 0 else None,
+                          xlab=(i == len(FIG_HW) - 1))
+            miss = [SHORT[m] for m, wid in picks[hw] if wid is None]
+            if miss:                              # a model that was never swept on this hardware
+                ax.text(0.02, 0.03, "not measured on " + hw + ": " + ", ".join(miss),
+                        transform=ax.transAxes, fontsize=16, color=MUTE)
+    _series_legend(fig, [(SHORT[m], MODEL_C[k], MARKERS[k])
+                         for k, m in enumerate(MODEL_ORDER)], ncol=4)
     fig.suptitle("Check 1 — throughput-curve accuracy per MODEL: analytical model vs measurement\n"
-                 "each column is one model at its representative swept shape\n"
-                 "(median decode context among that model's shapes)\n"
+                 "one panel per hardware × phase, all models drawn together — "
+                 "colour + marker = model (key below)\n"
+                 "line = analytical model, markers = measurement; the label on each curve is that "
+                 "curve's MAPE\n"
+                 "each model at its representative swept shape (median decode context among that "
+                 "model's shapes)\n"
                  "⚠ bottom row RTX 5090 = MOCK data (synthesized, no measurement — "
-                 "shown for projection only, excluded from every metric)",
-                 fontsize=17.5, color=INK)
-    fig.tight_layout(rect=(0, 0.05, 1, 0.985))   # tight_layout already reserves the suptitle itself
+                 "projection only, excluded from every metric)",
+                 fontsize=20, color=INK)
+    fig.tight_layout(rect=(0, 0.045, 1, 0.985))  # tight_layout already reserves the suptitle itself
     _save(fig, "fig_val_curves.png")
 
 
@@ -292,8 +385,8 @@ def classes():
 def synth_entry(hw, parts):
     """A synthetic anchor as a store entry: the sources' measured points rank-paired and averaged
     (throughput geometrically — fitlib.synth_points), then fitted with the same theory model. The
-    entry is shaped exactly like a measured one, so _curve_panel draws it identically; the figure
-    suptitle carries the mock note."""
+    entry is shaped exactly like a measured one, so the panel draws it like any other curve; the
+    figure suptitle carries the mock note."""
     out = {}
     for phase in ("prefill", "decode"):
         cal = fitlib.calibrate_power_side(FIG_HW[hw]["data"], FIG_HW[hw]["f_max"],
@@ -309,39 +402,43 @@ def synth_entry(hw, parts):
 
 def fig_curves_class(store):
     """The seven production classes of Table I, ordered by prefill-to-decode ratio. Rows = hardware,
-    cols = class, so a column compares the two GPUs on the same class."""
+    cols = PHASE, so one panel compares all seven classes on the same card in the same phase, each
+    class direct-labelled with its own MAPE."""
     cl = classes()
-    fig, axes = plt.subplots(len(FIG_HW), len(cl), figsize=(4.45 * len(cl), 14.0), squeeze=False)
+    fig, axes = plt.subplots(len(FIG_HW), 2, figsize=(19.6, 17.6), squeeze=False)
     for i, hw in enumerate(FIG_HW):
-        for j, c in enumerate(cl):
+        # one fit per class per card, reused by both phase panels (synth_entry re-fits, so build once)
+        ent = {c["name"]: (synth_entry(hw, [store[hw][v] for v in c["via"]]) if len(c["via"]) > 1
+                           else store[hw][c["via"][0]])
+               for c in cl if all(v in store[hw] for v in c["via"])}
+        for j, phase in enumerate(("prefill", "decode")):
             ax = axes[i][j]
-            rho = f"{c['rho']:.1f}:1" if c["rho"] >= 1 else f"{c['rho']:.2f}:1"
-            title, ylab = f"{c['name']}   {rho}", (f"{hw}\nthroughput (tok/s, log)" if j == 0 else None)
-            if any(v not in store[hw] for v in c["via"]):
-                ax.set_axis_off()
-                ax.text(0.5, 0.5, f"{c['name']}\nanchor not measured on {hw}",
-                        transform=ax.transAxes, ha="center", va="center", fontsize=15, color=MUTE)
-            elif len(c["via"]) > 1:                    # synthetic anchor, drawn like any other
-                _curve_panel(ax, synth_entry(hw, [store[hw][v] for v in c["via"]]), title,
-                             "anchor mean(" + ", ".join(c["via"]) + ")",
-                             ylab=ylab, xlab=(i == len(FIG_HW) - 1))
-            else:
-                _curve_panel(ax, store[hw][c["via"][0]], title,
-                             f"anchor {c['via'][0]}  ·  {shape_label(c['via'][0])}",
-                             ylab=ylab, xlab=(i == len(FIG_HW) - 1))
-    _phase_legend(fig, y=-0.012)
+            series = [thr_series(c["name"], ent[c["name"]][phase], CLASS_C[k], MARKERS[k])
+                      for k, c in enumerate(cl) if c["name"] in ent]
+            _series_panel(ax, series, f"{hw} — {phase}",
+                          ylab=f"{hw}\nthroughput (tok/s, log)" if j == 0 else None,
+                          xlab=(i == len(FIG_HW) - 1), fontsize=16.0)
+            miss = [c["name"] for c in cl if c["name"] not in ent]
+            if miss:                                  # anchor sweep missing on this hardware
+                ax.text(0.02, 0.03, "anchor not measured on " + hw + ": " + ", ".join(miss),
+                        transform=ax.transAxes, fontsize=16, color=MUTE)
+    _series_legend(fig, [(f"{c['name']}  {ratio_str(c['rho'])}", CLASS_C[k], MARKERS[k])
+                         for k, c in enumerate(cl)], ncol=4, fontsize=19)
     synth = [c for c in cl if len(c["via"]) > 1]
     note = ("\n⚠ " + ", ".join(c["name"] for c in synth) + " = MOCK anchor (per-power mean of "
             "the " + " & ".join(sorted({v for c in synth for v in c["via"]}))
-            + " measurements, fitted like any workload)") if synth else ""
+            + " measurements)") if synth else ""
     note += ("\n⚠ bottom row RTX 5090 = MOCK data (synthesized, no measurement — "
-             "shown for projection only, excluded from every metric)")
+             "projection only, excluded from every metric)")
     fig.suptitle("Check 1 — throughput-curve accuracy per PRODUCTION WORKLOAD CLASS: "
                  "analytical model vs measurement\n"
-                 "the seven classes of Table I, ordered by prefill-to-decode ratio; each takes the "
-                 "measured sweep whose context scale is closest to its own" + note,
-                 fontsize=18, color=INK)
-    fig.tight_layout(rect=(0, 0.05, 1, 0.985))   # tight_layout already reserves the suptitle itself
+                 "one panel per hardware × phase, the seven classes of Table I drawn together, "
+                 "ordered by prefill-to-decode ratio\n"
+                 "colour + marker = class (key below); line = analytical model, markers = "
+                 "measurement; label on a curve = its MAPE\n"
+                 "each class takes the measured sweep whose context scale is closest to its own"
+                 + note, fontsize=20, color=INK)
+    fig.tight_layout(rect=(0, 0.055, 1, 0.985))  # tight_layout already reserves the suptitle itself
     _save(fig, "fig_val_curves_class.png")
 
 
@@ -370,86 +467,48 @@ def check2(hw, store):
 
 
 ratio_str = lambda x: f"{x:.1f}:1" if x >= 1 else f"{x:.2f}:1"
-fmt_eff = lambda v: (f"{v/1e3:.1f}k" if v >= 1e3 else f"{v:.0f}" if v >= 100
-                     else f"{v:.1f}" if v >= 10 else f"{v:.2f}")
-
 
 def fig_peff(rows, store):
-    """fig_workload_power_tokj.png panels, scored like check 1: per-CLASS efficiency curves (both
-    phases co-plotted, log y, class title = name + P:D in band color), one row per hardware
-    (V100 / H200 / RTX 5090-mock), each phase annotated with its efficiency-curve MAPE. No optimum
-    markers — the flat peaks make the argmax the wrong quantity to compare (see check2)."""
+    """Check 1's layout on the axis the planner actually optimizes: rows = hardware, cols = PHASE,
+    all seven production classes of Table I in one panel, each direct-labelled with its own
+    efficiency-curve MAPE and ringed at its sweet spot. Efficiency = throughput / MEASURED draw
+    (curves_lib.py definition); the ring is display only — the flat peaks make the argmax the wrong
+    quantity to compare (see check2)."""
     cl = classes()
-    fig, axes = plt.subplots(len(FIG_HW), len(cl), figsize=(4.45 * len(cl), 14.0), squeeze=False)
+    fig, axes = plt.subplots(len(FIG_HW), 2, figsize=(19.6, 17.6), squeeze=False)
     for i, hw in enumerate(FIG_HW):
-        for j, c in enumerate(cl):
+        # one fit per class per card, reused by both phase panels (synth_entry re-fits, so build once)
+        ent = {c["name"]: (synth_entry(hw, [store[hw][v] for v in c["via"]]) if len(c["via"]) > 1
+                           else store[hw][c["via"][0]])
+               for c in cl if all(v in store[hw] for v in c["via"])}
+        for j, phase in enumerate(("prefill", "decode")):
             ax = axes[i][j]
-            ax.set_yscale("log")
-            if any(v not in store[hw] for v in c["via"]):
-                ax.set_axis_off()
-                continue
-            d = (synth_entry(hw, [store[hw][v] for v in c["via"]]) if len(c["via"]) > 1
-                 else store[hw][c["via"][0]])
-            lo_x = min(d[p]["P"].min() for p in ("prefill", "decode"))
-            hi_x = max(d[p]["P"].max() for p in ("prefill", "decode"))
-            mid = (lo_x + hi_x) / 2
-            ymin, ymax = np.inf, -np.inf
-            for phase, pc in (("prefill", PRE_C), ("decode", DEC_C)):
-                s_ = d[phase]
-                P, T, W = s_["P"], s_["T"], s_["W"]
-                if len(P) < 3:
-                    continue
-                eff = T / W                                    # measured efficiency (tok/J on draw)
-                g = np.linspace(P.min(), P.max(), 1501)
-                o = np.argsort(P)
-                w_of = np.interp(g, P[o], W[o])
-                eff_m = s_["fn"](g) / w_of                     # model efficiency
-                ax.plot(g, eff_m, color=pc, lw=2, zorder=3)
-                ax.plot(P, eff, "o", ms=4.5, color=pc, mec="white", mew=0.9, zorder=4)
-                # sweet spot marked as in the tokj figure (display only — not a scored quantity)
-                k = int(np.argmax(eff_m))
-                p_opt, e_opt = float(g[k]), float(eff_m[k])
-                right = p_opt > mid
-                ax.plot(p_opt, e_opt, "o", ms=8, mfc="none", mec="black", mew=1.2, zorder=5)
-                ax.annotate(f"{p_opt:.0f}W", (p_opt, e_opt),
-                            textcoords="offset points", xytext=(-8, 6) if right else (8, 6),
-                            ha="right" if right else "left", fontsize=13, color=pc)
-                e = mape(eff, s_["fn"](P) / W)
-                ax.annotate(f"{phase}  MAPE {e:.1f}%", (P[-1], float(eff[-1])),
-                            textcoords="offset points", xytext=(-3, -19), ha="right",
-                            fontsize=14, color=pc, weight="bold")
-                ymin, ymax = min(ymin, float(eff.min())), max(ymax, float(eff.max()))
-            ax.set_ylim(ymin * 0.35, ymax * 5)
-            ax.set_xlim(lo_x - (hi_x - lo_x) * .08, hi_x + (hi_x - lo_x) * .03)
-            ax.set_title(f"{c['name']}   {ratio_str(c['rho'])}", fontsize=16,
-                         color="black", weight="bold", pad=8)   # same style as _curve_panel
-            ax.grid(alpha=.45, color=GRID, lw=0.7, which="both")
-            ax.tick_params(labelsize=14, colors="black")
-            ax.xaxis.set_major_locator(plt.MaxNLocator(5))   # fewer, bigger x labels
-            [sp.set_visible(False) for sp in (ax.spines["top"], ax.spines["right"])]
-            [ax.spines[sp].set_color("black") for sp in ("left", "bottom")]
-            if j == 0:
-                ax.set_ylabel(f"{hw}\nefficiency (tok/J, log)", fontsize=16, weight="bold",
-                              color="black")
-            if i == len(FIG_HW) - 1:
-                ax.set_xlabel("GPU power (W)", fontsize=15, color="black")
-    fig.legend(handles=[Line2D([], [], color=PRE_C, lw=2.2, marker="o", ms=5, mec="white",
-                               label="prefill — model (line) & measured (dots)"),
-                        Line2D([], [], color=DEC_C, lw=2.2, marker="o", ms=5, mec="white",
-                               label="decode — model (line) & measured (dots)"),
-                        Line2D([], [], color="black", lw=0, marker="o", ms=8, mfc="none", mew=1.2,
-                               label="ring = efficiency sweet spot (display only, not scored)")],
-               loc="lower center", ncol=3, fontsize=16, frameon=False, bbox_to_anchor=(0.5, -0.006))
+            series = [eff_series(c["name"], ent[c["name"]][phase], CLASS_C[k], MARKERS[k])
+                      for k, c in enumerate(cl)
+                      if c["name"] in ent and len(ent[c["name"]][phase]["P"]) >= 3]
+            _series_panel(ax, series, f"{hw} — {phase}",
+                          ylab=f"{hw}\nefficiency (tok/J, log)" if j == 0 else None,
+                          xlab=(i == len(FIG_HW) - 1), fontsize=16.0)
+            miss = [c["name"] for c in cl if c["name"] not in ent]
+            if miss:                                  # anchor sweep missing on this hardware
+                ax.text(0.02, 0.03, "anchor not measured on " + hw + ": " + ", ".join(miss),
+                        transform=ax.transAxes, fontsize=16, color=MUTE)
+    _series_legend(fig, [(f"{c['name']}  {ratio_str(c['rho'])}", CLASS_C[k], MARKERS[k])
+                         for k, c in enumerate(cl)], ncol=4, fontsize=19,
+                   extra=[Line2D([], [], color="black", lw=0, marker="o", ms=9, mfc="none", mew=1.2,
+                                 label="ring = efficiency sweet spot (display only, not scored)")])
     med = {hw: np.median([r["eff_MAPE_pct"] for r in rows if r["hw"] == hw]) for hw in HW}
     fig.suptitle("Check 2 — efficiency-curve accuracy per production workload class "
-                 "(efficiency = tok/s per measured watt)   ·   "
+                 "(efficiency = tok/s per measured watt)\n"
                  + "   ·   ".join(f"{hw} median MAPE = {med[hw]:.1f}%" for hw in HW)
-                 + "\n⚠ bottom row RTX 5090 = MOCK data (synthesized, no measurement — projection "
-                 "only, excluded from every metric)"
+                 + "\none panel per hardware × phase, the seven classes drawn together — "
+                 "colour + marker = class (key below), label on a curve = its MAPE"
+                 "\n⚠ bottom row RTX 5090 = MOCK data (synthesized, no measurement — "
+                 "projection only, excluded from every metric)"
                  "\n⚠ Long-context chat = MOCK anchor "
                  "(per-power mean of the chat-phi3 & summarize-qwen7b measurements)",
-                 fontsize=18, color="black")
-    fig.tight_layout(rect=(0, 0.05, 1, 0.985))   # tight_layout already reserves the suptitle itself
+                 fontsize=20, color="black")
+    fig.tight_layout(rect=(0, 0.055, 1, 0.985))  # tight_layout already reserves the suptitle itself
     _save(fig, "fig_val_peff.png")
 
 

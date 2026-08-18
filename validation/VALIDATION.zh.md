@@ -77,13 +77,19 @@ cap 313 W 一点（实测 602、预测 807，+34%）。查该文件的提交史�
 | Qwen2.5-7B | 2 | 3.92 [3.54, 4.30] | 4.38 [0.33, **8.43**] | 5.76 [2.43, **9.10**] | 2.45 [0.72, 4.18] |
 | **全体中位** | | **3.47** | **0.39** | **2.35** | **1.69** |
 
-两张图（版式一致：点 = 实测、线 = 拟合、逐相标 MAPE 全称；坐标轴黑色、无灰色小字）：
+三张图版式一致（本节两张 + Check 2 的 [`fig_val_peff.png`](fig_val_peff.png)）：**每硬件一行 ×
+prefill / decode 两列**，一个面板内画该卡该相位的**全部曲线**；点 = 实测、线 = 拟合，**颜色 + 点形 =
+序列身份（看图底图例）**，右侧标签列只标该曲线自己的 **MAPE 数值**——名字不再写进面板，七条曲线也
+不会挤成一堵字墙；图例只写序列本身（模型名，或负载类 + 其 P:D），**不再挂对应的锚定扫描/模型名**
+（该映射见 [`workload_classes.csv`](../workload_analysis/workload_classes.csv) 的 `via_workload` 列
+与下方正文）；坐标轴黑色、无灰色小字、字号按投影/打印放大。
 
-- [`fig_val_curves.png`](fig_val_curves.png) —— **按模型**：4 模型 × 3 行（V100 / H200 / RTX 5090），
-  每模型取代表性形状（该模型各形状 decode 上下文的中位，按形状选、不看拟合好坏）。
+- [`fig_val_curves.png`](fig_val_curves.png) —— **按模型**：3 行（V100 / H200 / RTX 5090）× 2 列，
+  每个面板内并排 4 个模型，每模型取代表性形状（该模型各形状 decode 上下文的中位，按形状选、不看拟合
+  好坏）。
 - [`fig_val_curves_class.png`](fig_val_curves_class.png) —— **按 Table I 七个生产负载类**（P:D
-  0.83→110.7），每类用其锚定扫描；**Long-context chat 无自有扫描**，用 chat-phi3 与 summarize-qwen7b
-  实测点逐功率位配对平均（吞吐几何均值）的**合成锚**，与普通面板同画法、图顶标注。
+  0.83→110.7），每个面板内并排七类，每类用其锚定扫描；**Long-context chat 无自有扫描**，用 chat-phi3
+  与 summarize-qwen7b 实测点逐功率位配对平均（吞吐几何均值）的**合成锚**，与普通曲线同画法、图顶标注。
 - **第三行 RTX 5090 为 MOCK 数据**（由 H200 拟合按 5090 规格比合成 + 3% 噪声，
   [data_5090/](../data_5090/)）：仅入图作展望，**不进任何指标**——用模型生成的数据给模型打分是循环
   论证，其 MAPE（2.2–3.2%）只反映生成噪声量级。
@@ -107,9 +113,9 @@ cap 313 W 一点（实测 602、预测 807，+34%）。查该文件的提交史�
 | **V100** | **2.6%** |
 | **H200** | **2.0%** |
 
-图 [`fig_val_peff.png`](fig_val_peff.png)（`fig_workload_power_tokj.png` 同款面板：3 行硬件（含
-5090-MOCK）× 7 类，逐相标 MAPE；圆圈标出效率甜点，仅作展示、不参与打分），数据
-[`val_peff.csv`](val_peff.csv)。
+图 [`fig_val_peff.png`](fig_val_peff.png)（与 Check 1 两张图同版式：3 行硬件（含 5090-MOCK）× 2 列
+相位，每个面板内并排七类，右侧逐条标该类的效率曲线 MAPE；圆圈标出效率甜点，仅作展示、不参与
+打分），数据 [`val_peff.csv`](val_peff.csv)。
 
 - **在实测栅格点上功耗分母左右相消，效率 MAPE 与吞吐 MAPE 数值恒等**——本节提供的是同一精度在
   效率轴上的视图（峰的位置与平坦度直接可见），不是新指标。
@@ -177,9 +183,9 @@ cap 313 W 一点（实测 602、预测 807，+34%）。查该文件的提交史�
 
 ```bash
 python3 validation/validate_model.py
-#  -> fig_val_curves.png          按模型（3 行：V100 / H200 / RTX 5090-MOCK）
-#  -> fig_val_curves_class.png    按 Table I 七类（Long-context chat = 合成锚）
-#  -> fig_val_peff.png            效率最优功率
+#  -> fig_val_curves.png          按模型（3 行硬件 × 2 列相位，面板内并排全部模型）
+#  -> fig_val_curves_class.png    按 Table I 七类（同版式；Long-context chat = 合成锚）
+#  -> fig_val_peff.png            效率曲线（同版式：3 行硬件 × 2 列相位，面板内并排七类）
 #  -> fig_val_baselines.png       三形式对比
 #  -> val_mape.csv · val_mape_by_model.csv · val_peff.csv · val_baselines.csv
 ```
