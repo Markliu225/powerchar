@@ -21,6 +21,7 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import palette                                  # single source: the paper palette
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 NAME = {"Generation 创作生成": "Generation", "General QA 常识问答": "General QA †",
@@ -29,9 +30,8 @@ NAME = {"Generation 创作生成": "Generation", "General QA 常识问答": "Gen
         "Extract 信息抽取": "Extract", "Chat 多轮对话": "Chat (dialogue)",
         "Closed QA 闭卷问答": "Closed QA", "Code 代码补全": "Code (completion) ‡"}
 # P:D bands (aggregate ratio r = sum P / sum D): the classification the rack planner consumes
-BANDS = [("decode-heavy", 0.0, 0.5, "#d62728"),
-         ("balanced", 0.5, 2.0, "#7f7f7f"),
-         ("prefill-heavy", 2.0, np.inf, "#1f77b4")]
+BANDS = [(b, lo, hi, palette.BAND_C[b]) for b, lo, hi in
+         [("decode-heavy", 0.0, 0.5), ("balanced", 0.5, 2.0), ("prefill-heavy", 2.0, np.inf)]]
 # which measured powerchar workload each class maps onto (verification of the correspondence;
 # caveats — KV-reuse accounting for chat, production-scale prompts, 2025-style code gens —
 # are spelled out in PLANNING.zh.md §2)

@@ -35,7 +35,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 PORT = os.path.join(ROOT, "pt_cap_gpu1", "portfolio")
 sys.path.insert(0, PORT)
+sys.path.insert(0, HERE)
 import fitlib                                   # noqa: E402
+import palette                                  # noqa: E402  single source: the paper palette
 
 DATA = os.path.join(PORT, "data")
 F_MAX = fitlib.resolve_f_max(DATA)
@@ -70,11 +72,10 @@ MAP = {"推理": "longform-phi3",            # ~2.8k eff. ctx, decode-dominant -
        "Agentic工具调用": "summarize-qwen7b",  # ~8.7k per-step re-prefill -> 32k (conservative)
        "代码补全": "code-phi3"}            # its own Azure-trace basis, dec 2048x16
 # P:D bands, same thresholds & colors as fig_workload_pd.png (color follows the band entity)
-BANDS = [("decode-heavy", 0.0, 0.5, "#d62728"),
-         ("balanced", 0.5, 2.0, "#7f7f7f"),
-         ("prefill-heavy", 2.0, np.inf, "#1f77b4")]
-PRE_C, DEC_C = "#1f77b4", "#ff7f0e"             # phase colors (repo fleet palette)
-INK, INK2, MUTE, GRID = "#0b0b0b", "#52514e", "#898781", "#e1e0d9"
+BANDS = [(b, lo, hi, palette.BAND_C[b]) for b, lo, hi in
+         [("decode-heavy", 0.0, 0.5), ("balanced", 0.5, 2.0), ("prefill-heavy", 2.0, np.inf)]]
+PRE_C, DEC_C = palette.PRE_C, palette.DEC_C     # phase pair — both phases share a panel here
+INK, INK2, MUTE, GRID = palette.INK, palette.INK2, palette.MUTE, palette.GRID
 
 # classes whose anchor mapping carries a scale/accounting caveat (starred in the figures)
 CAVEAT = {"推理": "anchor longform-phi3 dec 4096x8; qwen3think-4b (8192x8) is the closer shape but has no H200 data",

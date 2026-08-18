@@ -34,6 +34,7 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import palette                                  # single source: the paper palette
 from matplotlib.patches import Patch
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -43,7 +44,7 @@ from curves_lib import NAME                     # noqa: E402  class display name
 
 N_RACKS = 128                                   # SuperPOD reference architecture: 128-rack layout
 PLATFORMS = [("V100", "v100", 5.0), ("RTX 5090", "5090", 11.5), ("H200", "h200", 14.0)]
-GREEN, RED, INK2 = "#2ca02c", "#d62728", "#52514e"
+GREEN, RED, INK2 = palette.OK, palette.BAD, palette.INK2
 fmt_T = lambda v: f"{v/1e6:.1f}M tok/s" if v >= 1e6 else f"{v/1e3:.0f}k tok/s"
 
 
@@ -88,11 +89,11 @@ def main():
         pass
     w = load_mix()
     classes = sorted(w, key=lambda k: R_SHARE[k], reverse=False)     # plotting order fixed below
-    # class order & colors: by P:D ratio (the taxonomy's canonical order), tab10 — fixed, never cycled
+    # class order & colors: by P:D ratio (the taxonomy's canonical order) — the SAME slot a class
+    # gets in every other figure, so a colour means one class across the whole paper
     rows0 = list(csv.DictReader(open(os.path.join(HERE, "workload_classes.csv"), encoding="utf-8")))
     order = [r["klass"] for r in sorted(rows0, key=lambda r: float(r["ratio_agg"]))]
-    cmap = plt.get_cmap("tab10")
-    ccol = {k: cmap(i % 10) for i, k in enumerate(order)}
+    ccol = {k: palette.CLASS_OF.get(k, palette.PAL["gray"]) for k in order}
 
     res, out_rows = {}, []
     for label, sub, rack_kw in PLATFORMS:
@@ -125,29 +126,27 @@ def main():
     # ---------------------------------- figure: panel (a) only, compact ---------------------------
     x = np.arange(len(PLATFORMS))
     labels = [p[0] for p in PLATFORMS]
-    fig, a = plt.subplots(figsize=(7.6, 5.2))
+    fig, a = plt.subplots(figsize=(9.0, 8.6))    # same scale as fig_workload_rack_capping.png
     wdt = 0.38
     rel = [res[l]["T"]["cap"] / res[l]["T"]["tdp"] for l in labels]
     a.bar(x - wdt / 2, rel, wdt, color=GREEN, label="Power Capping")
     a.bar(x + wdt / 2, [1.0] * len(labels), wdt, color=RED, label="TDP")
     for i, l in enumerate(labels):
         a.annotate(f"+{100 * (rel[i] - 1):.0f}%", (x[i] - wdt / 2, rel[i]),
-                   textcoords="offset points", xytext=(0, 5), ha="center", fontsize=16,
+                   textcoords="offset points", xytext=(0, 7), ha="center", fontsize=28,
                    color=GREEN, weight="bold")
-        a.text(x[i] - wdt / 2, rel[i] / 2, fmt_T(res[l]["T"]["cap"]), rotation=90,
-               ha="center", va="center", fontsize=12, color="white", weight="bold")
-        a.text(x[i] + wdt / 2, 0.5, fmt_T(res[l]["T"]["tdp"]), rotation=90,
-               ha="center", va="center", fontsize=12, color="white", weight="bold")
     a.set_xticks(x)
-    a.set_xticklabels([f"{l}\n{res[l]['hall_mw']:.2f} MW" for l in labels], fontsize=13)
-    a.set_ylim(0, max(rel) * 1.24)
-    a.set_ylabel("hall throughput relative to the TDP design", fontsize=13)
+    a.set_xticklabels([f"{l}\n{res[l]['hall_mw']:.2f} MW" for l in labels], fontsize=29,
+                      color="black")
+    a.set_ylim(0, max(rel) * 1.26)               # no key inside, so no empty band above the bars
+    a.set_ylabel("throughput vs TDP design", fontsize=24)
     a.set_title("128-rack data hall — Power Capping vs TDP\n"
-                "(same layout on every platform; ⚠ RTX 5090 = MOCK data)",
-                fontsize=14)
-    a.legend(fontsize=12, loc="upper right")
-    a.tick_params(axis="y", labelsize=12); a.grid(alpha=.3, axis="y")
-    fig.tight_layout()
+                "same layout on every platform\n⚠ RTX 5090 = MOCK data", fontsize=27)
+    a.tick_params(axis="y", labelsize=26); a.grid(alpha=.3, axis="y")
+    fig.legend(handles=[Patch(fc=GREEN, label="Power Capping"), Patch(fc=RED, label="TDP")],
+               loc="lower center", ncol=2, fontsize=27, frameon=False, bbox_to_anchor=(0.5, 0.02),
+               columnspacing=0.8, handletextpad=0.4, handlelength=1.3)
+    fig.tight_layout(rect=(0, 0.135, 1, 1))   # band for the key, clear of the MW tick labels
     out = os.path.join(HERE, "fig_datahall.png")
     fig.savefig(out, dpi=130, bbox_inches="tight")
     print(f"wrote {os.path.basename(out)}")

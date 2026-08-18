@@ -45,7 +45,7 @@ CHECK 3 (comparison against simpler analytical forms) -- two baselines fitted to
 python3 validation/validate_model.py -> 4 PNGs + 4 CSVs in this folder
 """
 from __future__ import annotations
-import csv, os, sys
+import csv, math, os, sys
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
@@ -56,8 +56,10 @@ from scipy.optimize import least_squares
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, "pt_cap_gpu1", "portfolio"))
+sys.path.insert(0, os.path.join(ROOT, "workload_analysis"))
 import fitlib                                                        # noqa: E402
 import portfolio                                                     # noqa: E402  the workload table
+import palette                                                       # noqa: E402  the paper palette
 
 # ---- hardware under test ------------------------------------------------------------------------
 # HW drives the CHECKS (MAPE tables, P_eff, baselines): measured hardware only. FIG_HW adds the
@@ -114,25 +116,21 @@ def representative(model, wids):
     return c[len(c) // 2] if c else None
 
 
-# ---- palette (repo fleet colors; the 3-form trio validated for CVD separation & contrast) --------
-# All three curve figures are laid out per HARDWARE x PHASE (one panel each), so every series of a
-# panel — all models, or all seven classes — is drawn together and hue must carry SERIES identity;
-# the phase is the panel, named in its title, so the repo's prefill/decode color pair does not apply
-# here (it still does in curves_lib.py, where the two phases share a panel). With the in-panel
-# labels reduced to the MAPE alone, this key is the ONLY thing naming a curve, so it has to hold up:
-# slots come from the validated categorical
-# order: every adjacent pair clears the CVD and normal-vision separation floors. Identity is
-# repeated by MARKER SHAPE and by the direct end-of-curve label, so no curve rests on hue alone —
-# which is also the relief the three sub-3:1-contrast slots of the 7-color set require.
-MODEL_C = ["#2a78d6", "#eb6834", "#4a3aa7", "#008300"]                # 4 models; all >= 3:1 on white
-CLASS_C = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7"]  # 7 classes
-MARKERS = ["o", "s", "^", "D", "v", "P", "X"]
+# ---- palette (shared with every other figure in the repo: workload_analysis/palette.py) ---------
+# Every curve figure here is laid out per HARDWARE x PHASE (one panel each), so all series of a panel
+# — all models, or all seven classes — are drawn together and hue carries SERIES identity; the phase
+# is the panel, named in its title. The palette is low-chroma by design, so hue never carries a curve
+# alone: each series also has its own MARKER SHAPE, and the direct end-of-curve label (the figure's
+# only numbers) is drawn in palette.ink(), the same hue stepped down to a readable lightness.
+MODEL_C, MARKERS = palette.MODEL_C, palette.MARKERS
+CCOL = lambda c: palette.CLASS_OF[c["klass"]]   # a class keeps its colour in every figure
+FORM_C = {"ours": palette.PAL["navy"], "A": palette.PAL["orange"], "B": palette.PAL["green"]}
 MARG = 0.02                                 # axes-fraction margin the stacked labels keep at top/bottom
-FORM_C = {"ours": "#1f77b4", "A": "#cc6600", "B": "#9467bd"}
 # distinct dash patterns as well as hue: below the ceiling B coincides with A exactly, and with one
 # pattern the hidden curve reads as "missing" rather than "identical"
 DASH = {"ours": "-", "A": (0, (6, 2)), "B": (0, (1.6, 1.8))}
-INK, INK2, MUTE, GRID, OUT = "#0b0b0b", "#52514e", "#898781", "#e1e0d9", "#b9b7b0"
+INK, INK2, MUTE, GRID = palette.INK, palette.INK2, palette.MUTE, palette.GRID
+OUT = "#b9b7b0"
 FORM_LABEL = {"ours": "ours: two-roofline sum (3 segments)",
               "A": "A: single power law (classic DVFS)",
               "B": "B: power law + hard ceiling"}
@@ -258,7 +256,7 @@ def _label_column(ax, items, right, fontsize):
         yl = to_y(at[i])
         ax.plot([x, col], [y, yl], color=c, lw=0.9, alpha=0.5, zorder=5, clip_on=False)
         ax.annotate(txt, (col, yl), textcoords="offset points", xytext=(4, 0), ha="left",
-                    va="center", fontsize=fontsize, color=c, weight="bold", zorder=6,
+                    va="center", fontsize=fontsize, color=palette.ink(c), weight="bold", zorder=6,
                     annotation_clip=False,
                     bbox=dict(boxstyle="square,pad=0.12", fc="white", ec="none", alpha=0.85))
 
@@ -285,7 +283,7 @@ def eff_series(lab, s, c, mk):
                 ring=(float(g[k]), float(gy[k])))
 
 
-def _series_panel(ax, series, title, ylab=None, xlab=True, fontsize=18.0):
+def _series_panel(ax, series, title, ylab=None, xlab=True, fontsize=30.0):
     """One hardware x phase panel carrying EVERY series at once — all models, or all seven classes,
     on throughput (check 1) or on efficiency (check 2). `series` is a list of the dicts built by
     thr_series / eff_series. Model line + measured markers per series on a LOG y-axis (the series
@@ -298,9 +296,10 @@ def _series_panel(ax, series, title, ylab=None, xlab=True, fontsize=18.0):
     hi_x = max(float(e["P"].max()) for e in series)
     labels = []
     for e in series:
-        ax.plot(e["gx"], e["gy"], color=e["color"], lw=2.1, zorder=3)
-        ax.plot(e["P"], e["Y"], marker=e["marker"], ls="none", ms=5.4, color=e["color"],
-                mec="white", mew=0.8, zorder=4)
+        pale = palette.lum(e["color"]) > 0.62               # mint / cyan: a white edge would erase them
+        ax.plot(e["gx"], e["gy"], color=e["color"], lw=2.4, zorder=3)
+        ax.plot(e["P"], e["Y"], marker=e["marker"], ls="none", ms=6.0, color=e["color"],
+                mec=palette.ink(e["color"]) if pale else "white", mew=0.8, zorder=4)
         if e.get("ring"):                    # efficiency sweet spot, drawn but never scored
             ax.plot(*e["ring"], marker="o", ls="none", ms=9, mfc="none", mec="black", mew=1.2,
                     zorder=5)
@@ -313,61 +312,69 @@ def _series_panel(ax, series, title, ylab=None, xlab=True, fontsize=18.0):
     ticks = [t for t in plt.MaxNLocator(6).tick_values(lo_x, hi_x) if ax.get_xlim()[0] <= t <= right]
     _label_column(ax, labels, right, fontsize)   # widens xlim: the tick list is fixed first, so the
     ax.set_xticks(ticks)                         # reserved column never grows its own ticks/gridlines
-    ax.set_title(title, fontsize=23, color="black", weight="bold", pad=9)
+    ax.set_title(title, fontsize=35, color="black", weight="bold", pad=9)
     ax.grid(alpha=.4, color=GRID, lw=0.7, which="both")
-    ax.tick_params(labelsize=19, colors="black")
+    ax.tick_params(labelsize=31, colors="black")
     [s_.set_visible(False) for s_ in (ax.spines["top"], ax.spines["right"])]
     [ax.spines[s_].set_color("black") for s_ in ("left", "bottom")]
     ax.spines["bottom"].set_bounds(ax.get_xlim()[0], right)  # stop the axis where the data stops —
     if ylab:                                                 # the label column is margin, not range
-        ax.set_ylabel(ylab, fontsize=21, weight="bold", color="black")
+        ax.set_ylabel(ylab, fontsize=33, weight="bold", color="black")
     if xlab:
-        ax.set_xlabel("GPU power (W)", fontsize=20, color="black")
+        ax.set_xlabel("GPU power (W)", fontsize=32, color="black")
 
 
-def _series_legend(fig, entries, ncol=4, y=-0.010, fontsize=21, extra=()):
+def _series_legend(fig, entries, ncol=4, fontsize=33, extra=()):
     """The figure's only identity key now that the in-panel labels are MAPE-only: color + marker ->
     series, named by WHAT THE SERIES IS (model, or workload class + its P:D) and nothing else — the
     sweep each one is anchored to is CSV/prose detail, not figure furniture. `entries` = list of
-    (label, color, marker); `extra` = ready-made handles appended at the end (the sweet-spot ring)."""
-    fig.legend(handles=[Line2D([], [], color=c, lw=2.6, marker=mk, ms=11, mec="white", mew=0.8,
+    (label, color, marker); `extra` = ready-made handles appended at the end (the sweet-spot ring).
+
+    Returns the figure fraction the key occupies, to be passed straight to tight_layout's rect: the
+    band has to be RESERVED, not guessed — a fixed guess put the key on top of the bottom row's
+    'GPU power (W)' the moment the canvas got wider and the type got bigger."""
+    fig.legend(handles=[Line2D([], [], color=c, lw=2.8, marker=mk, ms=12,
+                               mec=palette.ink(c) if palette.lum(c) > 0.62 else "white", mew=0.8,
                                label=lab) for lab, c, mk in entries] + list(extra),
                loc="lower center", ncol=ncol, fontsize=fontsize, frameon=False,
-               bbox_to_anchor=(0.5, y))
+               bbox_to_anchor=(0.5, 0.004))
+    rows = math.ceil((len(entries) + len(extra)) / ncol)
+    return rows * 1.55 * fontsize / (fig.get_figheight() * 72.0) + 0.012
 
 
 def fig_curves(store):
-    """Rows = hardware, cols = PHASE; each panel holds ALL MODELS under test, every one at its
-    representative swept shape and direct-labelled with its own MAPE. Reading a panel answers 'how
-    well does the analytical model track this card in this phase, across the model sizes' — the
+    """Rows = PHASE, cols = hardware (the wide 2x3 sheet); each panel holds ALL MODELS under test,
+    every one at its representative swept shape and direct-labelled with its own MAPE. Reading a
+    panel answers 'how well does the analytical model track this card in this phase, across the
+    model sizes'; reading ACROSS a row answers the same question across the three cards — the
     per-model / per-phase detail behind it is in val_mape.csv."""
     picks = {hw: [(m, representative(m, FIG_HW[hw]["wids"])) for m in MODEL_ORDER] for hw in FIG_HW}
-    fig, axes = plt.subplots(len(FIG_HW), 2, figsize=(19.6, 16.4), squeeze=False)
-    for i, hw in enumerate(FIG_HW):
-        for j, phase in enumerate(("prefill", "decode")):
+    fig, axes = plt.subplots(2, len(FIG_HW), figsize=(38.0, 15.6), squeeze=False)
+    for j, hw in enumerate(FIG_HW):
+        for i, phase in enumerate(("prefill", "decode")):
             ax = axes[i][j]
             series = [thr_series(SHORT[m], store[hw][wid][phase], MODEL_C[k], MARKERS[k])
                       for k, (m, wid) in enumerate(picks[hw]) if wid is not None]
             _series_panel(ax, series, f"{hw} — {phase}",
-                          ylab=f"{hw}\nthroughput (tok/s, log)" if j == 0 else None,
-                          xlab=(i == len(FIG_HW) - 1))
+                          ylab=f"{phase}\nthroughput (tok/s)" if j == 0 else None,
+                          xlab=(i == 1))
             miss = [SHORT[m] for m, wid in picks[hw] if wid is None]
             if miss:                              # a model that was never swept on this hardware
                 ax.text(0.02, 0.03, "not measured on " + hw + ": " + ", ".join(miss),
-                        transform=ax.transAxes, fontsize=16, color=MUTE)
-    _series_legend(fig, [(SHORT[m], MODEL_C[k], MARKERS[k])
-                         for k, m in enumerate(MODEL_ORDER)], ncol=4)
+                        transform=ax.transAxes, fontsize=28, color=MUTE)
+    band = _series_legend(fig, [(SHORT[m], MODEL_C[k], MARKERS[k])
+                                for k, m in enumerate(MODEL_ORDER)], ncol=4)
     fig.suptitle("Check 1 — throughput-curve accuracy per MODEL: analytical model vs measurement\n"
-                 "one panel per hardware × phase, all models drawn together — "
+                 "one panel per hardware × phase, all models drawn together, log y — "
                  "colour + marker = model (key below)\n"
                  "line = analytical model, markers = measurement; the label on each curve is that "
                  "curve's MAPE\n"
                  "each model at its representative swept shape (median decode context among that "
                  "model's shapes)\n"
-                 "⚠ bottom row RTX 5090 = MOCK data (synthesized, no measurement — "
+                 "⚠ right-hand column RTX 5090 = MOCK data (synthesized, no measurement — "
                  "projection only, excluded from every metric)",
-                 fontsize=20, color=INK)
-    fig.tight_layout(rect=(0, 0.045, 1, 0.985))  # tight_layout already reserves the suptitle itself
+                 fontsize=32, color=INK)
+    fig.tight_layout(rect=(0, band, 1, 0.985))   # tight_layout already reserves the suptitle itself
     _save(fig, "fig_val_curves.png")
 
 
@@ -401,44 +408,44 @@ def synth_entry(hw, parts):
 
 
 def fig_curves_class(store):
-    """The seven production classes of Table I, ordered by prefill-to-decode ratio. Rows = hardware,
-    cols = PHASE, so one panel compares all seven classes on the same card in the same phase, each
-    class direct-labelled with its own MAPE."""
+    """The seven production classes of Table I, ordered by prefill-to-decode ratio. Rows = PHASE,
+    cols = hardware (the wide 2x3 sheet), so one panel compares all seven classes on the same card in
+    the same phase, each class direct-labelled with its own MAPE."""
     cl = classes()
-    fig, axes = plt.subplots(len(FIG_HW), 2, figsize=(19.6, 17.6), squeeze=False)
-    for i, hw in enumerate(FIG_HW):
+    fig, axes = plt.subplots(2, len(FIG_HW), figsize=(38.0, 16.4), squeeze=False)
+    for j, hw in enumerate(FIG_HW):
         # one fit per class per card, reused by both phase panels (synth_entry re-fits, so build once)
         ent = {c["name"]: (synth_entry(hw, [store[hw][v] for v in c["via"]]) if len(c["via"]) > 1
                            else store[hw][c["via"][0]])
                for c in cl if all(v in store[hw] for v in c["via"])}
-        for j, phase in enumerate(("prefill", "decode")):
+        for i, phase in enumerate(("prefill", "decode")):
             ax = axes[i][j]
-            series = [thr_series(c["name"], ent[c["name"]][phase], CLASS_C[k], MARKERS[k])
+            series = [thr_series(c["name"], ent[c["name"]][phase], CCOL(c), MARKERS[k])
                       for k, c in enumerate(cl) if c["name"] in ent]
             _series_panel(ax, series, f"{hw} — {phase}",
-                          ylab=f"{hw}\nthroughput (tok/s, log)" if j == 0 else None,
-                          xlab=(i == len(FIG_HW) - 1), fontsize=16.0)
+                          ylab=f"{phase}\nthroughput (tok/s)" if j == 0 else None,
+                          xlab=(i == 1), fontsize=28.0)
             miss = [c["name"] for c in cl if c["name"] not in ent]
             if miss:                                  # anchor sweep missing on this hardware
                 ax.text(0.02, 0.03, "anchor not measured on " + hw + ": " + ", ".join(miss),
-                        transform=ax.transAxes, fontsize=16, color=MUTE)
-    _series_legend(fig, [(f"{c['name']}  {ratio_str(c['rho'])}", CLASS_C[k], MARKERS[k])
-                         for k, c in enumerate(cl)], ncol=4, fontsize=19)
+                        transform=ax.transAxes, fontsize=28, color=MUTE)
+    band = _series_legend(fig, [(f"{c['name']}  {ratio_str(c['rho'])}", CCOL(c), MARKERS[k])
+                                for k, c in enumerate(cl)], ncol=4, fontsize=31)
     synth = [c for c in cl if len(c["via"]) > 1]
     note = ("\n⚠ " + ", ".join(c["name"] for c in synth) + " = MOCK anchor (per-power mean of "
             "the " + " & ".join(sorted({v for c in synth for v in c["via"]}))
             + " measurements)") if synth else ""
-    note += ("\n⚠ bottom row RTX 5090 = MOCK data (synthesized, no measurement — "
+    note += ("\n⚠ right-hand column RTX 5090 = MOCK data (synthesized, no measurement — "
              "projection only, excluded from every metric)")
     fig.suptitle("Check 1 — throughput-curve accuracy per PRODUCTION WORKLOAD CLASS: "
                  "analytical model vs measurement\n"
-                 "one panel per hardware × phase, the seven classes of Table I drawn together, "
+                 "one panel per hardware × phase, the seven classes of Table I drawn together, log y, "
                  "ordered by prefill-to-decode ratio\n"
                  "colour + marker = class (key below); line = analytical model, markers = "
                  "measurement; label on a curve = its MAPE\n"
                  "each class takes the measured sweep whose context scale is closest to its own"
-                 + note, fontsize=20, color=INK)
-    fig.tight_layout(rect=(0, 0.055, 1, 0.985))  # tight_layout already reserves the suptitle itself
+                 + note, fontsize=32, color=INK)
+    fig.tight_layout(rect=(0, band, 1, 0.985))   # tight_layout already reserves the suptitle itself
     _save(fig, "fig_val_curves_class.png")
 
 
@@ -469,46 +476,46 @@ def check2(hw, store):
 ratio_str = lambda x: f"{x:.1f}:1" if x >= 1 else f"{x:.2f}:1"
 
 def fig_peff(rows, store):
-    """Check 1's layout on the axis the planner actually optimizes: rows = hardware, cols = PHASE,
+    """Check 1's layout on the axis the planner actually optimizes: rows = PHASE, cols = hardware,
     all seven production classes of Table I in one panel, each direct-labelled with its own
     efficiency-curve MAPE and ringed at its sweet spot. Efficiency = throughput / MEASURED draw
     (curves_lib.py definition); the ring is display only — the flat peaks make the argmax the wrong
     quantity to compare (see check2)."""
     cl = classes()
-    fig, axes = plt.subplots(len(FIG_HW), 2, figsize=(19.6, 17.6), squeeze=False)
-    for i, hw in enumerate(FIG_HW):
+    fig, axes = plt.subplots(2, len(FIG_HW), figsize=(38.0, 16.4), squeeze=False)
+    for j, hw in enumerate(FIG_HW):
         # one fit per class per card, reused by both phase panels (synth_entry re-fits, so build once)
         ent = {c["name"]: (synth_entry(hw, [store[hw][v] for v in c["via"]]) if len(c["via"]) > 1
                            else store[hw][c["via"][0]])
                for c in cl if all(v in store[hw] for v in c["via"])}
-        for j, phase in enumerate(("prefill", "decode")):
+        for i, phase in enumerate(("prefill", "decode")):
             ax = axes[i][j]
-            series = [eff_series(c["name"], ent[c["name"]][phase], CLASS_C[k], MARKERS[k])
+            series = [eff_series(c["name"], ent[c["name"]][phase], CCOL(c), MARKERS[k])
                       for k, c in enumerate(cl)
                       if c["name"] in ent and len(ent[c["name"]][phase]["P"]) >= 3]
             _series_panel(ax, series, f"{hw} — {phase}",
-                          ylab=f"{hw}\nefficiency (tok/J, log)" if j == 0 else None,
-                          xlab=(i == len(FIG_HW) - 1), fontsize=16.0)
+                          ylab=f"{phase}\nefficiency (tok/J)" if j == 0 else None,
+                          xlab=(i == 1), fontsize=28.0)
             miss = [c["name"] for c in cl if c["name"] not in ent]
             if miss:                                  # anchor sweep missing on this hardware
                 ax.text(0.02, 0.03, "anchor not measured on " + hw + ": " + ", ".join(miss),
-                        transform=ax.transAxes, fontsize=16, color=MUTE)
-    _series_legend(fig, [(f"{c['name']}  {ratio_str(c['rho'])}", CLASS_C[k], MARKERS[k])
-                         for k, c in enumerate(cl)], ncol=4, fontsize=19,
+                        transform=ax.transAxes, fontsize=28, color=MUTE)
+    band = _series_legend(fig, [(f"{c['name']}  {ratio_str(c['rho'])}", CCOL(c), MARKERS[k])
+                                for k, c in enumerate(cl)], ncol=4, fontsize=31,
                    extra=[Line2D([], [], color="black", lw=0, marker="o", ms=9, mfc="none", mew=1.2,
                                  label="ring = efficiency sweet spot (display only, not scored)")])
     med = {hw: np.median([r["eff_MAPE_pct"] for r in rows if r["hw"] == hw]) for hw in HW}
     fig.suptitle("Check 2 — efficiency-curve accuracy per production workload class "
                  "(efficiency = tok/s per measured watt)\n"
                  + "   ·   ".join(f"{hw} median MAPE = {med[hw]:.1f}%" for hw in HW)
-                 + "\none panel per hardware × phase, the seven classes drawn together — "
+                 + "\none panel per hardware × phase, the seven classes drawn together, log y — "
                  "colour + marker = class (key below), label on a curve = its MAPE"
-                 "\n⚠ bottom row RTX 5090 = MOCK data (synthesized, no measurement — "
+                 "\n⚠ right-hand column RTX 5090 = MOCK data (synthesized, no measurement — "
                  "projection only, excluded from every metric)"
                  "\n⚠ Long-context chat = MOCK anchor "
                  "(per-power mean of the chat-phi3 & summarize-qwen7b measurements)",
-                 fontsize=20, color="black")
-    fig.tight_layout(rect=(0, 0.055, 1, 0.985))  # tight_layout already reserves the suptitle itself
+                 fontsize=32, color="black")
+    fig.tight_layout(rect=(0, band, 1, 0.985))   # tight_layout already reserves the suptitle itself
     _save(fig, "fig_val_peff.png")
 
 
@@ -606,7 +613,7 @@ def check3(hw, store):
 def fig_baselines(rows, curves):
     """Left: the three forms on the decode workload where they disagree most. Middle/right: MAPE per
     workload over the whole domain and inside the saturation region. Rows = hardware."""
-    fig, axes = plt.subplots(2, 3, figsize=(16.5, 8.8), squeeze=False,
+    fig, axes = plt.subplots(2, 3, figsize=(31.0, 13.2), squeeze=False,
                              gridspec_kw=dict(width_ratios=[1.15, 1, 1]))
     for i, hw in enumerate(HW):
         dec = [r for r in rows if r["hw"] == hw and r["phase"] == "decode"]
@@ -616,17 +623,17 @@ def fig_baselines(rows, curves):
         ax = axes[i][0]
         g = np.linspace(P.min(), P.max(), 600)
         for key in ("A", "B", "ours"):
-            ax.plot(g, fits[key](g), color=FORM_C[key], lw=2.6 if key == "ours" else 1.8,
+            ax.plot(g, fits[key](g), color=FORM_C[key], lw=3.2 if key == "ours" else 2.2,
                     ls=DASH[key], zorder=4 if key == "ours" else 3)
-        ax.plot(P, T, "o", ms=6, color=INK, mec="white", mew=1.0, zorder=5)
+        ax.plot(P, T, "o", ms=8, color=INK, mec="white", mew=1.0, zorder=5)
         ax.axvspan(P.min() + 0.5 * (P.max() - P.min()), P.max(), color=GRID, alpha=.55, zorder=0, lw=0)
         ax.annotate("saturation region\n(scored separately)",
                     (P.min() + 0.5 * (P.max() - P.min()), T.min()), textcoords="offset points",
-                    xytext=(6, 2), fontsize=7.8, color=MUTE)
-        ax.set_title(f"{hw} · {pick['workload']} decode — where the forms diverge",
-                     fontsize=10.2, color=INK, weight="bold")
-        ax.set_ylabel(f"{hw}\nthroughput (tok/s)", fontsize=10, weight="bold", color=INK)
-        ax.set_xlabel("GPU power (W)", fontsize=9.4, color=INK2)
+                    xytext=(6, 2), fontsize=22, color=MUTE)
+        ax.set_title(f"{hw} · {pick['workload']} decode\nwhere the three forms diverge most",
+                     fontsize=26, color=INK, weight="bold")
+        ax.set_ylabel(f"{hw}\nthroughput (tok/s)", fontsize=26, weight="bold", color=INK)
+        ax.set_xlabel("GPU power (W)", fontsize=25, color=INK2)
 
         for col, (mkey, ttl) in enumerate([("MAPE", "whole domain"), ("MAPEsat", "saturation region")], 1):
             ax = axes[i][col]
@@ -635,32 +642,32 @@ def fig_baselines(rows, curves):
             for off, key in zip((-h, 0, h), ("A", "B", "ours")):
                 ax.barh(y + off, [r[f"{mkey}_{key}_pct"] for r in dd], height=h * 0.92,
                         color=FORM_C[key], zorder=3)
-            ax.set_yticks(y); ax.set_yticklabels([r["workload"] for r in dd], fontsize=7.6)
+            ax.set_yticks(y); ax.set_yticklabels([r["workload"] for r in dd], fontsize=22)
             ax.invert_yaxis()
             xlab = f"decode MAPE — {ttl} (%)"
             if col == 1:            # the fairness control belongs next to the in-sample numbers
                 lo_ = {k: np.median([r[f"LOO_{k}_pct"] for r in dd]) for k in ("A", "B", "ours")}
-                xlab += (f"\nleave-one-out CV median:  A {lo_['A']:.1f} · B {lo_['B']:.1f} · "
-                         f"ours {lo_['ours']:.1f} %   (ours fits 5 free parameters vs 2 and 3)")
-            ax.set_xlabel(xlab, fontsize=9.4, color=INK2)
+                xlab += (f"\nleave-one-out CV median  A {lo_['A']:.1f} · B {lo_['B']:.1f} · "
+                         f"ours {lo_['ours']:.1f} %\n(ours fits 5 free parameters vs 2 and 3)")
+            ax.set_xlabel(xlab, fontsize=25, color=INK2)
             med = {k: np.median([r[f"{mkey}_{k}_pct"] for r in dd]) for k in ("A", "B", "ours")}
-            ax.set_title(f"{hw} — {ttl}   median  A {med['A']:.1f} · B {med['B']:.1f} · "
-                         f"ours {med['ours']:.1f} %", fontsize=9.6, color=INK, weight="bold")
+            ax.set_title(f"{hw} — {ttl}\nmedian  A {med['A']:.1f} · B {med['B']:.1f} · "
+                         f"ours {med['ours']:.1f} %", fontsize=25, color=INK, weight="bold")
         for a in axes[i]:
             a.grid(alpha=.4, color=GRID, lw=0.7)
             a.set_axisbelow(True)
-            a.tick_params(labelsize=8, colors=MUTE)
+            a.tick_params(labelsize=23, colors=MUTE)
             [s_.set_visible(False) for s_ in (a.spines["top"], a.spines["right"])]
             [a.spines[s_].set_color(GRID) for s_ in ("left", "bottom")]
-    fig.legend(handles=[Line2D([], [], color=FORM_C[k], lw=2.4, ls=DASH[k], label=FORM_LABEL[k])
+    fig.legend(handles=[Line2D([], [], color=FORM_C[k], lw=3.0, ls=DASH[k], label=FORM_LABEL[k])
                         for k in ("ours", "A", "B")]
-                       + [Line2D([], [], color=INK, lw=0, marker="o", ms=6, mec="white",
+                       + [Line2D([], [], color=INK, lw=0, marker="o", ms=8, mec="white",
                                  label="measured")],
-               loc="lower center", ncol=4, fontsize=9.2, frameon=False, bbox_to_anchor=(0.5, -0.005))
+               loc="lower center", ncol=4, fontsize=25, frameon=False, bbox_to_anchor=(0.5, -0.005))
     fig.suptitle("Check 3 — the analytical model against two simpler forms fitted to the same data\n"
                  "all three share the calibrated power side P(x); only the throughput-side structure "
-                 "differs", fontsize=12.5, color=INK)
-    fig.tight_layout(rect=(0, 0.05, 1, 0.91))
+                 "differs", fontsize=28, color=INK)
+    fig.tight_layout(rect=(0, 0.055, 1, 0.93))
     _save(fig, "fig_val_baselines.png")
 
 
